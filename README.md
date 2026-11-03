@@ -144,3 +144,5 @@ iPhone screen mirroring Windows · mirror iPhone to PC · control iPhone from PC
 
 Pane is licensed under the [GNU General Public License v3.0](LICENSE).
 Not affiliated with or endorsed by Apple Inc. iPhone, iOS and AirPlay are trademarks of Apple Inc.
+
+See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published checksums and the verified 1.1.1 → 1.2.1 updater transition.
