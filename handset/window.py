@@ -165,7 +165,7 @@ class FloatingWindow:
             return self.layout(self.expanded, self.aspect)
         if action == 'layout':
             return self.layout(payload.get('expanded', self.expanded), payload.get('aspect', self.aspect))
-        if action not in ('drag', 'minimize', 'close', 'pin', 'focus'):
+        if action not in ('drag', 'move', 'minimize', 'close', 'pin', 'focus'):
             raise ValueError('Unknown window action.')
         if not self.handle:
             raise ValueError('Native window controls are unavailable in browser mode.')
@@ -173,8 +173,17 @@ class FloatingWindow:
             self.pinned = not self.pinned
             return self.layout(self.expanded, self.aspect)
         if action == 'drag':
-            point = W.POINT(); self.u.GetCursorPos(ctypes.byref(point))
-            self.u.PostMessageW(self.handle, 0x00A1, 2, (point.x & 65535) | ((point.y & 65535) << 16))
+            rect = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(rect))
+            self._drag_origin = (rect.left, rect.top)
+        elif action == 'move':
+            dx, dy = payload.get('dx'), payload.get('dy')
+            if any(type(v) not in (int, float) or not math.isfinite(v) or abs(v) > 100000 for v in (dx, dy)):
+                raise ValueError('Invalid drag offset.')
+            if not hasattr(self, '_drag_origin'):
+                raise ValueError('Start dragging before moving.')
+            scale = (self.u.GetDpiForWindow(self.handle) or 96) / 96
+            x, y = self._drag_origin
+            self.u.SetWindowPos(self.handle, 0, round(x+dx*scale), round(y+dy*scale), 0, 0, 0x0015)
         elif action == 'minimize':
             self.u.ShowWindow(self.handle, 6)
         elif action == 'close':

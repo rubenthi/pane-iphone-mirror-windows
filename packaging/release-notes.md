@@ -1,4 +1,4 @@
-Pane 1.3.0 for Windows x64
+Pane 1.3.1 for Windows x64
 
 - Fixed the Windows HEVC decoder cropping the phone to 1280 x 720. Decoder dimensions now come from the stream SPS and update when in-band parameter sets change. Full 1328 x 2896 USB and Wi-Fi video was observed on iPhone19,3 / iOS 27.0.1.
 - Fixed Wi-Fi discovery's incompatible callback signature and Windows IPv6 adapter scope names. Existing pairing records are preserved.
@@ -11,4 +11,4 @@ Pane 1.3.0 for Windows x64
 
 Includes regression coverage for HEVC dimensions and rotation configuration, Wi-Fi signatures and scopes, native resize/menu/region behavior, full-frame rendering and wheel-to-touch mapping. Physical pointer accuracy and scrolling still require confirmation on the phone; simulated input checks do not establish physical acceptance.
 
-The iOS 27 setup guide, including optional AltStore Classic directions, remains available. Install with install.ps1 -Version 1.3.0, or start the existing installed Pane, wait for the verified update, close it normally and reopen. The updater retains a rollback executable.
+The iOS 27 setup guide, including optional AltStore Classic directions, remains available. Install with install.ps1 -Version 1.3.1, or start the existing installed Pane, wait for the verified update, close it normally and reopen. The updater retains a rollback executable.

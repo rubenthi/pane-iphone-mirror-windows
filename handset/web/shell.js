@@ -35,9 +35,19 @@
     await layout(true);
     if (document.querySelector('#run-guide').hidden) document.querySelector('#toggle-guide').click();
   });
-  document.querySelectorAll('#drag-handle,[data-window-drag]').forEach(handle => handle.addEventListener('pointerdown', event => {
-    if (event.button === 0 && native) { event.preventDefault(); command('drag').catch(() => {}); }
-  }));
+  document.querySelectorAll('#drag-handle,[data-window-drag]').forEach(handle => {
+    let origin=null;
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || !native) return;
+      event.preventDefault(); origin={x:event.screenX,y:event.screenY};
+      handle.setPointerCapture(event.pointerId); command('drag').catch(() => {origin=null;});
+    });
+    handle.addEventListener('pointermove',event=>{
+      if(origin) command('move',{dx:event.screenX-origin.x,dy:event.screenY-origin.y}).catch(()=>{});
+    });
+    const end=()=>{origin=null;};
+    handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);handle.addEventListener('lostpointercapture',end);
+  });
   for (const action of ['close', 'minimize', 'maximize', 'pin']) {
     document.querySelector(`#${action}-window`).addEventListener('click', () => command(action).then(render).catch(() => {}));
   }

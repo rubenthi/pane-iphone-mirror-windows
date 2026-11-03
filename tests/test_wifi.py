@@ -1,11 +1,15 @@
 import asyncio
 import socket
 import unittest
+import importlib.util
 from types import SimpleNamespace
 from unittest.mock import patch, AsyncMock, MagicMock
 from handset import wifi
-from pymobiledevice3 import bonjour
+HAS_DEVICE_DEPENDENCIES = importlib.util.find_spec('pymobiledevice3') is not None
+if HAS_DEVICE_DEPENDENCIES:
+    from pymobiledevice3 import bonjour
 
+@unittest.skipUnless(HAS_DEVICE_DEPENDENCIES, 'Device dependency integration runs in the Windows release job')
 class WifiCompatibilityTests(unittest.TestCase):
     def test_browse_wrapper_forwards_interface_filter(self):
         original_bind,original_send,original_address=bonjour._bind_ipv4,bonjour._send_query_all,bonjour.Address.full_ip
