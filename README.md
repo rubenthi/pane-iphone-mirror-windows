@@ -39,13 +39,19 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 - 🪟 **Single portable `Pane.exe`**: no Python, no installer, no account.
 - 🔒 **Private by design**: no cloud, no telemetry; it only talks to your iPhone.
 
+## This fork's release and updater
+
+Version 1.1.0 reconstructs the previously uncommitted cloud work. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
+
+The pinned screen-streaming library requires **iOS 27+**. The older iOS 17+ claim described tunnel support, not verified display streaming. Physical USB/Wi-Fi mirroring and input must be tested with a compatible phone; automated tests use local stand-ins.
+
 ## Quick start
 
 1. **Download** `Pane.exe` from the [latest release](../../releases/latest).
 2. Install Apple's USB driver by installing **[Apple Devices](https://apps.microsoft.com/detail/9np83lwlpz9k)** (or iTunes) from the Microsoft Store.
 3. Plug the iPhone into the PC, unlock it and tap **Trust This Computer**.
 4. Turn on **Developer Mode** on the iPhone: *Settings → Privacy & Security → Developer Mode → On* (the iPhone restarts).
-   If you don't see the option, connect to Pane once and it will appear.
+   If the option is missing, do not assume Pane can enable it; follow Apple's Developer Mode setup guidance.
 5. Run **Pane.exe** and click **Start mirroring**.
 
 ### Go wireless (Wi-Fi)
@@ -71,13 +77,13 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 - Windows 10 or Windows 11 (64-bit)
 - Google Chrome or Microsoft Edge (used as the app window)
-- iPhone or iPad running **iOS / iPadOS 17 or newer** with Developer Mode enabled
+- iPhone or iPad running **iOS / iPadOS 27 or newer** with Developer Mode enabled
 - Apple Devices app or iTunes (for the USB driver)
 
 ## Run from source
 
 ```powershell
-git clone https://github.com/teyboxv1/pane-iphone-mirror-windows.git
+git clone https://github.com/rubenthi/pane-iphone-mirror-windows.git
 cd pane-iphone-mirror-windows
 pip install -r requirements.txt
 python -m handset.server      # then open http://127.0.0.1:8765

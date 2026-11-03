@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.client
+import base64
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -13,6 +14,7 @@ from handset.mux import MuxError
 from handset.screen import restart_screen, screen_status, start_screen
 from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
+from handset import updater
 
 ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
@@ -70,10 +72,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = snapshot()
             payload["screen"] = screen_status()
             payload["wifi"] = {"paired": wifi_paired_udids()}
+            payload["update"] = updater.status()
             self._json(payload)
             return
         if path == "/api/screen":
-            self._json(screen_status())
+            self._json({**screen_status(), "update": updater.status()})
             return
         if path.startswith("/api/devices/"):
             udid = unquote(path.removeprefix("/api/devices/")).strip("/")
@@ -97,10 +100,15 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b"{}"
         try:
             payload = json.loads(raw.decode("utf-8") or "{}")
-        except json.JSONDecodeError:
-            payload = {}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._json({"error": "Invalid JSON body."}, status=400)
+            return
         if not isinstance(payload, dict):
-            payload = {}
+            self._json({"error": "Expected a JSON object."}, status=400)
+            return
+        if "udid" in payload and payload["udid"] is not None and not isinstance(payload["udid"], str):
+            self._json({"error": "Invalid device id."}, status=400)
+            return
         udid = payload.get("udid") if isinstance(payload.get("udid"), str) else None
         if path == "/api/screen/restart":
             self._json(restart_screen(udid))
@@ -114,9 +122,10 @@ class Handler(BaseHTTPRequestHandler):
         if path != "/api/screen":
             self._json({"error": "Unknown action."}, status=404)
             return
-        transport = payload.get("transport")
-        if transport not in {"auto", "usb", "wifi"}:
-            transport = "auto"
+        transport = payload.get("transport", "auto")
+        if not isinstance(transport, str) or transport not in {"auto", "usb", "wifi"}:
+            self._json({"error": "Invalid transport."}, status=400)
+            return
         self._json(start_screen(udid, transport))
 
     def log_message(self, fmt: str, *args) -> None:
@@ -160,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
         started = False
         self.close_connection = True
         try:
-            conn.request(method, target, headers={"Connection": "close"})
+            conn.request(method, target, headers={"Connection": "close", "Authorization": upstream_authorization()})
             response = conn.getresponse()
             self.send_response(response.status)
             for key, value in response.getheaders():
@@ -191,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
 
         body = self.rfile.read(length) if length and method in {"POST", "PUT"} else None
 
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = {"Authorization": upstream_authorization()}
         for name in ("Content-Type", "Accept"):
             value = self.headers.get(name)
             if value:
@@ -206,13 +215,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(response.status)
             started = True
             for key, value in response.getheaders():
-                if key.lower() in _HOP_BY_HOP:
+                if key.lower() in _HOP_BY_HOP or key.lower() in {"transfer-encoding", "content-length"}:
                     continue
                 self.send_header(key, value)
+            self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             if payload:
                 self._write_client(payload)
-        except OSError as error:
+        except (OSError, http.client.HTTPException) as error:
             if not started:
                 self._json({"error": f"Screen stream is not running ({error})."}, status=503)
         finally:
@@ -248,6 +258,10 @@ class Handler(BaseHTTPRequestHandler):
 class SingleServer(ThreadingHTTPServer):
     # On Windows, address reuse lets a second copy bind the same port and steal requests.
     allow_reuse_address = False
+
+
+def upstream_authorization():
+    return 'Basic ' + base64.b64encode(f'pane:{ACCESS_TOKEN}'.encode()).decode()
 
 
 def main() -> None:

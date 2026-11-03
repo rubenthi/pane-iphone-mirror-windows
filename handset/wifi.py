@@ -95,13 +95,15 @@ def pair_for_wifi(udid: str) -> dict:
         from pymobiledevice3.remote.tunnel_service import RemotePairingLockdownService
 
         lockdown = await create_using_usbmux(serial=udid)
-        service = await RemotePairingLockdownService.create(lockdown)
         try:
-            await service.connect(autopair=True)
-        except RemotePairingCompletedError:
-            pass
+            service = await RemotePairingLockdownService.create(lockdown)
+            try:
+                await service.connect(autopair=True)
+            except RemotePairingCompletedError:
+                pass
+            finally:
+                await service.close()
         finally:
-            await service.close()
             await lockdown.close()
 
     try:

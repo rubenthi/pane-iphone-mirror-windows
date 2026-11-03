@@ -48,7 +48,7 @@ class RequestGuardTests(unittest.TestCase):
 
     def test_custom_local_port(self):
         self.assertTrue(request_allowed({"Host": "127.0.0.1:9123"}, 9123, token_required=False))
-        self.assertFalse(request_allowed({"Host": "127.0.0.1:8765"}, 9123, token_required=False)
+        self.assertFalse(request_allowed({"Host": "127.0.0.1:8765"}, 9123, token_required=False))
 
 
 if __name__ == "__main__":

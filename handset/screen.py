@@ -23,6 +23,11 @@ DEVELOPER_MODE_MESSAGE = (
 
 VIEW_URL = "http://127.0.0.1:8766/"
 _LOCK = threading.Lock()
+_COMMAND_LOCK = threading.RLock()
+_WORKER = None
+_LOOP = None
+_TASK = None
+_READY = threading.Event()
 _STATE = {"phase": "idle", "udid": None, "url": None, "error": None, "note": None, "transport": None}
 
 
@@ -32,61 +37,114 @@ def screen_status() -> dict:
 
 
 def restart_screen(udid: str | None = None) -> dict:
+    with _COMMAND_LOCK:
+        return _restart_screen(udid)
+
+
+def _restart_screen(udid: str | None = None) -> dict:
     """Nudge the device encoder and keep the HTTP stream on 8766 alive."""
     import http.client
+    from handset.server import upstream_authorization
 
-    chosen = (udid or "").strip() or _STATE.get("udid") or _only_udid()
+    state = screen_status()
+    if state['phase'] in {'starting', 'running'} and udid and udid != state['udid']:
+        return {**state, 'error': 'Select the active device before restarting its stream.'}
+    chosen = (udid or "").strip() or state.get("udid") or _only_udid()
     nudged = False
     for path in ("/restart", "/pli"):
+        conn = http.client.HTTPConnection("127.0.0.1", 8766, timeout=20)
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", 8766, timeout=20)
-            conn.request("POST", path, body=b"", headers={})
+            conn.request("POST", path, body=b"", headers={"Authorization": upstream_authorization()})
             response = conn.getresponse()
             response.read()
-            conn.close()
-            nudged = True
-        except OSError:
+            nudged = 200 <= response.status < 300
+            if nudged:
+                break
+        except (OSError, http.client.HTTPException):
             continue
+        finally:
+            conn.close()
     with _LOCK:
         running = _STATE.get("phase") == "running"
     if running:
-        return _set(note="Stream restarted. If the picture is still black, press Restart screen again.")
+        if not nudged:
+            return _set(error="Restart failed: the stream did not accept the request.", note=None)
+        return _set(error=None, note="Stream restart accepted.")
     if chosen:
         return start_screen(chosen, _STATE.get("transport") or "auto")
     return _set(error="Connect the iPhone first, then start mirroring.")
 
 
 def start_screen(udid: str | None, transport: str = "auto") -> dict:
+    with _COMMAND_LOCK:
+        return _start_screen(udid, transport)
+
+
+def _start_screen(udid: str | None, transport: str) -> dict:
+    global _WORKER
+    def rejected(message):
+        if _WORKER is not None and _WORKER.is_alive():
+            return {**screen_status(), 'error': message}
+        return _set(phase='error', udid=None, url=None, error=message, note=None, transport=None)
     usb = _usb_udids()
     wifi = wifi_paired_udids()
     chosen = (udid or "").strip() or _only_udid(usb, wifi, transport)
     if not chosen:
         if transport == "wifi":
-            return _set(phase="idle", udid=None, url=None, error="Set up Wi-Fi once with the cable plugged in.")
-        return _set(phase="idle", udid=None, url=None, error="Connect the iPhone first.")
+            return rejected("Set up Wi-Fi once with the cable plugged in.")
+        return rejected("Connect the iPhone first.")
 
     if transport == "auto":
         transport = "usb" if chosen in usb else "wifi"
     if transport == "usb" and chosen not in usb:
-        return _set(phase="error", udid=chosen, url=None, error="The iPhone is not on the cable. Plug it in or choose Wi-Fi.")
+        return rejected("The iPhone is not on the cable. Plug it in or choose Wi-Fi.")
     if transport == "wifi" and chosen not in wifi:
-        return _set(phase="error", udid=chosen, url=None, error="Set up Wi-Fi once with the cable plugged in.")
+        return rejected("Set up Wi-Fi once with the cable plugged in.")
     if transport == "usb" and developer_mode_enabled(chosen) is False:
-        return _set(phase="error", udid=chosen, url=None, error=DEVELOPER_MODE_MESSAGE)
+        return rejected(DEVELOPER_MODE_MESSAGE)
 
+    state = screen_status()
+    if _WORKER is not None and _WORKER.is_alive():
+        if state["udid"] == chosen and state["transport"] == transport:
+            return state
+        if not stop_screen():
+            return {**screen_status(), "error": "Previous stream is still closing. Try again shortly."}
     with _LOCK:
-        if _STATE["phase"] in {"starting", "running"} and _STATE["udid"] == chosen:
-            return dict(_STATE)
         note = "Looking for the iPhone on Wi-Fi…" if transport == "wifi" else None
         _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport)
-    threading.Thread(target=_run, args=(chosen, transport), name="handset-screen", daemon=True).start()
+    _READY.clear()
+    _WORKER = threading.Thread(target=_run, args=(chosen, transport), name="handset-screen", daemon=True)
+    _WORKER.start()
     return screen_status()
 
 
+def stop_screen() -> bool:
+    with _COMMAND_LOCK:
+        if _WORKER is None or not _WORKER.is_alive():
+            return True
+        if not _READY.wait(5):
+            return False
+        try:
+            _LOOP.call_soon_threadsafe(_TASK.cancel)
+        except RuntimeError:
+            pass  # The worker finished between the check and cancellation.
+        _WORKER.join(10)
+        return not _WORKER.is_alive()
+
+
 def _run(udid: str, transport: str) -> None:
+    async def run():
+        global _LOOP, _TASK
+        _LOOP = asyncio.get_running_loop()
+        _TASK = asyncio.current_task()
+        _READY.set()
+        await _serve(udid, transport)
+
     try:
-        asyncio.run(_serve(udid, transport))
+        asyncio.run(run())
         _set(phase="idle", udid=udid, url=None, error="The screen stream stopped.")
+    except asyncio.CancelledError:
+        _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None)
     except Exception as error:
         _set(phase="error", udid=udid, url=None, error=_plain(error))
 
@@ -122,12 +180,14 @@ async def _serve(udid: str, transport: str) -> None:
 
 async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
     from pymobiledevice3.remote.core_device.display_service import is_media_in_use_error
+    from handset.security import ACCESS_TOKEN
 
     server = ScreenStreamServer(
         rsd,
         bind="127.0.0.1",
         http_port=8766,
         audio_default_on=False,
+        password=ACCESS_TOKEN,
     )
 
     async def _eager_video_only() -> None:
@@ -146,8 +206,27 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
             )
 
     server._eager_stream_start = _eager_video_only
-    _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=None)
-    await server.serve()
+    task = asyncio.create_task(server.serve())
+    try:
+        # serve() performs device preflight before binding; do not claim readiness early.
+        for _ in range(300):
+            if task.done():
+                await task
+                return
+            try:
+                reader, writer = await asyncio.open_connection('127.0.0.1', 8766)
+                writer.close()
+                await writer.wait_closed()
+                break
+            except OSError:
+                await asyncio.sleep(.1)
+        else:
+            raise TimeoutError('The stream server did not become ready.')
+        _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=None)
+        await task
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 def _usb_udids() -> list[str]:

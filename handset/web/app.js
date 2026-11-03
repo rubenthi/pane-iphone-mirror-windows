@@ -43,6 +43,10 @@ function paneToken() {
   return paneTokenPromise;
 }
 
+const loadGeneration = window.createPaneGeneration();
+const detailGeneration = window.createPaneGeneration();
+const screenGeneration = window.createPaneGeneration();
+window.paneControl = window.createPaneControlQueue((path, payload) => postJson(`${MIRROR_API}${path}`, payload));
 let selectedUdid = null;
 let screenTimer = 0;
 let transport = localStorage.getItem("handset-transport") === "wifi" ? "wifi" : "usb";
@@ -105,11 +109,14 @@ toggleGuide.addEventListener("click", () => {
 });
 
 async function load() {
+  const generation = loadGeneration.next();
   refresh.disabled = true;
   detail.hidden = true;
   detail.replaceChildren();
   try {
     const state = await getJson("/api/status");
+    if (!loadGeneration.current(generation)) return;
+    document.querySelector("#update-note").textContent = `Pane ${state.update?.version || ""} · ${state.update?.note || state.update?.phase || ""}`;
     wifiPaired = state.wifi?.paired || [];
     usbConnected = (state.devices || []).length > 0;
     renderStatus(state);
@@ -118,11 +125,12 @@ async function load() {
     renderScreen(state.screen);
     renderPills(state);
   } catch (error) {
+    if (!loadGeneration.current(generation)) return;
     setPill(pillConnection, "Offline", "bad");
     statusNote.textContent = error.message;
     statusNote.className = "warn";
   } finally {
-    refresh.disabled = false;
+    if (loadGeneration.current(generation)) refresh.disabled = false;
   }
 }
 
@@ -205,6 +213,7 @@ function renderDevices(list) {
     selectedUdid = null;
     return;
   }
+  if (!list.some((device) => device.udid === selectedUdid)) selectedUdid = null;
   if (list.length === 1) selectedUdid = list[0].udid;
 
   for (const device of list) {
@@ -233,17 +242,19 @@ function renderDevices(list) {
 }
 
 async function openDevice(udid) {
+  const generation = detailGeneration.next();
   detail.hidden = false;
   detail.textContent = "Reading device…";
   try {
     const device = await getJson(`/api/devices/${encodeURIComponent(udid)}`);
+    if (!detailGeneration.current(generation) || selectedUdid !== udid) return;
     renderDetail(device);
     if (device.info?.DeviceName) {
       pillDevice.hidden = false;
       pillDevice.textContent = device.info.DeviceName;
     }
   } catch (error) {
-    detail.textContent = error.message;
+    if (detailGeneration.current(generation) && selectedUdid === udid) detail.textContent = error.message;
   }
 }
 
@@ -273,17 +284,20 @@ function renderDetail(device) {
 
 function renderScreen(screen) {
   if (!screen) return;
+  if (screen.update) document.querySelector("#update-note").textContent = `Pane ${screen.update.version} · ${screen.update.note || screen.update.phase}`;
   const mirroring = screen.phase === "running";
+  const selectedStream = screen.udid === selectedUdid && screen.transport === transport;
   if (mirroring) {
     workspace.classList.add("is-live");
     phoneShell.classList.add("live");
     remotePanel.hidden = false;
     restartScreen.hidden = false;
     kbToggle.hidden = false;
-    screenNote.textContent = "Mirroring — typing on your keyboard goes to the iPhone.";
+    screenNote.textContent = screen.error || screen.note || "Mirroring — typing on your keyboard goes to the iPhone.";
     screenNote.className = "";
     showScreen.textContent = "Mirroring…";
-    showScreen.disabled = true;
+    showScreen.disabled = selectedStream;
+    if (!selectedStream) showScreen.textContent = "Switch mirroring";
     if (screenView.getAttribute("src") !== MIRROR_PAGE) screenView.src = MIRROR_PAGE;
     screenView.hidden = false;
     return;
@@ -316,6 +330,8 @@ function renderScreen(screen) {
 }
 
 async function showPhone() {
+  screenGeneration.next();
+  window.clearTimeout(screenTimer);
   showScreen.disabled = true;
   showScreen.textContent = "Connecting…";
   try {
@@ -327,24 +343,26 @@ async function showPhone() {
     screenNote.className = "warn";
     showScreen.textContent = "Start mirroring";
     showScreen.disabled = false;
+    watchScreen();
   }
 }
 
 function watchScreen() {
-  window.clearInterval(screenTimer);
-  screenTimer = window.setInterval(async () => {
+  const generation = screenGeneration.next();
+  window.clearTimeout(screenTimer);
+  async function poll() {
     try {
       const screen = await getJson("/api/screen");
+      if (!screenGeneration.current(generation)) return;
       renderScreen(screen);
-      if (screen.phase !== "starting") {
-        window.clearInterval(screenTimer);
-        load();
-      }
     } catch (error) {
-      screenNote.textContent = error.message;
-      window.clearInterval(screenTimer);
+      if (!screenGeneration.current(generation)) return;
+      renderScreen({ phase: "error", error: error.message });
+    } finally {
+      if (screenGeneration.current(generation)) screenTimer = window.setTimeout(poll, 1000);
     }
-  }, 1000);
+  }
+  screenTimer = window.setTimeout(poll, 1000);
 }
 
 function row(label, value, ok) {
@@ -394,7 +412,8 @@ async function restartMirror() {
   screenNote.textContent = "Restarting screen… keep the iPhone unlocked.";
   screenNote.className = "";
   try {
-    await postJson("/api/screen/restart", { udid: selectedUdid });
+    const result = await postJson("/api/screen/restart", { udid: selectedUdid });
+    if (result.error) throw new Error(result.error);
     await new Promise((r) => setTimeout(r, 1500));
     reloadMirrorIframe();
     screenNote.textContent = "Restart sent — waiting for picture…";
@@ -412,13 +431,8 @@ async function restartMirror() {
 }
 
 async function mirrorPost(path, payload) {
-  try {
-    await fetch(`${MIRROR_API}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Pane-Token": await paneToken() },
-      body: JSON.stringify(payload),
-    });
-  } catch (_) {}
+  try { await window.paneControl(path, payload); }
+  catch (error) { screenNote.textContent = error.message; screenNote.className = "warn"; }
 }
 
 async function swipe(direction) {
@@ -535,3 +549,4 @@ function wireRemoteControls() {
 }
 
 load();
+watchScreen();

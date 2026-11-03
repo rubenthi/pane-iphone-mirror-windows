@@ -95,13 +95,15 @@ function touchCoords(e) {
 
 async function postJson(path, payload) {
   try {
-    await mirrorFetch(path, {
+    if (window.parent !== window && window.parent.paneControl) return await window.parent.paneControl(path, payload);
+    const response = await mirrorFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-  } catch (_) {
-    /* stream may be down */
+    if (!response.ok) throw new Error(`Control failed (${response.status})`);
+  } catch (error) {
+    setStatus(error.message, "warn");
   }
 }
 

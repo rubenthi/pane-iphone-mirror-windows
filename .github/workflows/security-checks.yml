@@ -3,6 +3,7 @@ name: Pane security checks
 on:
   push:
     branches:
+      - main
       - "security/**"
   pull_request:
 
@@ -21,3 +22,4 @@ jobs:
         run: |
           node --check handset/web/app.js
           node --check handset/web/mirror.js
+          node --test tests/ui.test.cjs

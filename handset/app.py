@@ -17,6 +17,8 @@ import webbrowser
 from pathlib import Path
 
 from handset.server import HOST, PORT, Handler, SingleServer
+from handset import updater
+from handset.screen import stop_screen
 
 PORT = int(os.environ.get("PANE_PORT", PORT))
 URL = f"http://{HOST}:{PORT}/"
@@ -76,6 +78,7 @@ def main() -> None:
 
     server = SingleServer((HOST, PORT), Handler)
     threading.Thread(target=server.serve_forever, name="pane-server", daemon=True).start()
+    threading.Thread(target=updater.check, name="pane-update", daemon=True).start()
     logging.info("Pane listening on %s", URL)
 
     window = _open_window()
@@ -85,6 +88,9 @@ def main() -> None:
             time.sleep(3600)
     window.wait()
     server.shutdown()
+    server.server_close()
+    stop_screen()
+    updater.apply_on_exit()
     os._exit(0)
 
 

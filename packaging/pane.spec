@@ -12,7 +12,7 @@ SHIMS = ROOT / "handset" / "_shims"
 sys.path.insert(0, str(SHIMS))
 os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SHIMS), os.environ.get("PYTHONPATH")]))
 
-datas = [(str(ROOT / "handset" / "web"), "handset/web")]
+datas = [(str(ROOT / "handset" / "web"), "handset/web"), (str(ROOT / "handset" / "install_update.ps1"), "handset")]
 binaries = []
 hiddenimports = ["lzfse", "lzss", "handset.server", "handset.screen", "handset.wifi"]
 
@@ -29,7 +29,6 @@ for package in (
     "opack2",
     "bpylist2",
     "construct",
-    "srptools",
     "ifaddr",
 ):
     package_datas, package_binaries, package_hidden = collect_all(package)
