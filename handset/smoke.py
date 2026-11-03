@@ -78,6 +78,8 @@ def verify_native_window():
                 assert shell.u.GetWindowRgn(shell.handle,region)>0
                 assert not shell.g.PtInRegion(region,0,0), 'Corner should be outside shaped window'
                 assert shell.g.PtInRegion(region,100,100), 'Phone body missing from region'
+                assert not shell.g.PtInRegion(region,state['phone_width']+3,100), 'Gap outside phone must not capture input'
+                assert not shell.g.PtInRegion(region,state['width']-1,1), 'Blank rectangular corner must not capture input'
             finally:
                 shell.g.DeleteObject(region)
         except Exception as error:

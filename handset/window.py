@@ -12,18 +12,21 @@ import os
 import threading
 import time
 
-DRAWER = 356
-TAB = 28
+DRAWER = 416
+TAB = 60
 DEFAULT_ASPECT = 390 / 844
 
 
-def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080):
+def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
     extra = DRAWER if expanded else TAB
-    height = max(240, min(760, work_height - 48, (work_width - extra - 48 - 16) / aspect + 16))
-    width = round((height - 16) * aspect) + 16
-    return {'phone_width': width, 'height': round(height), 'width': width + extra, 'expanded': expanded}
+    height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - 6) / aspect + 6))
+    width = round((height - 6) * aspect) + 6
+    rail_scale = min(1, max(.15, (height-112)/288))
+    rail_top = max(52, (height-288*rail_scale)/2)
+    return {'phone_width': width, 'height': round(height), 'width': width + extra, 'expanded': expanded,
+            'rail_scale': rail_scale, 'rail_top': rail_top}
 
 
 class FloatingWindow:
@@ -32,6 +35,9 @@ class FloatingWindow:
         self.expanded = False
         self.aspect = DEFAULT_ASPECT
         self.pinned = False
+        self.preferred_height = 760
+        self.menu_open = False
+        self.maximized = False
         self._lock = threading.RLock()
         self._geometry = dimensions()
         if os.name != 'nt':
@@ -55,6 +61,8 @@ class FloatingWindow:
             'PostMessageW': ([W.HWND, W.UINT, W.WPARAM, W.LPARAM], W.BOOL),
             'GetCursorPos': ([ctypes.POINTER(W.POINT)], W.BOOL),
             'SystemParametersInfoW': ([W.UINT, W.UINT, ctypes.c_void_p, W.UINT], W.BOOL),
+            'MonitorFromWindow': ([W.HWND, W.DWORD], W.HANDLE),
+            'GetMonitorInfoW': ([W.HANDLE, ctypes.c_void_p], W.BOOL),
         }
         for name, (args, result) in signatures.items():
             fn = getattr(self.u, name); fn.argtypes = args; fn.restype = result
@@ -83,22 +91,34 @@ class FloatingWindow:
                 self.handle = matches[0]
                 style = self.u.GetWindowLongPtrW(self.handle, -16)
                 self.u.SetWindowLongPtrW(self.handle, -16, style & ~0x00CF0000)  # caption, sizing frame, min/max/system menu
+                # Remove the separate DWM frame/shadow: the region below is
+                # the actual hit-test boundary of the phone and control rail.
+                dwm = ctypes.WinDLL('dwmapi')
+                dwm.DwmSetWindowAttribute.argtypes = [W.HWND, W.DWORD, ctypes.c_void_p, W.DWORD]
+                for attribute, value in ((2, 1), (33, 1), (34, 0xFFFFFFFE)):
+                    setting = W.DWORD(value)
+                    dwm.DwmSetWindowAttribute(self.handle, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
                 self.layout(False, DEFAULT_ASPECT)
                 return True
             time.sleep(.1)
         return False
 
     def status(self):
-        return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned}
+        return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
 
     def layout(self, expanded, aspect):
         with self._lock:
-            geometry = dimensions(aspect, expanded)
+            geometry = dimensions(aspect, expanded, preferred_height=self.preferred_height)
             if self.handle:
                 scale = (self.u.GetDpiForWindow(self.handle) or 96) / 96
                 work = W.RECT()
                 self.u.SystemParametersInfoW(48, 0, ctypes.byref(work), 0)
-                geometry = dimensions(aspect, expanded, (work.right-work.left)/scale, (work.bottom-work.top)/scale)
+                class MonitorInfo(ctypes.Structure):
+                    _fields_ = [('size', W.DWORD), ('monitor', W.RECT), ('work', W.RECT), ('flags', W.DWORD)]
+                info = MonitorInfo(); info.size = ctypes.sizeof(info)
+                if self.u.GetMonitorInfoW(self.u.MonitorFromWindow(self.handle, 2), ctypes.byref(info)):
+                    work = info.work
+                geometry = dimensions(aspect, expanded, (work.right-work.left)/scale, (work.bottom-work.top)/scale, self.preferred_height)
                 rect = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(rect))
                 width, height = round(geometry['width']*scale), round(geometry['height']*scale)
                 x = min(max(rect.left, work.left), work.right-width)
@@ -107,10 +127,17 @@ class FloatingWindow:
                 def rounded(left, top, right, bottom, radius):
                     return self.g.CreateRoundRectRgn(*(round(v*scale) for v in (left, top, right, bottom, radius*2, radius*2)))
                 pw, h = geometry['phone_width'], geometry['height']
-                region = rounded(0, 0, pw, h, 48)
-                parts = [rounded(pw-12, h/2-38, pw+TAB, h/2+38, 14)]
+                region = rounded(0, 0, pw, h, 44)
+                parts = [rounded(pw+8, 12, pw+52, 46, 13)]
+                parts.append(rounded(pw+8, h-42, pw+52, h-8, 13))
+                if self.menu_open:
+                    parts.append(rounded(pw+8, 46, pw+52, 158, 13))
+                rail_top, rail_scale = geometry['rail_top'], geometry['rail_scale']
+                for index in range(7):
+                    top = rail_top + (index*40 + (4 if index >= 2 else 0) + (8 if index > 2 else 0))*rail_scale
+                    parts.append(rounded(pw+8, top, pw+8+44*rail_scale, top+(40 if index==2 else 36)*rail_scale, 12*rail_scale))
                 if expanded:
-                    parts.append(rounded(pw+12, 0, geometry['width'], h, 24))
+                    parts.append(rounded(pw+72, 0, geometry['width'], h, 24))
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)
@@ -122,6 +149,20 @@ class FloatingWindow:
 
     def command(self, payload):
         action = payload.get('action')
+        if action == 'resize':
+            height = payload.get('height')
+            if type(height) not in (float, int) or not math.isfinite(height) or not 360 <= height <= 10000:
+                raise ValueError('Invalid window height.')
+            self.preferred_height = height
+            self.maximized = False
+            return self.layout(self.expanded, self.aspect)
+        if action == 'maximize':
+            self.maximized = not self.maximized
+            self.preferred_height = 10000 if self.maximized else 760
+            return self.layout(self.expanded, self.aspect)
+        if action == 'window-menu':
+            self.menu_open = payload.get('open') is True
+            return self.layout(self.expanded, self.aspect)
         if action == 'layout':
             return self.layout(payload.get('expanded', self.expanded), payload.get('aspect', self.aspect))
         if action not in ('drag', 'minimize', 'close', 'pin', 'focus'):

@@ -291,6 +291,7 @@ function renderScreen(screen) {
   if (!screen) return;
   if (screen.update) document.querySelector("#update-note").textContent = `Pane ${screen.update.version} · ${screen.update.note || screen.update.phase}`;
   const mirroring = screen.phase === "running";
+  document.querySelectorAll(".rail-navigation button:not(#drawer-toggle)").forEach(button=>button.disabled=!mirroring);
   const selectedStream = screen.udid === selectedUdid && screen.transport === transport;
   if (mirroring) {
     workspace.classList.add("is-live");

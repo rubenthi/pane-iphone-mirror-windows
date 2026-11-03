@@ -1,14 +1,14 @@
-Pane 1.2.1 for Windows x64
+Pane 1.3.0 for Windows x64
 
-- Floating, rounded phone window with a horizontally expanding connection sidebar, pinning, and display-aspect adaptation.
-- Expandable iOS 27 setup guide covering prerequisites, USB, Trust, Developer Mode, input control, and optional Wi-Fi pairing. Includes optional AltStore Classic installation directions when Developer Mode is missing.
-- Public device compatibility and verification records distinguish detected metadata from tested mirroring and control.
-- Native WebView2 renderer, window-region and drawer integration tests, plus retained installer and updater failure-path tests. Native layout tests adapt to smaller hosted Windows desktops; v1.2.0 stopped before publication and its tag is preserved.
+- Fixed the Windows HEVC decoder cropping the phone to 1280 x 720. Decoder dimensions now come from the stream SPS and update when in-band parameter sets change. Full 1328 x 2896 USB and Wi-Fi video was observed on iPhone19,3 / iOS 27.0.1.
+- Fixed Wi-Fi discovery's incompatible callback signature and Windows IPv6 adapter scope names. Existing pairing records are preserved.
+- Blue glass side controls with tooltips: volume above the sidebar arrow; Home, app switcher, Notifications and Control Center below it.
+- Removed hover controls, status messages and decorative Home bar from the phone surface. Status lives in the sidebar.
+- Drag the top-right three-line handle to move Pane; hover it for minimize, maximize/restore and close. Drag the bottom-right resize grip to resize while preserving the display aspect ratio.
+- Native window regions follow the rounded phone, individual side controls and expanded drawer. Empty corners and gaps are outside the input region.
+- Mouse-wheel and trackpad scrolling over the video becomes a bounded iPhone swipe. Sidebar scrolling stays local.
+- Audio is intentionally not included, as requested. Sound remains on the iPhone.
 
-Requires Windows x64 and Microsoft Edge WebView2 Runtime. Apple Devices and a supported iPhone are needed for phone features. Browser fallback is available if the native renderer cannot start. The window follows display aspect ratio, not an exact physical bezel or cutout for every model.
+Includes regression coverage for HEVC dimensions and rotation configuration, Wi-Fi signatures and scopes, native resize/menu/region behavior, full-frame rendering and wheel-to-touch mapping. Physical pointer accuracy and scrolling still require confirmation on the phone; simulated input checks do not establish physical acceptance.
 
-Existing Pane 1.1.1 checks this fork on startup, stages the verified release, and installs it after Pane closes, retaining a backup. New installs: download install.ps1 and run powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Version 1.2.1.
-
-USB discovery and Developer Mode metadata were observed for iPhone19,3 / iOS 27.0.1. Physical video, keyboard/mouse control, Wi-Fi pairing, and the AltStore workaround have not been verified. This executable is not code-signed.
-
-Rollback: close Pane and restore a retained Pane.exe.backup-* over Pane.exe. Disconnect networking temporarily if you do not want the older version to check for updates.
+The iOS 27 setup guide, including optional AltStore Classic directions, remains available. Install with install.ps1 -Version 1.3.0, or start the existing installed Pane, wait for the verified update, close it normally and reopen. The updater retains a rollback executable.

@@ -1,6 +1,6 @@
 import math
 import unittest
-from handset.window import dimensions, DRAWER, TAB, DEFAULT_ASPECT
+from handset.window import dimensions, DRAWER, TAB, DEFAULT_ASPECT, FloatingWindow
 
 
 class WindowLayoutTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class WindowLayoutTests(unittest.TestCase):
                 layout = dimensions(aspect, expanded, 1280, 720)
                 self.assertLessEqual(layout['width'], 1280)
                 self.assertLessEqual(layout['height'], 720)
-                self.assertAlmostEqual((layout['phone_width']-16)/(layout['height']-16), aspect, delta=.01)
+                self.assertAlmostEqual((layout['phone_width']-6)/(layout['height']-6), aspect, delta=.01)
 
     def test_bad_dimensions_do_not_reach_native_api(self):
         for aspect in (None, True, [], float('nan'), float('inf'), -.1, 99):
@@ -25,3 +25,13 @@ class WindowLayoutTests(unittest.TestCase):
                 dimensions(aspect)
         with self.assertRaises(ValueError):
             dimensions(DEFAULT_ASPECT, 'yes')
+
+    def test_resize_and_maximize_preserve_aspect(self):
+        shell=FloatingWindow()
+        small=shell.command({'action':'resize','height':500})
+        self.assertEqual(small['height'],500)
+        self.assertAlmostEqual((small['phone_width']-6)/(small['height']-6),DEFAULT_ASPECT,delta=.002)
+        self.assertTrue(shell.command({'action':'maximize'})['maximized'])
+        self.assertFalse(shell.command({'action':'maximize'})['maximized'])
+        for height in (None,True,float('nan'),-1,10001):
+            with self.assertRaises(ValueError):shell.command({'action':'resize','height':height})

@@ -54,3 +54,6 @@ body {
 .mirror-status.warn {
   color: #ff9f0a;
 }
+
+/* Status is shown in the connection drawer, never over the phone touch surface. */
+.mirror-status{display:none}

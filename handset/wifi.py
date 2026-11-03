@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import socket
 import struct
 from typing import Optional
@@ -20,13 +21,33 @@ _MDNS_PORT = 5353
 _bonjour_patched = False
 
 
-def _local_ipv4() -> list[str]:
+def scoped_address(ip: str, interface: str | None) -> str:
+    if not interface or not ip.lower().startswith('fe80:'):
+        return ip
+    # Windows interface names are long GUID paths. Winsock requires the
+    # numeric zone index; passing the name falls into IDNA hostname parsing.
+    zone = interface
+    if os.name == 'nt' and not interface.isdecimal():
+        try:
+            zone = socket.if_nametoindex(interface)
+        except OSError:
+            import ifaddr
+            adapter = next((a for a in ifaddr.get_adapters() if interface in (a.name, a.nice_name)), None)
+            if adapter is None or not adapter.index:
+                raise OSError('Cannot resolve the network adapter for the iPhone IPv6 address.')
+            zone = adapter.index
+    return f'{ip}%{zone}'
+
+
+def _local_ipv4(skip_interfaces: tuple[str, ...] = ()) -> list[str]:
     try:
         import ifaddr
     except ImportError:
         return []
     found = []
     for adapter in ifaddr.get_adapters():
+        if str(adapter.name).startswith(skip_interfaces) or str(adapter.nice_name).startswith(skip_interfaces):
+            continue
         for ip in adapter.ips:
             if isinstance(ip.ip, str) and not ip.ip.startswith("127."):
                 found.append(ip.ip)
@@ -57,15 +78,15 @@ def _patch_bonjour() -> None:
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, struct.pack("=4s4s", group, socket.inet_aton(ip)))
         return transport, sock
 
-    async def send_query_all(transports, pkt):
-        sent = await original_send(transports, pkt)
+    async def send_query_all(transports, pkt, skip_interfaces=()):
+        sent = await original_send(transports, pkt, skip_interfaces)
         for _, sock in transports:
             if sock.family != socket.AF_INET:
                 continue
             # Queries must leave from port 5353 so replies come back to the
             # listening socket; send synchronously so each one uses its own
             # egress interface.
-            for ip in _local_ipv4():
+            for ip in _local_ipv4(skip_interfaces):
                 with contextlib.suppress(OSError):
                     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ip))
                     sock.sendto(pkt, (_MDNS_GROUP, _MDNS_PORT))
@@ -74,6 +95,7 @@ def _patch_bonjour() -> None:
 
     bonjour._bind_ipv4 = bind_ipv4
     bonjour._send_query_all = send_query_all
+    bonjour.Address.full_ip = property(lambda address: scoped_address(address.ip, address.iface))
     _bonjour_patched = True
 
 

@@ -146,3 +146,8 @@ Pane is licensed under the [GNU General Public License v3.0](LICENSE).
 Not affiliated with or endorsed by Apple Inc. iPhone, iOS and AirPlay are trademarks of Apple Inc.
 
 See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published checksums and the verified 1.1.1 → 1.2.1 updater transition.
+
+
+### Floating controls in 1.3.0
+
+Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag the bottom-right resize grip to resize the phone proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. Scroll the mouse wheel or trackpad over the mirrored picture to swipe; the sidebar scrolls independently. Audio is not included.

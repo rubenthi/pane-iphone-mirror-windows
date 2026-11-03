@@ -46,6 +46,7 @@ let abortStream = null;
 
 function setStatus(text, tone) {
   if (!statusEl) return;
+  window.parent.postMessage({source:"pane-stream-status",text,tone},location.origin);
   statusEl.textContent = text;
   statusEl.className = "mirror-status" + (tone ? ` ${tone}` : "");
 }
@@ -180,7 +181,7 @@ function releaseActive() {
 // Listen on the whole document so a drag can start on the black margin just
 // below the picture; coordinates clamp onto the screen edge.
 document.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || wheelBusy) return;
   e.preventDefault();
   canvas.focus({ preventScroll: true });
   try {
@@ -215,6 +216,38 @@ function onUp(e) {
   e.preventDefault();
   lastCoords = touchCoords(e);
   releaseActive();
+}
+
+// Translate wheel/trackpad movement only on the phone picture into a bounded swipe.
+let wheelBusy = false;
+let wheelX = 0, wheelY = 0;
+let wheelPoint = null;
+canvas.addEventListener('wheel', event => {
+  event.preventDefault();
+  if(activePointer !== null || !lastFrame) return;
+  const unit=event.deltaMode===1?16:event.deltaMode===2?canvas.getBoundingClientRect().height:1;
+  wheelX=Math.max(-500,Math.min(500,wheelX+event.deltaX*unit));
+  wheelY=Math.max(-500,Math.min(500,wheelY+event.deltaY*unit));
+  wheelPoint={clientX:event.clientX,clientY:event.clientY};
+  if(!wheelBusy) pumpWheel();
+},{passive:false});
+async function pumpWheel(){
+  wheelBusy=true;
+  try{
+    while(wheelX || wheelY){
+      const rect=canvas.getBoundingClientRect();
+      const dx=wheelX,dy=wheelY;wheelX=wheelY=0;
+      const start={clientX:Math.max(rect.left+rect.width*.2,Math.min(rect.right-rect.width*.2,wheelPoint.clientX)),clientY:Math.max(rect.top+rect.height*.2,Math.min(rect.bottom-rect.height*.2,wheelPoint.clientY))};
+      const end={clientX:Math.max(rect.left+1,Math.min(rect.right-1,start.clientX-dx)),clientY:Math.max(rect.top+1,Math.min(rect.bottom-1,start.clientY-dy))};
+      let coordinates=touchCoords(start);
+      await postJson('/touch',{type:'contact',...coordinates});
+      try{for(let i=1;i<=8;i++){
+        await new Promise(resolve=>setTimeout(resolve,12));
+        coordinates=touchCoords({clientX:start.clientX+(end.clientX-start.clientX)*i/8,clientY:start.clientY+(end.clientY-start.clientY)*i/8});
+        await postJson('/touch',{type:'contact',...coordinates});
+      }}finally{await postJson('/touch',{type:'release',...coordinates});}
+    }
+  }finally{wheelBusy=false;}
 }
 
 window.addEventListener("pointermove", onMove);
@@ -280,7 +313,7 @@ async function fetchCodecWithRetry() {
         continue;
       }
       const description = Uint8Array.from(atob(info.description), (c) => c.charCodeAt(0));
-      return { codec: info.codec.trim(), description };
+      return { codec: info.codec.trim(), description, geometry: PaneHEVC.dimensions(description) };
     } catch (err) {
       lastErr = err.message || String(err);
     }
@@ -323,7 +356,7 @@ function drawPending() {
   lastFrameLandscape = landscape;
   try {
     drawFrame(f);
-    if (frameCount === 1) setStatus("Live", "ok");
+    if (frameCount > 0) setStatus("Live", "ok");
   } catch (_) {}
   if (lastFrame && lastFrame !== f) {
     try {
@@ -352,11 +385,11 @@ async function run(generation) {
     }
   }, 1000);
 
-  const { codec, description } = await fetchCodecWithRetry();
+  const { codec, description, geometry } = await fetchCodecWithRetry();
   if (generation !== runGeneration) return;
 
-  const decoderConfig = { codec, description, optimizeForLatency: true };
-  const support = await VideoDecoder.isConfigSupported({ codec, description });
+  let decoderConfig = { codec, description, codedWidth: geometry.width, codedHeight: geometry.height, optimizeForLatency: true };
+  const support = await VideoDecoder.isConfigSupported(decoderConfig);
   if (!support.supported) {
     setStatus("This browser cannot decode the iPhone video stream.", "warn");
     return;
@@ -445,6 +478,13 @@ async function run(generation) {
       const type = buf[4];
       const data = buf.slice(5, 4 + len);
       buf = buf.subarray(4 + len);
+
+      const updated = PaneHEVC.update(decoderConfig.description, data);
+      if (updated) {
+        const size = PaneHEVC.dimensions(updated);
+        decoderConfig = {...decoderConfig, description:updated, codedWidth:size.width, codedHeight:size.height};
+        needsResync = true;
+      }
 
       if (type === 2) {
         try {

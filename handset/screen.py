@@ -191,7 +191,7 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
     )
 
     async def _eager_video_only() -> None:
-        # Windows cannot decode AAC-ELD; skip eager audio so logs stay clean and
+        # Audio is intentionally disabled; keep this video-only so logs stay clean and
         # the display tunnel still comes up for /codec and /stream.bin.
         try:
             await server._ensure_fresh_stream(force=False)
