@@ -287,10 +287,15 @@ function renderDetail(device) {
   if (list.childElementCount) detail.append(list);
 }
 
+let lastScreenSignature = "";
 function renderScreen(screen) {
   if (!screen) return;
+  const signature = JSON.stringify([screen, selectedUdid, transport]);
+  if (signature === lastScreenSignature) return;
+  lastScreenSignature = signature;
   if (screen.update) document.querySelector("#update-note").textContent = `Pane ${screen.update.version} · ${screen.update.note || screen.update.phase}`;
   const mirroring = screen.phase === "running";
+  document.querySelector("#paste-iphone").disabled = !mirroring;
   document.querySelectorAll(".rail-navigation button:not(#drawer-toggle)").forEach(button=>button.disabled=!mirroring);
   const selectedStream = screen.udid === selectedUdid && screen.transport === transport;
   if (mirroring) {
@@ -309,13 +314,15 @@ function renderScreen(screen) {
     return;
   }
 
+  window.paneReleaseKeys?.();
+  window.paneSetTyping?.(false);
   workspace.classList.remove("is-live");
   phoneShell.classList.remove("live");
   remotePanel.hidden = true;
   restartScreen.hidden = true;
   kbToggle.hidden = true;
   screenView.hidden = true;
-  screenView.src = "about:blank";
+  if (screenView.getAttribute("src") !== "about:blank") screenView.src = "about:blank";
   showScreen.textContent = "Start mirroring";
   showScreen.disabled = false;
 
@@ -468,6 +475,7 @@ const GESTURES = {
 // A swipe-up injected over USB is too slow for iOS to treat as the Home
 // gesture, so Home and the app switcher use the Home button instead.
 async function pressHome(times) {
+  window.paneSetTyping?.(false);
   for (let i = 0; i < times; i++) {
     if (i) await sleep(120);
     await mirrorPost("/button", { name: "home", state: "press" });
@@ -507,19 +515,40 @@ function toggleFullscreen() {
 }
 
 window.handsetKeyboardOn = true;
+window.paneTyping = false;
+window.paneSetTyping = on => {
+  window.paneTyping = !!on;
+  const button = document.querySelector('#typing-mode');
+  button.setAttribute('aria-pressed', String(on));
+  button.textContent = on ? 'Typing · Space inserts a space (F2)' : 'Navigation · Space goes Home (F2)';
+};
+document.querySelector('#typing-mode').addEventListener('click', () => {
+  window.paneReleaseKeys?.();
+  window.paneSetTyping(!window.paneTyping);
+});
 
 function setKeyboard(on) {
   window.handsetKeyboardOn = on;
   kbToggle.setAttribute("aria-pressed", String(on));
   kbToggle.textContent = `⌨ Keyboard → iPhone: ${on ? "On" : "Off"}`;
   kbToggle.classList.toggle("is-on", on);
-  if (!on) keyboard.releaseAll();
+  if (!on) window.paneReleaseKeys?.();
 }
 
 const keyboard = window.HandsetKeys.attach({
   post: (payload) => mirrorPost("/key", payload),
   enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live"),
+  home: () => pressHome(1),
+  typing: () => window.paneTyping,
+  setTyping: on => window.paneSetTyping(on),
+  paste: payload => window.panePaste(payload),
+  report: error => { screenNote.textContent = error.message; },
 });
+
+window.paneReleaseKeys = () => {
+  keyboard.releaseAll();
+  mirrorMessage('release-keys');
+};
 
 function wireRemoteControls() {
   kbToggle.addEventListener("click", () => setKeyboard(!window.handsetKeyboardOn));
@@ -541,6 +570,7 @@ function wireRemoteControls() {
   document.querySelectorAll("[data-btn]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const name = btn.dataset.btn;
+      if (name === "home") window.paneSetTyping(false);
       if (name) mirrorPost("/button", { name, state: "press" });
     });
   });

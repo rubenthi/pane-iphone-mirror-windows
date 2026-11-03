@@ -27,7 +27,7 @@ async function mirrorFetch(path, options = {}) {
   return fetch(`${MIRROR}${path}`, { ...options, headers });
 }
 const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+const ctx = canvas.getContext("2d", { alpha: false });
 const statusEl = document.getElementById("mirror-status");
 
 let visualRotation = 0;
@@ -44,8 +44,10 @@ let frameCount = 0;
 let runGeneration = 0;
 let abortStream = null;
 
+let previousStatus = "";
 function setStatus(text, tone) {
-  if (!statusEl) return;
+  if (!statusEl || previousStatus === `${tone}:${text}`) return;
+  previousStatus = `${tone}:${text}`;
   window.parent.postMessage({source:"pane-stream-status",text,tone},location.origin);
   statusEl.textContent = text;
   statusEl.className = "mirror-status" + (tone ? ` ${tone}` : "");
@@ -154,6 +156,7 @@ const SWITCHER_HOLD_MS = 450;
 let edgeSwipe = null;
 
 async function pressHome(times = 1) {
+  window.parent.paneSetTyping?.(false);
   for (let i = 0; i < times; i++) {
     if (i) await new Promise((r) => setTimeout(r, 120));
     await postJson("/button", { name: "home", state: "press" });
@@ -266,7 +269,12 @@ document.addEventListener("contextmenu", (e) => {
   pressHome();
 });
 
-window.HandsetKeys.attach({
+const mirrorKeyboard = window.HandsetKeys.attach({
+  home: () => pressHome(),
+  typing: () => window.parent.paneTyping !== false,
+  setTyping: on => window.parent.paneSetTyping?.(on),
+  paste: payload => window.parent.panePaste(payload),
+  report: error => setStatus(error.message, 'warn'),
   post: (payload) => postJson("/key", payload),
   enabled: () => {
     try {
@@ -281,6 +289,7 @@ window.addEventListener("message", (e) => {
   if (e.origin !== window.location.origin) return;
   const d = e.data;
   if (!d || d.source !== "handset") return;
+  if (d.cmd === "release-keys") { mirrorKeyboard.releaseAll(); return; }
   if (d.cmd === "rotate") {
     visualRotation = (visualRotation + (d.deg || 0)) % 360;
     if (lastFrame) drawFrame(lastFrame);
@@ -296,13 +305,14 @@ window.addEventListener("message", (e) => {
   }
 });
 
-async function fetchCodecWithRetry() {
+async function fetchCodecWithRetry(signal) {
   const delays = [200, 500, 1000, 2000, 3000, 4000];
   let lastErr = "";
   for (let attempt = 0; attempt <= delays.length; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, delays[attempt - 1]));
     try {
-      const resp = await mirrorFetch("/codec", { cache: "no-store" });
+      signal.throwIfAborted();
+      const resp = await mirrorFetch("/codec", { cache: "no-store", signal });
       if (!resp.ok) {
         lastErr = `HTTP ${resp.status}`;
         continue;
@@ -315,6 +325,7 @@ async function fetchCodecWithRetry() {
       const description = Uint8Array.from(atob(info.description), (c) => c.charCodeAt(0));
       return { codec: info.codec.trim(), description, geometry: PaneHEVC.dimensions(description) };
     } catch (err) {
+      if (signal.aborted) throw err;
       lastErr = err.message || String(err);
     }
   }
@@ -366,7 +377,27 @@ function drawPending() {
   lastFrame = f;
 }
 
-async function run(generation) {
+function waitForDecoder(decoder, signal) {
+  if (decoder.decodeQueueSize <= 8) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      decoder.removeEventListener('dequeue', check);
+      signal.removeEventListener('abort', abort);
+    };
+    const check = () => {
+      if (decoder.state !== 'configured' || decoder.decodeQueueSize <= 4) { cleanup(); resolve(); }
+    };
+    const abort = () => { cleanup(); reject(signal.reason); };
+    const timer = setTimeout(() => { cleanup(); reject(Error('Video decoder stalled — restart the screen.')); }, 3000);
+    decoder.addEventListener('dequeue', check);
+    signal.addEventListener('abort', abort, {once:true});
+    if (signal.aborted) abort(); else check();
+  });
+}
+
+async function run(generation, signal) {
+  let decoder = null, reader = null;
   setStatus("Connecting to stream…");
   frameCount = 0;
   const startedAt = performance.now();
@@ -385,11 +416,16 @@ async function run(generation) {
     }
   }, 1000);
 
-  const { codec, description, geometry } = await fetchCodecWithRetry();
+  try {
+  const { codec, description, geometry } = await fetchCodecWithRetry(signal);
   if (generation !== runGeneration) return;
 
   let decoderConfig = { codec, description, codedWidth: geometry.width, codedHeight: geometry.height, optimizeForLatency: true };
-  const support = await VideoDecoder.isConfigSupported(decoderConfig);
+  let support = await VideoDecoder.isConfigSupported({...decoderConfig, hardwareAcceleration:"prefer-hardware"});
+  if (support.supported) decoderConfig = support.config;
+  else support = await VideoDecoder.isConfigSupported(decoderConfig);
+  signal.throwIfAborted();
+  if (generation !== runGeneration) return;
   if (!support.supported) {
     setStatus("This browser cannot decode the iPhone video stream.", "warn");
     return;
@@ -401,6 +437,7 @@ async function run(generation) {
   const buildDecoder = () =>
     new VideoDecoder({
       output: (frame) => {
+        if (generation !== runGeneration || signal.aborted) { frame.close(); return; }
         if (pendingFrame) {
           try {
             pendingFrame.close();
@@ -414,6 +451,7 @@ async function run(generation) {
         frameCount += 1;
       },
       error: () => {
+        if (generation !== runGeneration || signal.aborted) return;
         needsResync = true;
         if (!autoRestartUsed && frameCount < 5) {
           autoRestartUsed = true;
@@ -424,7 +462,7 @@ async function run(generation) {
       },
     });
 
-  let decoder = buildDecoder();
+  decoder = buildDecoder();
   decoder.configure(decoderConfig);
   setStatus("Waiting for video…");
 
@@ -435,12 +473,14 @@ async function run(generation) {
     if (a > 0) {
       setStatus(`Waiting for video stream (retry ${a})…`);
       await new Promise((r) => setTimeout(r, streamDelays[a - 1]));
+      signal.throwIfAborted();
+      if (generation !== runGeneration) return;
       if (a === 2) {
         await mirrorFetch("/pli", { method: "POST", cache: "no-store" }).catch(() => {});
       }
     }
     try {
-      const r = await mirrorFetch("/stream.bin", { cache: "no-store" });
+      const r = await mirrorFetch("/stream.bin", { cache: "no-store", signal });
       if (r.ok) {
         resp = r;
         break;
@@ -451,6 +491,7 @@ async function run(generation) {
       }
       setStatus(`Stream error (HTTP ${r.status})`, "warn");
     } catch (err) {
+      if (signal.aborted) throw err;
       setStatus(err.message || "Stream unreachable", "warn");
     }
   }
@@ -459,25 +500,20 @@ async function run(generation) {
     return;
   }
 
-  const reader = resp.body.getReader();
-  abortStream = () => reader.cancel().catch(() => {});
-  let buf = new Uint8Array(0);
+  reader = resp.body.getReader();
+  const packets = new PanePacketReader();
   let timestamp = 0;
   let gotKey = false;
 
   while (generation === runGeneration) {
+    await waitForDecoder(decoder, signal);
+    signal.throwIfAborted();
     const { value, done } = await reader.read();
     if (done) break;
-    const merged = new Uint8Array(buf.length + value.length);
-    merged.set(buf);
-    merged.set(value, buf.length);
-    buf = merged;
-    while (buf.length >= 4) {
-      const len = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
-      if (buf.length < 4 + len) break;
-      const type = buf[4];
-      const data = buf.slice(5, 4 + len);
-      buf = buf.subarray(4 + len);
+    packets.push(value, packet => {
+      const type = packet[0];
+      if (type > 2) throw Error('Invalid video packet type');
+      const data = packet.subarray(1);
 
       const updated = PaneHEVC.update(decoderConfig.description, data);
       if (updated) {
@@ -505,7 +541,7 @@ async function run(generation) {
           needsResync = false;
         }
       }
-      if (!gotKey || needsResync) continue;
+      if (!gotKey || needsResync) return;
       if (decoder.state !== "configured") {
         try {
           decoder.close();
@@ -513,7 +549,7 @@ async function run(generation) {
         decoder = buildDecoder();
         decoder.configure(decoderConfig);
         needsResync = true;
-        continue;
+        return;
       }
       try {
         decoder.decode(
@@ -527,10 +563,16 @@ async function run(generation) {
       } catch (_) {
         needsResync = true;
       }
-    }
+    });
   }
+  packets.finish();
   if (generation === runGeneration) {
     setStatus("Stream ended — press Restart screen", "warn");
+  }
+  } finally {
+    window.clearInterval(watchdog);
+    if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    if (decoder && decoder.state !== "closed") decoder.close();
   }
 }
 
@@ -554,9 +596,18 @@ function beginRun() {
     lastFrame = null;
   }
   frameCount = 0;
-  run(generation).catch((err) => {
-    setStatus(err.message || "Mirror failed", "warn");
+  const controller = new AbortController();
+  abortStream = () => controller.abort();
+  run(generation, controller.signal).catch((err) => {
+    if (generation === runGeneration && !controller.signal.aborted)
+      setStatus(err.message || "Mirror failed", "warn");
   });
 }
 
+window.addEventListener("pagehide", () => {
+  runGeneration++;
+  abortStream?.();
+  pendingFrame?.close(); pendingFrame = null;
+  lastFrame?.close(); lastFrame = null;
+});
 beginRun();

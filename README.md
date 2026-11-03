@@ -30,7 +30,7 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 - 📱 **Live iPhone screen mirroring on Windows**: low-latency HEVC (H.265) video decoded in hardware.
 - 🖱️ **Control the iPhone with your mouse**: tap, long-press, drag and swipe directly on the mirrored screen.
-- ⌨️ **Type on your iPhone with the PC keyboard**: real keystrokes, including Ctrl+C / Ctrl+V / Ctrl+A / Ctrl+Z mapped to ⌘ shortcuts.
+- ⌨️ **Type on your iPhone with the PC keyboard**: real keystrokes, with Ctrl+V transferring laptop text/PNG clipboard contents before pasting, and Ctrl+C / Ctrl+A / Ctrl+Z mapped to ⌘ shortcuts.
 - 📶 **Wireless mirroring over Wi-Fi**: pair once over USB, then go cable-free on the same network.
 - 🔌 **USB cable mode**: the most stable, lowest-latency connection.
 - 🏠 **Hardware buttons & gestures**: Home, App Switcher, Lock/Power, Siri, Volume up/down, Mute, Notification Center, Control Center, back/forward swipes.
@@ -76,7 +76,11 @@ This repository is public and licensed under GPL-3.0: anyone can view or fork it
 | Swipe up from the bottom edge | Go Home (pause before releasing for the App Switcher) |
 | Right click | Home |
 | Keyboard | Types into the focused text field |
-| Ctrl + C / V / X / A / Z | Copy / Paste / Cut / Select all / Undo |
+| Ctrl + V | Transfer laptop text/PNG clipboard, then paste into the focused iPhone app |
+| Ctrl + C / X / A / Z | iPhone Copy / Cut / Select all / Undo |
+| Space in navigation mode | Home |
+| F2 | Switch navigation / typing mode (typed characters also enter typing mode) |
+| Esc or Home | Return to navigation mode |
 | Side buttons on the frame | Lock, Volume up/down, Mute |
 
 ## Requirements
@@ -150,4 +154,40 @@ See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published c
 
 ### Floating controls in 1.3.0
 
-Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag the bottom-right resize grip to resize the phone proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. Scroll the mouse wheel or trackpad over the mirrored picture to swipe; the sidebar scrolls independently. Audio is not included.
+Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag the bottom-right resize grip to resize the phone proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the menu, visible over the phone only when expanded. Scroll the mouse wheel or trackpad over the mirrored picture to swipe; the sidebar scrolls independently. See the 1.4.0 development features below for Bluetooth laptop audio.
+
+### 1.4.0 development: overlay menu, laptop audio, input and efficiency
+
+The connection menu now overlays the phone. Expanding it does not widen or resize
+the native window; the phone and side controls remain the window boundary.
+
+- **Laptop audio:** Windows Bluetooth A2DP reception, independent of USB/Wi-Fi
+  video. Pair the iPhone in Windows Bluetooth settings, open Pane's menu, choose
+  **Find devices**, select the iPhone and **Connect audio**. Select the laptop in
+  the iPhone's audio output picker and **Speakers** as the Windows output.
+  Media should then route to the laptop instead of the iPhone speaker. Pane
+  reports the Bluetooth connection state; it cannot verify the physical speaker
+  route. Calls, alarms, protected media and application-specific routing are not
+  guaranteed. Requires Windows 10 version 2004+ or Windows 11 and compatible
+  Bluetooth hardware. The pinned USB audio decoder is macOS-only, so this does
+  not claim native USB/Wi-Fi audio support. Starting video no longer turns the
+  iPhone's media volume down.
+- **Space → Home:** active in navigation mode. Typing a character enters typing
+  mode and preserves spaces. F2 explicitly switches modes; Esc or Home returns
+  to navigation. Remote text-field focus is not exposed by the video stream;
+  use F2 before leading spaces. Local text fields and IME composition keep
+  their normal keyboard behavior.
+- **Laptop → iPhone paste:** copy text or a PNG, focus an iPhone text field or
+  image-capable app, and press Ctrl+V. The menu also has a Paste button.
+  Clipboard content is sent only on an explicit paste, with a 1 MiB limit.
+  Unicode and multiline text use the actual iPhone pasteboard, not simulated
+  character typing. Rich text/files are not supported. Ctrl+C still copies
+  within the iPhone; this is not automatic bidirectional clipboard sync.
+- **Efficiency:** reusable bounded packet storage, zero extra payload slices,
+  hardware decoding preference with software fallback, decoder backpressure and
+  cleanup, unchanged-status suppression, coalesced window dragging, and no
+  backdrop blur over live video. Resolution and source frame rate are unchanged.
+
+See [implementation and verification notes](docs/desktop-features.md). Development
+builds are attached to the Windows development workflow on pull requests; they
+are not automatically published through the release updater.

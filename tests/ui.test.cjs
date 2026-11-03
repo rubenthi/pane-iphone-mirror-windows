@@ -26,3 +26,26 @@ test('late responses from previous selections are ignored', () => {
   assert.equal(generations.current(old), false);
   assert.equal(generations.current(latest), true);
 });
+
+test('clipboard transaction cannot interleave with keyboard input and releases after failure', async () => {
+  const seen = [];
+  const queue = context.window.createPaneControlQueue(async (path, payload) => {
+    seen.push([path, payload]);
+    if(path === '/fail') throw Error('clipboard unavailable');
+  });
+  const paste = queue.transaction(async send => {
+    await send('/clipboard', {text:'hello 🌍'});
+    try { await send('/key', {usages:[227,25]}); }
+    finally { await send('/key', {usages:[]}); }
+  });
+  const key = queue('/key', {usages:[4]});
+  await Promise.all([paste,key]);
+  assert.deepEqual(seen.map(x=>x[0]), ['/clipboard','/key','/key','/key']);
+  assert.deepEqual(seen[2][1].usages, []);
+  await assert.rejects(queue.transaction(async send => {
+    await send('/fail', {});
+    await send('/key', {usages:[227,25]});
+  }));
+  await queue('/key', {usages:[]});
+  assert.equal(seen.filter(x=>x[1].usages?.includes(25)).length,1);
+});

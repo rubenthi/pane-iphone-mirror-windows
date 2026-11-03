@@ -16,6 +16,8 @@
     document.body.classList.toggle('browser-mode', !native);
     for (const id of ['pin-window','minimize-window','maximize-window','close-window']) document.querySelector('#'+id).hidden = !native;
     drawer.hidden = !expanded;
+    document.querySelector('#phone-screen').inert = expanded;
+    if (expanded) window.paneReleaseKeys?.();
     arrow.setAttribute('aria-expanded', String(expanded));
     arrow.setAttribute('aria-label', expanded ? 'Close connection sidebar' : 'Open connection sidebar');
     arrow.title=arrow.getAttribute('aria-label');
@@ -36,14 +38,19 @@
     if (document.querySelector('#run-guide').hidden) document.querySelector('#toggle-guide').click();
   });
   document.querySelectorAll('#drag-handle,[data-window-drag]').forEach(handle => {
-    let origin=null;
+    let origin=null, moveBusy=false, wantedMove=null;
+    async function flushMove(){
+      moveBusy=true;
+      try{while(wantedMove){const next=wantedMove;wantedMove=null;await command('move',next);}}
+      finally{moveBusy=false;}
+    }
     handle.addEventListener('pointerdown', event => {
       if (event.button !== 0 || !native) return;
       event.preventDefault(); origin={x:event.screenX,y:event.screenY};
       handle.setPointerCapture(event.pointerId); command('drag').catch(() => {origin=null;});
     });
     handle.addEventListener('pointermove',event=>{
-      if(origin) command('move',{dx:event.screenX-origin.x,dy:event.screenY-origin.y}).catch(()=>{});
+      if(origin){wantedMove={dx:event.screenX-origin.x,dy:event.screenY-origin.y};if(!moveBusy)flushMove().catch(()=>{});}
     });
     const end=()=>{origin=null;};
     handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);handle.addEventListener('lostpointercapture',end);

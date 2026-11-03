@@ -1,12 +1,17 @@
 // One queue shared by the main window and its iframe preserves input order.
 window.createPaneControlQueue = function (send) {
   let chain = Promise.resolve();
-  return (path, payload) => {
-    const snapshot = JSON.stringify(payload);
-    const result = chain.then(() => send(path, JSON.parse(snapshot)));
+  const transaction = operation => {
+    const result = chain.then(() => operation(send));
     chain = result.catch(() => {});
     return result;
   };
+  const queue = (path, payload) => {
+    const snapshot = JSON.stringify(payload);
+    return transaction(send => send(path, JSON.parse(snapshot)));
+  };
+  queue.transaction = transaction;
+  return queue;
 };
 window.createPaneGeneration = function () {
   let generation = 0;

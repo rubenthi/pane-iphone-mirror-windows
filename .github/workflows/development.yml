@@ -1,0 +1,36 @@
+name: Windows development build
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-build.txt
+      - run: python -m unittest discover -s tests -v
+      - run: node --test tests/ui.test.cjs tests/hevc.test.cjs tests/packets.test.cjs tests/keys.test.cjs tests/clipboard.test.cjs
+      - name: Validate Windows audio helper syntax and API availability
+        shell: powershell
+        run: |
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path handset/audio.ps1), [ref]$null, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          $audioType = [Windows.Media.Audio.AudioPlaybackConnection,Windows.Media.Audio,ContentType=WindowsRuntime]
+          if (-not $audioType) { throw 'Windows Bluetooth audio API missing' }
+          $discovery = & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File handset/audio.ps1 -Mode List | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $null -eq $discovery.devices) { throw ('Audio device enumeration failed: ' + $discovery.error) }
+      - run: npm ci --ignore-scripts
+      - run: npm run test:native
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Pane-development
+          path: |
+            dist/Pane.exe
+            test-results/

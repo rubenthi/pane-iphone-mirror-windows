@@ -29,7 +29,7 @@
     return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
   }
 
-  function attach({ post, enabled }) {
+  function attach({ post, enabled, home, typing = () => true, setTyping = () => {}, paste, report = () => {} }) {
     const pressed = new Set();
     let chain = Promise.resolve();
 
@@ -47,7 +47,24 @@
       "keydown",
       (e) => {
         if (!enabled() || isTextField(e.target)) return;
+        if (['Space','Enter'].includes(e.code) && e.target.closest?.('button,a,summary,[role="button"]')) return;
+        if (e.isComposing || e.keyCode === 229) return;
         const shortcut = e.ctrlKey || e.metaKey;
+        if (e.code === "F2" && !shortcut && !e.altKey) {
+          e.preventDefault();
+          if (!e.repeat) { releaseAll(); setTyping(!typing()); }
+          return;
+        }
+        if (e.code === "Space" && !typing() && home && !shortcut && !e.altKey && !e.shiftKey) {
+          e.preventDefault(); e.stopPropagation();
+          if (!e.repeat) { releaseAll(); chain = chain.then(home).catch(report); }
+          return;
+        }
+        // Let the browser deliver a real paste event with clipboard data.
+        if (paste && shortcut && e.code === "KeyV") return;
+        if (paste && e.shiftKey && e.code === "Insert") return;
+        if (!shortcut && !e.altKey && e.key?.length === 1 && e.code !== "Space") setTyping(true);
+        if (e.code === "Escape") setTyping(false);
         if (shortcut && !CMD_KEYS.has(e.code)) return;
         const usage = CODE_TO_HID[e.code];
         if (usage === undefined) return;
@@ -79,6 +96,17 @@
       true,
     );
 
+    document.addEventListener("paste", event => {
+      if (!paste || !enabled() || isTextField(event.target)) return;
+      event.preventDefault();
+      releaseAll();
+      setTyping(true);
+      // ClipboardData is only available while handling the event.
+      const png = [...(event.clipboardData?.files || [])].find(file => file.type === "image/png");
+      const text = event.clipboardData?.getData("text/plain") || "";
+      const payload = png ? {image:png} : {text};
+      chain = chain.then(() => paste(payload)).catch(report);
+    });
     window.addEventListener("blur", releaseAll);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") releaseAll();

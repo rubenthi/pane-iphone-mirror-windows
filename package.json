@@ -1,6 +1,6 @@
 {
   "name": "pane-desktop-tests",
   "private": true,
-  "scripts": { "test": "node --test tests/ui.test.cjs tests/hevc.test.cjs", "test:native": "node tests/native-ui.cjs" },
+  "scripts": { "test": "node --test tests/ui.test.cjs tests/hevc.test.cjs tests/packets.test.cjs tests/keys.test.cjs tests/clipboard.test.cjs", "test:native": "node tests/native-ui.cjs" },
   "devDependencies": { "playwright": "1.64.1" }
 }
