@@ -99,8 +99,17 @@ def apply_on_exit():
     if _STAGED is None:
         return
     helper, exe, checksum = _STAGED
-    subprocess.Popen([
-        'powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-        '-File', str(helper), '-SourcePath', str(exe), '-Destination', sys.executable,
-        '-Sha256', checksum, '-WaitProcessId', str(os.getpid()),
-    ], creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS)
+    # Do not inherit PowerShell 7's module search path into Windows PowerShell 5.
+    # It can prevent Get-FileHash and other built-in cmdlets from loading.
+    environment = os.environ.copy()
+    for key in list(environment):
+        if key.upper() == 'PSMODULEPATH':
+            del environment[key]
+    powershell = str(Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe')
+    with (helper.parent / 'update-helper.log').open('ab') as log:
+        subprocess.Popen([
+            powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-File', str(helper), '-SourcePath', str(exe), '-Destination', sys.executable,
+            '-Sha256', checksum, '-WaitProcessId', str(os.getpid()),
+        ], creationflags=subprocess.CREATE_NO_WINDOW, stdin=subprocess.DEVNULL,
+           stdout=log, stderr=subprocess.STDOUT, close_fds=True, env=environment)

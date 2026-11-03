@@ -41,7 +41,7 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## This fork's release and updater
 
-Version 1.1.0 reconstructs the previously uncommitted cloud work. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
+Version 1.1.1 reconstructs the previously uncommitted cloud work. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
 
 The pinned screen-streaming library requires **iOS 27+**. The older iOS 17+ claim described tunnel support, not verified display streaming. Physical USB/Wi-Fi mirroring and input must be tested with a compatible phone; automated tests use local stand-ins.
 
