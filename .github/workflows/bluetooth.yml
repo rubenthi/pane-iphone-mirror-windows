@@ -1,0 +1,27 @@
+name: Bluetooth build and protocol checks
+on:
+  push:
+    branches: [main, 'bluetooth/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet run --project native/Pane.ProtocolTests -c Release
+      - run: ./packaging/build-bluetooth.ps1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run test:bluetooth
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pane-Bluetooth-helper-unverified-hardware
+          path: native/Pane.Bluetooth.exe

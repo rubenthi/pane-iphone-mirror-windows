@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pane — iPhone</title><link rel="icon" href="/logo.svg"><link rel="stylesheet" href="/app.css"></head>
-<body>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pane — iPhone</title><link rel="icon" href="/logo.svg"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/bluetooth.css"></head>
+<body data-control-mode="developer">
 <main id="workspace" class="workspace">
   <section id="phone-shell" class="phone" aria-label="Floating iPhone">
     <div id="phone-screen" class="phone-screen">
@@ -12,6 +12,14 @@
         <button id="welcome-setup" class="primary">Connect your iPhone <span aria-hidden="true">↗</span></button>
         <span class="privacy-note">Local connection · No account</span>
       </div>
+      <section id="bluetooth-view" hidden aria-label="Bluetooth cursor and AirPlay video">
+        <h2>Bluetooth cursor</h2>
+        <p>Connect your iPhone to an AirPlay receiver on this PC. Use this pad for relative cursor movement; enable AssistiveTouch on the iPhone.</p>
+        <video id="bt-video" autoplay muted playsinline hidden></video>
+        <div id="bt-pad" role="application" aria-label="iPhone Bluetooth trackpad" aria-disabled="true" tabindex="0">Move · click · scroll</div>
+        <p id="bt-cursor-target" role="status">Open the sidebar to pair your iPhone.</p>
+        <div class="bt-actions"><button id="bt-capture">Show receiver window</button><button id="bt-stop-capture">Stop preview</button></div>
+      </section>
       <iframe id="screen-view" title="iPhone screen" hidden src="about:blank"></iframe>
       <button id="fs-exit" class="fs-exit">Exit full screen</button>
     </div>
@@ -26,6 +34,35 @@
 
     <div class="drawer-scroll">    <div class="phone-status"><span id="pill-connection" class="pill">Checking connection</span><span id="pill-device" hidden></span><p id="screen-note" role="status"></p></div>
 <p id="stream-note" role="status"></p>
+      <label for="control-mode">Control method</label>
+      <select id="control-mode"><option value="developer">Developer Mode · existing touch &amp; keyboard</option><option value="bluetooth">Bluetooth cursor · AirPlay receiver</option></select>
+      <section class="bluetooth-card" aria-label="Bluetooth connections">
+        <h2>Bluetooth</h2>
+        <p>Audio and notifications work with either control method. Select the same iPhone in each list; Windows exposes separate device IDs.</p>
+        <div class="bt-actions"><button data-bt-settings="bluetooth">Pair in Windows</button><button data-bt-action="devices">Refresh Bluetooth devices</button></div>
+        <p id="bt-note" role="status"></p>
+        <h3>Media audio → laptop</h3>
+        <label for="bt-audio-device">Audio device</label><select id="bt-audio-device"><option value="">Select a device…</option></select>
+        <div class="bt-actions"><button data-bt-action="audio.connect" data-bt-device="bt-audio-device">Connect audio</button><button data-bt-action="audio.disconnect">Disconnect audio</button><button data-bt-settings="sound">Laptop sound settings</button></div>
+        <p id="bt-audio-state" role="status">Not connected</p>
+        <p>On iPhone, select this PC as the audio output. In Windows Sound, select the laptop speakers or headphones. Keep the iPhone media volume audible. If Bluetooth disconnects, iOS may return audio to the phone.</p>
+        <h3>Calls &amp; laptop microphone</h3>
+        <p>Use Phone Link → Calls, pair this iPhone, and choose the laptop microphone in Windows. This is a separate Bluetooth hands-free connection. Pane's media audio connection does not carry microphone input, and arbitrary iPhone apps cannot use the laptop microphone through this feature.</p>
+        <div class="bt-actions"><button data-bt-settings="calls">Open Phone Link for calls</button></div>
+        <h3>Bluetooth cursor</h3>
+        <div class="bt-actions"><button data-bt-action="cursor.start">Start cursor pairing</button><button data-bt-action="cursor.stop">Stop cursor</button></div>
+        <p>Choose Bluetooth cursor above. Start pairing here, then pair this PC in iPhone Bluetooth settings. Enable Settings → Accessibility → Touch → AssistiveTouch. A compatible BLE peripheral adapter is required.</p>
+        <label for="bt-cursor-device">Connected cursor client</label><select id="bt-cursor-device"><option value="">Select a device…</option></select>
+        <div class="bt-actions"><button data-bt-action="cursor.select" data-bt-device="bt-cursor-device">Use selected cursor client</button></div>
+        <p id="bt-cursor-state" role="status">Not started</p>
+        <h3>iPhone notifications</h3>
+        <label for="bt-notification-device">Notification device</label><select id="bt-notification-device"><option value="">Select a device…</option></select>
+        <div class="bt-actions"><button data-bt-action="notifications.connect" data-bt-device="bt-notification-device">Connect notifications</button><button data-bt-action="notifications.disconnect">Disconnect &amp; clear</button></div>
+        <p id="bt-notification-state" role="status">Not connected</p>
+        <p>On iPhone, allow Share System Notifications for this PC. Notification previews appear below while Pane is open; iOS controls which details it shares. They are kept in memory and cleared on disconnect.</p>
+        <ul id="bt-notifications" aria-label="iPhone notifications"></ul>
+        <details><summary>AirPlay setup (no Developer Mode)</summary><ol><li>Install and start a Windows AirPlay receiver of your choice.</li><li>Keep the iPhone and laptop on the same trusted Wi-Fi network.</li><li>On iPhone, open Control Center → Screen Mirroring and select that receiver.</li><li>Use its window beside Pane, or press Show receiver window and select only the receiver window in the browser picker.</li><li>For Bluetooth sound, select this PC as the iPhone audio output. Some AirPlay receivers keep ownership of audio; use their video-only option if available. Do not mute the phone's media stream.</li></ol><p>Pane does not bundle an AirPlay receiver. Preview capture depends on WebView2/browser permissions; Edge or Chrome can be used at http://127.0.0.1:8765. Cursor control is relative, not an absolute touchscreen. Developer Mode retains the original gestures and keyboard.</p></details>
+      </section>
       <div class="segmented" role="radiogroup" aria-label="Connection"><button data-transport="usb" role="radio" aria-checked="true">↯ &nbsp; Cable</button><button data-transport="wifi" role="radio" aria-checked="false">◉ &nbsp; Wi-Fi</button></div>
       <section class="connection-summary"><span class="status-dot"></span><div><h3 id="connection-title">Start with a cable</h3><p id="connection-description">A direct connection. A simple first step.</p></div></section>
       <div class="wifi-row"><span id="wifi-state">Wi-Fi not set up</span><button id="wifi-pair" class="text-button">Set up Wi-Fi</button></div>
@@ -88,5 +125,5 @@
     </div>
   </aside>
 </main>
-<script src="/controls.js"></script><script src="/keys.js"></script><script src="/app.js"></script><script src="/shell.js"></script>
+<script src="/controls.js"></script><script src="/keys.js"></script><script src="/app.js"></script><script src="/shell.js"></script><script src="/bluetooth.js"></script>
 </body></html>

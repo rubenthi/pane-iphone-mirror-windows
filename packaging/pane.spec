@@ -14,6 +14,10 @@ os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SHIMS), os.environ.
 
 datas = [(str(ROOT / "handset" / "web"), "handset/web"), (str(ROOT / "handset" / "install_update.ps1"), "handset")]
 binaries = []
+bluetooth_helper = ROOT / "native" / "Pane.Bluetooth.exe"
+if not bluetooth_helper.is_file():
+    raise RuntimeError("Build native/Pane.Bluetooth.exe with packaging/build-bluetooth.ps1 first")
+datas.append((str(bluetooth_helper), "native"))
 hiddenimports = ["lzfse", "lzss", "handset.server", "handset.screen", "handset.wifi", "webview.platforms.winforms", "webview.platforms.edgechromium"]
 
 # pymobiledevice3 imports most services lazily and ships viewer assets,

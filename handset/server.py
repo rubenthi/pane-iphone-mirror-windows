@@ -16,6 +16,7 @@ from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
 from handset import updater
 from handset.window import shell
+from handset.bluetooth import bridge as bluetooth, open_settings
 
 ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
@@ -66,6 +67,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth":
             self._json({"token": ACCESS_TOKEN})
             return
+        if path == "/api/bluetooth":
+            self._json(bluetooth.status())
+            return
         if path == MIRROR_PREFIX or path.startswith(f"{MIRROR_PREFIX}/"):
             self._proxy_mirror("GET", 0)
             return
@@ -109,6 +113,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._json({"error": "Expected a JSON object."}, status=400)
+            return
+        if path in {"/api/bluetooth", "/api/bluetooth/settings", "/api/screen/stop"}:
+            try:
+                if path == "/api/bluetooth/settings":
+                    result = open_settings(payload.get("target"))
+                elif path == "/api/screen/stop":
+                    from handset.screen import stop_screen
+                    if not stop_screen():
+                        raise RuntimeError("The developer stream is still closing. Try again shortly.")
+                    result = {"ok": True}
+                else:
+                    result = bluetooth.command(payload)
+                self._json(result)
+            except (ValueError, OSError, RuntimeError) as error:
+                self._json({"error": str(error)}, status=400)
             return
         if path == '/api/window':
             try:
