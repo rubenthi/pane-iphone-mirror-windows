@@ -22,6 +22,8 @@ jobs:
           if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           $audioType = [Windows.Media.Audio.AudioPlaybackConnection,Windows.Media.Audio,ContentType=WindowsRuntime]
           if (-not $audioType) { throw 'Windows Bluetooth audio API missing' }
+          $discovery = & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File handset/audio.ps1 -Mode List | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $null -eq $discovery.devices) { throw ('Audio device enumeration failed: ' + $discovery.error) }
       - run: npm ci --ignore-scripts
       - run: npm run test:native
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1

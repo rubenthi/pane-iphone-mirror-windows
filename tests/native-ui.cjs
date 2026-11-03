@@ -114,6 +114,22 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(touches[0].type,'contact');assert.equal(touches.at(-1).type,'release');assert.ok(touches.at(-1).y<touches[0].y);
     assert.equal(await page.locator('#phone-shell .phone-toolbar').count(),0);
     assert.equal(await page.locator('#phone-shell .phone-status').count(),0);
+    await picture.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true,cancelable:true})));
+    await page.waitForFunction(()=>window.testTouches.some(t=>t.path==='/button'&&t.name==='home'));
+    await page.evaluate(()=>{
+      window.testTouches=[];
+      window.paneControl=window.createPaneControlQueue(async(path,payload)=>window.testTouches.push({path,...payload}));
+    });
+    await picture.evaluate(()=>{
+      const data=new DataTransfer();data.setData('text/plain','Laptop → iPhone 🌍');
+      document.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));
+    });
+    await page.waitForFunction(()=>window.testTouches.some(t=>t.path==='/key'&&t.usages?.includes(25)));
+    const clipboard=await page.evaluate(()=>window.testTouches);
+    assert.equal(clipboard.find(t=>t.path==='/clipboard').text,'Laptop → iPhone 🌍');
+    await picture.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true,cancelable:true})));
+    await page.waitForFunction(()=>window.testTouches.some(t=>t.path==='/key'&&t.usages?.includes(44)));
+    assert.equal(await page.evaluate(()=>window.paneTyping),true);
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
     fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));

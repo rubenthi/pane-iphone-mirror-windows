@@ -570,6 +570,7 @@ function wireRemoteControls() {
   document.querySelectorAll("[data-btn]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const name = btn.dataset.btn;
+      if (name === "home") window.paneSetTyping(false);
       if (name) mirrorPost("/button", { name, state: "press" });
     });
   });

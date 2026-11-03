@@ -88,3 +88,12 @@ The development workspace failed to provision during authoring. Local Python,
 Windows and physical-device tests were therefore unavailable; CI results are
 reported separately in the pull request. No hardware performance or audio
 acceptance result is claimed here.
+
+## CI evidence from the initial development commit
+
+Commit 7cf12c7 passed the Ubuntu guard job (47 Python tests passed, 4 platform
+skips; 17 JavaScript tests passed). The Windows job also passed its Python and
+JavaScript tests, PowerShell syntax/API check and native WebView2 UI check.
+Follow-up commits additionally exercise real Windows device enumeration and
+the mirror iframe's Home/paste event bridge. Consult the PR checks for the final
+commit and packaged artifact; the hardware acceptance steps above remain open.

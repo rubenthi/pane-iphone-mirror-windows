@@ -424,6 +424,8 @@ async function run(generation, signal) {
   let support = await VideoDecoder.isConfigSupported({...decoderConfig, hardwareAcceleration:"prefer-hardware"});
   if (support.supported) decoderConfig = support.config;
   else support = await VideoDecoder.isConfigSupported(decoderConfig);
+  signal.throwIfAborted();
+  if (generation !== runGeneration) return;
   if (!support.supported) {
     setStatus("This browser cannot decode the iPhone video stream.", "warn");
     return;
