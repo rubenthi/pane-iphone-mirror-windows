@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import base64
 import json
+import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -16,6 +17,7 @@ from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
 from handset import updater
 from handset.window import shell
+from handset.audio import audio
 
 ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
@@ -69,6 +71,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == MIRROR_PREFIX or path.startswith(f"{MIRROR_PREFIX}/"):
             self._proxy_mirror("GET", 0)
             return
+        if path == "/api/audio":
+            self._json(audio.probe())
+            return
         if path == "/api/status":
             payload = snapshot()
             payload["screen"] = screen_status()
@@ -109,6 +114,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._json({"error": "Expected a JSON object."}, status=400)
+            return
+        if path == '/api/audio':
+            try:
+                action = payload.get('action')
+                if action == 'devices':
+                    result = audio.refresh()
+                elif action == 'connect':
+                    result = audio.connect(payload.get('id'))
+                elif action == 'stop':
+                    result = audio.stop()
+                else:
+                    raise ValueError('Unknown audio action.')
+                self._json(result)
+            except (ValueError, OSError, subprocess.SubprocessError) as error:
+                self._json({'error': str(error)}, status=400)
             return
         if path == '/api/window':
             try:

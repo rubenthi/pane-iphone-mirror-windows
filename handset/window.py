@@ -12,7 +12,7 @@ import os
 import threading
 import time
 
-DRAWER = 416
+DRAWER = 60  # The drawer overlays the phone; native bounds never expand.
 TAB = 60
 DEFAULT_ASPECT = 390 / 844
 
@@ -20,7 +20,7 @@ DEFAULT_ASPECT = 390 / 844
 def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
-    extra = DRAWER if expanded else TAB
+    extra = TAB
     height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - 6) / aspect + 6))
     width = round((height - 6) * aspect) + 6
     rail_scale = min(1, max(.15, (height-112)/288))
@@ -136,8 +136,6 @@ class FloatingWindow:
                 for index in range(7):
                     top = rail_top + (index*40 + (4 if index >= 2 else 0) + (8 if index > 2 else 0))*rail_scale
                     parts.append(rounded(pw+8, top, pw+8+44*rail_scale, top+(40 if index==2 else 36)*rail_scale, 12*rail_scale))
-                if expanded:
-                    parts.append(rounded(pw+72, 0, geometry['width'], h, 24))
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)

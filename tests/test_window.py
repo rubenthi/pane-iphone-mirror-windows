@@ -4,12 +4,13 @@ from handset.window import dimensions, DRAWER, TAB, DEFAULT_ASPECT, FloatingWind
 
 
 class WindowLayoutTests(unittest.TestCase):
-    def test_sidebar_expands_horizontally_without_resizing_phone(self):
+    def test_overlay_preserves_native_bounds_and_phone_size(self):
         compact = dimensions()
         expanded = dimensions(expanded=True)
         self.assertEqual(compact['phone_width'], expanded['phone_width'])
         self.assertEqual(compact['height'], expanded['height'])
-        self.assertEqual(expanded['width'] - compact['width'], DRAWER - TAB)
+        self.assertEqual(expanded['width'], compact['width'])
+        self.assertTrue(expanded['expanded'])
 
     def test_display_aspect_and_landscape_fit_work_area(self):
         for aspect in (390/844, 430/932, 844/390, 2.5):

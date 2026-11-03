@@ -1,22 +1,41 @@
+"""Starting video must not mute the independent Bluetooth audio route."""
 import asyncio
+import sys
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-from handset.screen import _silence_phone
+from unittest.mock import AsyncMock, patch
+from handset import screen
 
 
-class StartVolumeTests(unittest.TestCase):
-    def test_every_new_session_lowers_volume_sequentially(self):
-        button = AsyncMock(return_value=(200, b'ok'))
-        server = SimpleNamespace(_handle_button=button)
-        asyncio.run(_silence_phone(server))
-        self.assertEqual(button.await_count, 20)
-        self.assertTrue(all(c.args == (b'{"name":"volume-down","state":"press"}',) for c in button.await_args_list))
-        asyncio.run(_silence_phone(server))
-        self.assertEqual(button.await_count, 40)
-
-    def test_rejection_stops_and_reports_failure(self):
-        button = AsyncMock(return_value=(503, b'not ready'))
-        with self.assertRaises(RuntimeError):
-            asyncio.run(_silence_phone(SimpleNamespace(_handle_button=button)))
-        self.assertEqual(button.await_count, 1)
+class StartVolumeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_video_starts_without_volume_commands_and_cancels_server(self):
+        ready = asyncio.Event()
+        stopped = asyncio.Event()
+        class Server:
+            def __init__(self, *args, **kwargs):
+                self._ensure_fresh_stream = AsyncMock()
+                self._handle_button = AsyncMock(side_effect=AssertionError('Must not mute media'))
+                instances.append(self)
+            async def serve(self):
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    stopped.set()
+        instances = []
+        def state(**values):
+            if values.get('phase') == 'running':
+                ready.set()
+        writer = SimpleNamespace(close=lambda: None, wait_closed=AsyncMock())
+        fake = SimpleNamespace(is_media_in_use_error=lambda error: False)
+        with patch.dict(sys.modules, {'pymobiledevice3.remote.core_device.display_service': fake}), \
+             patch('asyncio.open_connection', AsyncMock(return_value=(None, writer))), \
+             patch.object(screen, '_set', side_effect=state):
+            task = asyncio.create_task(screen._stream(None, 'phone', Server))
+            try:
+                await asyncio.wait_for(ready.wait(), 2)
+                instances[0]._ensure_fresh_stream.assert_awaited_once()
+                instances[0]._handle_button.assert_not_called()
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        self.assertTrue(stopped.is_set())

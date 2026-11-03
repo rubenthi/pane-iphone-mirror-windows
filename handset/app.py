@@ -17,6 +17,7 @@ from pathlib import Path
 from handset.server import HOST, PORT, Handler, SingleServer
 from handset import updater
 from handset.screen import stop_screen
+from handset.audio import audio
 
 PORT = int(os.environ.get("PANE_PORT", PORT))
 URL = f"http://{HOST}:{PORT}/"
@@ -96,6 +97,7 @@ def main() -> None:
         window.wait()
     server.shutdown()
     server.server_close()
+    audio.stop()
     stop_screen()
     updater.apply_on_exit()
     os._exit(0)

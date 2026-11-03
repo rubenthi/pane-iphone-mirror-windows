@@ -22,4 +22,8 @@ jobs:
         run: |
           node --check handset/web/app.js
           node --check handset/web/mirror.js
-          node --test tests/ui.test.cjs
+          node --check handset/web/keys.js
+          node --check handset/web/shell.js
+          node --check handset/web/clipboard.js
+          node --check handset/web/audio.js
+          node --test tests/ui.test.cjs tests/hevc.test.cjs tests/packets.test.cjs tests/keys.test.cjs tests/clipboard.test.cjs
