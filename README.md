@@ -1,3 +1,12 @@
+> **Pane Bluetooth — local development fork.** Forked from
+> `rubenthi/pane-iphone-mirror-windows` at `a4e7aa1`, with both Developer Mode
+> control and Bluetooth cursor control available in the sidebar. This archive
+> is source code, not a released `Pane.exe`. A separate GitHub repository has not
+> been published. Automatic updates are disabled so the original project's
+> release cannot overwrite this fork. Follow [the Bluetooth setup/build guide](docs/bluetooth.md).
+> The original project's README and license are retained below for attribution;
+> its download/release links and clone command refer to the original project.
+
 <p align="center">
   <img src="handset/web/logo.svg" width="120" alt="Pane logo - iPhone screen mirroring for Windows">
 </p>
