@@ -78,7 +78,8 @@ class ScreenTests(unittest.TestCase):
 
 
 class UpdateTests(unittest.TestCase):
-    def manifest(self, version='1.2.0'):
+    def manifest(self, version=None):
+        version = version or f'{int(updater.VERSION.split(".")[0]) + 1}.0.0'
         return dict(version=version, url=f'{updater.BASE}/download/v{version}/Pane.exe', sha256='a'*64, size=123)
 
     def test_only_newer_versions_are_selected(self):

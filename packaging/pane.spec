@@ -14,7 +14,7 @@ os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SHIMS), os.environ.
 
 datas = [(str(ROOT / "handset" / "web"), "handset/web"), (str(ROOT / "handset" / "install_update.ps1"), "handset")]
 binaries = []
-hiddenimports = ["lzfse", "lzss", "handset.server", "handset.screen", "handset.wifi"]
+hiddenimports = ["lzfse", "lzss", "handset.server", "handset.screen", "handset.wifi", "webview.platforms.winforms", "webview.platforms.edgechromium"]
 
 # pymobiledevice3 imports most services lazily and ships viewer assets,
 # certificates and native helpers, so these are bundled whole.
@@ -30,6 +30,7 @@ for package in (
     "bpylist2",
     "construct",
     "ifaddr",
+    "webview",
 ):
     package_datas, package_binaries, package_hidden = collect_all(package)
     datas += package_datas

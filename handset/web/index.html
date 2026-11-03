@@ -1,83 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Mirror and control your iPhone screen on Windows over USB.">
-  <title>Pane — your iPhone on Windows</title>
-  <link rel="icon" type="image/svg+xml" href="/logo.svg">
-  <link rel="stylesheet" href="/app.css">
-</head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pane — iPhone</title><link rel="icon" href="/logo.svg"><link rel="stylesheet" href="/app.css"></head>
 <body>
-  <div class="app">
-    <header class="bar">
-      <div class="brand">
-        <img class="brand-mark" src="/logo.svg" alt="" aria-hidden="true">
-        <div>
-          <p class="brand-name">Pane</p>
-          <p class="brand-tag">Your iPhone, on Windows</p>
-        </div>
+<main id="workspace" class="workspace">
+  <section id="phone-shell" class="phone" aria-label="Floating iPhone">
+    <div id="phone-screen" class="phone-screen">
+      <div id="placeholder" class="placeholder">
+        <div class="orb"><img src="/logo.svg" alt="" width="44" height="44"></div>
+        <p class="eyebrow">YOUR PHONE. RIGHT HERE.</p>
+        <h1>A little closer.</h1>
+        <p id="placeholder-hint">Connect your iPhone to bring its screen to your desktop.</p>
+        <button id="welcome-setup" class="primary">Connect your iPhone <span aria-hidden="true">↗</span></button>
+        <span class="privacy-note">Local connection · No account</span>
       </div>
-      <nav class="bar-actions">
-        <button type="button" class="ghost" id="toggle-guide" aria-expanded="false" aria-controls="run-guide">How to run</button>
-        <button type="button" class="ghost" id="refresh" title="Refresh connection">Refresh</button>
-      </nav>
+      <iframe id="screen-view" title="iPhone screen" hidden src="about:blank"></iframe>
+      <button id="fs-exit" class="fs-exit">Exit full screen</button>
+    </div>
+    <header class="phone-toolbar">
+      <button id="drag-handle" class="drag-handle" title="Drag to move Pane">pane<span class="live-dot"></span></button>
+      <div class="window-actions"><button id="pin-window" aria-label="Keep on top" title="Keep on top" aria-pressed="false">⌖</button><button id="minimize-window" title="Minimize" aria-label="Minimize">−</button><button id="close-window" title="Close Pane" aria-label="Close Pane">×</button></div>
     </header>
-
-    <main class="workspace" id="workspace">
-      <div class="mirror-split">
-        <section class="mirror-pane" aria-label="iPhone screen">
-          <div class="stage-meta">
-            <span class="pill" id="pill-connection">Checking…</span>
-            <span class="pill pill-muted" id="pill-device" hidden>No iPhone</span>
-          </div>
-
-          <div class="iphone" id="phone-shell">
-            <button type="button" class="iphone-key key-action" data-btn="mute" title="Action / Mute" aria-label="Mute"></button>
-            <button type="button" class="iphone-key key-volup" data-btn="volume-up" title="Volume up" aria-label="Volume up"></button>
-            <button type="button" class="iphone-key key-voldown" data-btn="volume-down" title="Volume down" aria-label="Volume down"></button>
-            <button type="button" class="iphone-key key-side" data-btn="lock" title="Side button (lock)" aria-label="Side button"></button>
-
-            <div class="iphone-rim">
-              <div class="iphone-bezel">
-                <div class="iphone-screen" id="phone-screen">
-                  <div class="placeholder" id="placeholder">
-                    <div class="placeholder-icon" aria-hidden="true">
-                      <svg viewBox="0 0 48 48" width="48" height="48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="12" y="4" width="24" height="40" rx="4" stroke="currentColor" stroke-width="2"/>
-                        <circle cx="24" cy="38" r="2" fill="currentColor"/>
-                      </svg>
-                    </div>
-                    <p class="placeholder-title">Ready to mirror</p>
-                    <p class="placeholder-hint" id="placeholder-hint">Connect your iPhone, then press Start mirroring.</p>
-                  </div>
-                  <iframe id="screen-view" class="screen-frame" title="iPhone screen" hidden src="about:blank"></iframe>
-                  <div class="iphone-notch" aria-hidden="true"><span class="notch-cam"></span></div>
-                  <button type="button" class="fs-exit" id="fs-exit" title="Exit full screen (Esc)">Exit full screen</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <p class="stage-note" id="screen-note" role="status"></p>
-        </section>
-
-        <aside class="control-pane" aria-label="Device and controls">
-          <section class="card panel-start">
-            <div class="segmented" role="radiogroup" aria-label="Connection">
-              <button type="button" class="seg is-active" data-transport="usb" role="radio" aria-checked="true">Cable</button>
-              <button type="button" class="seg" data-transport="wifi" role="radio" aria-checked="false">Wi‑Fi</button>
-            </div>
-            <div class="wifi-row" id="wifi-row">
-              <span class="wifi-state" id="wifi-state">Wi‑Fi not set up</span>
-              <button type="button" class="ctl ctl-sm" id="wifi-pair">Set up Wi‑Fi</button>
-            </div>
-            <button type="button" class="primary primary-block" id="show-screen">Start mirroring</button>
-            <button type="button" class="ghost ghost-block" id="restart-screen" hidden>Restart screen</button>
-            <button type="button" class="ghost ghost-block kb-toggle" id="kb-toggle" aria-pressed="true" hidden>⌨ Keyboard → iPhone: On</button>
-            <p class="control-hint" id="control-hint">Drag up from the bottom edge for Home; pause before letting go for the app switcher. While mirroring, typing goes straight to the iPhone.</p>
-          </section>
-
+    <div class="phone-status"><span id="pill-connection" class="pill">Checking connection</span><span id="pill-device" hidden></span><p id="screen-note" role="status"></p></div>
+    <div class="home-indicator" aria-hidden="true"></div>
+  </section>
+  <button id="drawer-toggle" class="drawer-toggle" aria-label="Open connection sidebar" aria-expanded="false" aria-controls="connection-drawer"><span><svg width="18" height="24" viewBox="0 0 18 24" aria-hidden="true"><path d="m6 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
+  <aside id="connection-drawer" class="drawer" aria-label="Connection sidebar" hidden>
+    <header class="drawer-heading"><div><p class="eyebrow">PANE / CONNECTION</p><h2>Your iPhone, connected.</h2></div><button id="refresh" class="icon-button" title="Refresh connection" aria-label="Refresh connection">↻</button></header>
+    <div class="drawer-scroll">
+      <div class="segmented" role="radiogroup" aria-label="Connection"><button data-transport="usb" role="radio" aria-checked="true">↯ &nbsp; Cable</button><button data-transport="wifi" role="radio" aria-checked="false">◉ &nbsp; Wi-Fi</button></div>
+      <section class="connection-summary"><span class="status-dot"></span><div><h3 id="connection-title">Start with a cable</h3><p id="connection-description">A direct connection. A simple first step.</p></div></section>
+      <div class="wifi-row"><span id="wifi-state">Wi-Fi not set up</span><button id="wifi-pair" class="text-button">Set up Wi-Fi</button></div>
+      <button id="show-screen" class="primary primary-block">Start mirroring <span aria-hidden="true">↗</span></button>
+      <button id="restart-screen" class="secondary" hidden>Restart screen</button><button id="kb-toggle" class="secondary" aria-pressed="true" hidden>Keyboard → iPhone: On</button>
+      <section class="setup-card" id="setup-card"><p class="eyebrow">FIRST TIME HERE?</p><h3 id="setup-title">Let's get you connected.</h3><p id="setup-description">Everything you need, from the right cable to your first mirror.</p><button id="toggle-guide" class="guide-toggle" aria-expanded="false" aria-controls="run-guide">iOS 27 setup guide <span aria-hidden="true">＋</span></button></section>
+      <section id="run-guide" class="guide" hidden>
+        <div class="guide-intro"><span class="eyebrow">STEP BY STEP</span><h2>Make yourself at home.</h2><p>A complete guide for iOS 27. Keep your iPhone nearby and unlocked.</p></div>
+        <details open><summary><b>01</b> Check the prerequisites</summary><div class="step-body"><ul><li>Windows 10 or 11, 64-bit, with the <a href="https://developer.microsoft.com/microsoft-edge/webview2/" target="_blank" rel="noopener">Microsoft Edge WebView2 Runtime</a>. This powers the floating window. Chrome/Edge is a fallback if the native runtime is unavailable.</li><li>An iPhone running iOS 27 or later. Check <strong>Settings → General → About → iOS Version</strong>. Version eligibility is not a guarantee that your model has been tested.</li><li><a href="https://apps.microsoft.com/detail/9np83lwlpz9k" target="_blank" rel="noopener">Apple Devices from Microsoft Store</a>, opened at least once. It supplies the Apple USB service.</li><li>A data-capable cable matching your phone's port. A charging-only cable will not work.</li><li>Internet for the first developer-image download and Pane updates; the mirror itself stays on your USB/local network.</li></ul><p>No Python, Mac, paid account, jailbreak, or separate iPhone app is needed for the packaged Pane executable.</p></div></details>
+        <details><summary><b>02</b> Connect and trust this PC</summary><div class="step-body"><ol><li>Open Apple Devices on Windows.</li><li>Connect the iPhone directly with the data cable. Unlock it.</li><li>Select the phone in Apple Devices and approve Trust if requested.</li><li>On the phone, tap Trust in the computer-trust prompt and enter your passcode yourself.</li><li>Return here and press Refresh. The device should appear below.</li></ol><p>If it only charges, try another data cable or USB port. If Apple Devices cannot see it, fix that connection before starting Pane.</p><a href="https://support.apple.com/109054" target="_blank" rel="noopener">Apple: trusting a computer ↗</a></div></details>
+        <details><summary><b>03</b> Enable Developer Mode</summary><div class="step-body"><ol><li>On the iPhone, open Settings → Privacy &amp; Security → Developer Mode.</li><li>Enable it, accept the restart, then unlock the phone again.</li><li>Confirm enabling Developer Mode after reboot and enter your passcode if asked.</li><li>Reconnect the cable and keep the phone unlocked.</li></ol><p><strong>Missing the switch?</strong> Apple says it appears after initiating developer pairing or previously pairing with a Mac. Trust the PC first and attempt the connection once. Pane cannot guarantee it will expose the switch. Managed-device restrictions may also require your administrator.</p><details class="altstore-guide"><summary>Developer Mode still missing? Install AltStore Classic</summary><div class="step-body"><p>Installing a development-signed app can help expose Developer Mode. This is an optional workaround, not a guaranteed fix for every iOS 27 device or managed phone. Pane itself does not require AltStore or an Apple Account.</p><ol><li>Read <a href="https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows" target="_blank" rel="noopener">AltStore&#x27;s official Windows installation guide</a>. Choose <strong>AltStore Classic with AltServer</strong>, not AltStore PAL.</li><li>Install the Apple-distributed iTunes and iCloud versions linked by that guide. Its standard instructions exclude Microsoft Store builds; consult its linked troubleshooting alternative if you must retain Store iCloud. Review compatibility before replacing an existing Apple setup.</li><li>Download AltServer for Windows from <a href="https://altstore.io/" target="_blank" rel="noopener">altstore.io</a>, extract its ZIP, run Setup, then launch AltServer as administrator. Permit private-network access if needed on your trusted network.</li><li>Connect and unlock the phone, approve Trust, and enable iTunes Wi-Fi sync.</li><li>From AltServer&#x27;s tray icon, choose <strong>Install AltStore â†’ your iPhone</strong>. Complete Apple Account authentication yourself in AltServer. Never enter those credentials in Pane or a support report.</li><li>Once installed, on the phone open <strong>Settings â†’ General â†’ VPN &amp; Device Management</strong> (the label may vary), and trust your own developer profile. Try opening AltStore.</li><li>Revisit <strong>Settings â†’ Privacy &amp; Security â†’ Developer Mode</strong>. Enable it, restart, and confirm after unlocking. Return to Pane&#x27;s Cable connection.</li></ol><p>If the switch is still missing, do not assume installation succeeded or that restrictions were removed. Check AltStore&#x27;s installation errors and <a href="https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device" target="_blank" rel="noopener">Apple&#x27;s Developer Mode guidance</a>. A managed device may require its administrator. This workaround has not been hardware-verified by this fork on iOS 27.</p><p>If you keep using AltStore with a free Apple Account, sideloaded apps generally require refreshing within seven days; see <a href="https://faq.altstore.io/altstore-classic/your-altstore" target="_blank" rel="noopener">AltStore&#x27;s getting-started guide</a>. That maintenance requirement belongs to AltStore, not Pane&#x27;s Windows updater.</p></div></details><p>Developer Mode enables developer-only capabilities; turn it off when you no longer need them.</p><a href="https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device" target="_blank" rel="noopener">Apple: Developer Mode ↗</a></div></details>
+        <details><summary><b>04</b> Start your first USB mirror</summary><div class="step-body"><ol><li>Choose Cable and select your phone in Device.</li><li>Press Start mirroring. Stay unlocked while the connection opens.</li><li>The first connection may download and mount a matching developer image. Keep internet and USB connected; read the status instead of repeatedly starting new sessions.</li><li>When video appears, try scrolling on a harmless screen. Open Notes and test a short line of text.</li></ol><p>The first real video frame sets Pane's proportions to the connected display. Before then, it uses a standard portrait outline.</p></div></details>
+        <details><summary><b>05</b> Mouse, keyboard &amp; window controls</summary><div class="step-body"><ul><li>Click to tap; drag to swipe. Right-click the mirror for Home.</li><li>With Keyboard → iPhone enabled, focus the mirror and type in an iPhone text field. Ctrl+C/V/X/A/Z map to iPhone command shortcuts.</li><li>The arrow opens or hides this sidebar. Drag the pane label to move the window. The crosshair pins it on top; − minimizes and × closes.</li><li>Use the Controls section for Home, volume, rotation, and fullscreen. Esc exits fullscreen.</li></ul><p>Try input in Notes before sensitive apps. Closing Pane stops the stream; a verified pending update installs after exit.</p></div></details>
+        <details><summary><b>06</b> Optional: pair over Wi-Fi</summary><div class="step-body"><ol><li>Get USB mirroring working first. Keep the trusted cable connected.</li><li>Connect the PC and iPhone to the same trusted Wi-Fi/LAN; avoid isolated guest networks.</li><li>Choose Wi-Fi and press Set up Wi-Fi. Wait for the successful pairing message.</li><li>Unplug USB, keep the phone unlocked, and press Start mirroring with Wi-Fi selected.</li></ol><p>If discovery fails, reconnect USB to confirm pairing. Check that VPNs, router client isolation, or firewall rules are not blocking local discovery. Use a Private Windows network profile only on a network you trust; do not disable the firewall globally.</p></div></details>
+        <details><summary><b>07</b> Troubleshooting &amp; updates</summary><div class="step-body"><ul><li><strong>No device:</strong> reopen Apple Devices, unlock, reconnect, and Refresh. Test a known data cable.</li><li><strong>Black video:</strong> verify Developer Mode, close camera/microphone apps, then try Restart screen. Read the reported error.</li><li><strong>Decoder unavailable:</strong> update the WebView2 Runtime (or Chrome/Edge in fallback mode) and your graphics driver. HEVC/WebCodecs support depends on the browser, GPU and Windows codecs; do not assume a connected device means video is supported.</li><li><strong>Connection lost:</strong> unlock the phone and check the cable/network. Refresh and start again.</li><li><strong>Updates:</strong> Pane checks this public fork on launch, verifies the download, and installs after you close it. Reopen Pane to use the new version; the old executable is retained for rollback.</li></ul><p>Device tests are tracked separately from build tests. <a href="https://github.com/rubenthi/pane-iphone-mirror-windows/blob/main/docs/compatibility.md" target="_blank" rel="noopener">See verified devices and report a result ↗</a></p></div></details>
+      </section>
           <section class="card panel-remote" id="remote-panel" hidden>
             <h2 class="card-title">Gestures</h2>
             <div class="control-grid">
@@ -116,77 +80,13 @@
             </div>
           </section>
 
-          <section class="card" id="device-card">
-            <h2 class="card-title">Device</h2>
-            <ul class="device-list" id="devices"></ul>
-            <div class="device-detail" id="detail" hidden></div>
-          </section>
 
-          <details class="card card-details">
-            <summary>Connection details</summary>
-            <dl class="kv" id="status"></dl>
-            <p class="fine" id="status-note"></p>
-          </details>
-        </aside>
-      </div>
-    </main>
-
-    <section class="guide" id="run-guide" hidden>
-      <div class="guide-inner">
-        <h2>How to run Pane</h2>
-        <p class="guide-lead">Open-source mirroring for Windows. Everything runs on your PC; the phone stays on USB.</p>
-
-        <div class="guide-grid">
-          <article class="guide-step">
-            <span class="step-num">1</span>
-            <h3>Prerequisites</h3>
-            <ul>
-              <li>Windows 10 or 11</li>
-              <li>Python 3.10+</li>
-              <li><a href="https://apps.microsoft.com/store/detail/apple-devices/9np83t1wptph" rel="noopener">Apple Devices</a> from Microsoft Store</li>
-              <li>USB‑C data cable (not charge‑only)</li>
-            </ul>
-          </article>
-
-          <article class="guide-step">
-            <span class="step-num">2</span>
-            <h3>Install</h3>
-            <pre class="code"><code>git clone &lt;your-repo-url&gt;
-cd handset
-pip install pymobiledevice3</code></pre>
-            <p class="fine">On Windows, if <code>pip install pymobiledevice3</code> fails on native wheels, install the package without optional firmware tools, then run from this repo (it includes small shims).</p>
-          </article>
-
-          <article class="guide-step">
-            <span class="step-num">3</span>
-            <h3>Start the server</h3>
-            <pre class="code"><code>python -m handset.server</code></pre>
-            <p class="fine">Open <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a> in your browser. Keep the terminal open.</p>
-          </article>
-
-          <article class="guide-step">
-            <span class="step-num">4</span>
-            <h3>iPhone setup</h3>
-            <ul>
-              <li>Plug in and unlock the iPhone</li>
-              <li>Tap <strong>Trust</strong> on the phone</li>
-              <li>Enable <strong>Settings → Privacy &amp; Security → Developer Mode</strong> and restart</li>
-              <li>Press <strong>Start mirroring</strong> here (first run may mount a developer image; keep the phone unlocked)</li>
-            </ul>
-          </article>
-        </div>
-
-        <p class="guide-footer fine">Pane uses the same display tunnel as Xcode Device Hub, over USB or Wi‑Fi. It does not run iOS on Windows—it streams and controls your physical iPhone.</p>
-      </div>
-    </section>
-
-    <footer class="foot">
-      <p>Pane · MIT · Mirror and control your iPhone over USB or Wi‑Fi</p>
-    </footer>
-  </div>
-  <p id="update-note" role="status"></p>
-  <script src="/controls.js"></script>
-  <script src="/keys.js"></script>
-  <script src="/app.js"></script>
-</body>
-</html>
+      <section class="device-card" id="device-card"><p class="eyebrow">DEVICE</p><ul id="devices" class="device-list"></ul><div id="detail" hidden></div></section>
+      <details class="diagnostics"><summary>Connection details</summary><dl id="status" class="kv"></dl><p id="status-note"></p></details>
+      <p id="control-hint" class="fine">Your video and input stay between your phone and this PC.</p>
+      <footer><p id="update-note" role="status"></p><a href="https://github.com/rubenthi/pane-iphone-mirror-windows" target="_blank" rel="noopener">Open source · GPL-3.0 ↗</a></footer>
+    </div>
+  </aside>
+</main>
+<script src="/controls.js"></script><script src="/keys.js"></script><script src="/app.js"></script><script src="/shell.js"></script>
+</body></html>

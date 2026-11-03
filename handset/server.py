@@ -15,6 +15,7 @@ from handset.screen import restart_screen, screen_status, start_screen
 from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
 from handset import updater
+from handset.window import shell
 
 ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
@@ -78,6 +79,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/screen":
             self._json({**screen_status(), "update": updater.status()})
             return
+        if path == '/api/window':
+            self._json(shell.status())
+            return
         if path.startswith("/api/devices/"):
             udid = unquote(path.removeprefix("/api/devices/")).strip("/")
             if not udid or "/" in udid:
@@ -105,6 +109,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._json({"error": "Expected a JSON object."}, status=400)
+            return
+        if path == '/api/window':
+            try:
+                self._json(shell.command(payload))
+            except (ValueError, OSError) as error:
+                self._json({'error': str(error)}, status=400)
             return
         if "udid" in payload and payload["udid"] is not None and not isinstance(payload["udid"], str):
             self._json({"error": "Invalid device id."}, status=400)

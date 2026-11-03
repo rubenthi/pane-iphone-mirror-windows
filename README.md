@@ -37,13 +37,19 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 - 🖥️ **Realistic iPhone frame** with fit-to-window, zoom, rotate and **full-screen touch mode**.
 - 🔁 **One-click restart** if the stream ever freezes.
 - 🪟 **Single portable `Pane.exe`**: no Python, no installer, no account.
-- 🔒 **Private by design**: no cloud, no telemetry; it only talks to your iPhone.
+- 🔒 **Local mirroring**: video and input stay on USB/your local network. Updates check this GitHub fork; initial developer-image setup may download Apple resources.
 
 ## This fork's release and updater
 
-Version 1.1.1 reconstructs the previously uncommitted cloud work. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
+Version 1.2.0 adds a native, phone-shaped floating window and an expandable connection sidebar. Open its arrow, then the iOS 27 setup guide for prerequisites, USB/Wi-Fi instructions, and the optional AltStore Classic fallback for a missing Developer Mode setting. The outline follows the live display aspect ratio; before video starts it uses a standard portrait shape. It is not an exact physical bezel/camera-cutout replica of every model. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
 
 The pinned screen-streaming library requires **iOS 27+**. The older iOS 17+ claim described tunnel support, not verified display streaming. Physical USB/Wi-Fi mirroring and input must be tested with a compatible phone; automated tests use local stand-ins.
+
+## Tested devices and iOS versions
+
+See the [compatibility and verification table](docs/compatibility.md). A connected iPhone19,3 on iOS 27.0.1 was detected with Developer Mode enabled, but video, mouse/keyboard, and Wi-Fi have not yet been verified. No phone combination is labeled fully verified without evidence. Submit results through the device-verification issue template.
+
+This repository is public and licensed under GPL-3.0: anyone can view or fork it under the license terms.
 
 ## Quick start
 
@@ -52,7 +58,7 @@ The pinned screen-streaming library requires **iOS 27+**. The older iOS 17+ clai
 3. Plug the iPhone into the PC, unlock it and tap **Trust This Computer**.
 4. Turn on **Developer Mode** on the iPhone: *Settings → Privacy & Security → Developer Mode → On* (the iPhone restarts).
    If the option is missing, do not assume Pane can enable it; follow Apple's Developer Mode setup guidance.
-5. Run **Pane.exe** and click **Start mirroring**.
+5. Run **Pane.exe**, open the sidebar arrow, choose **Cable**, and click **Start mirroring**. The built-in guide and [AltStore fallback instructions](docs/ios27-setup.md) are available if setup is incomplete.
 
 ### Go wireless (Wi-Fi)
 
@@ -76,7 +82,7 @@ The pinned screen-streaming library requires **iOS 27+**. The older iOS 17+ clai
 ## Requirements
 
 - Windows 10 or Windows 11 (64-bit)
-- Google Chrome or Microsoft Edge (used as the app window)
+- Microsoft Edge WebView2 Runtime (native window); Chrome or Edge is a fallback if the runtime is unavailable
 - iPhone or iPad running **iOS / iPadOS 27 or newer** with Developer Mode enabled
 - Apple Devices app or iTunes (for the USB driver)
 

@@ -61,6 +61,8 @@ setTransport(transport, false);
 
 function setTransport(value, reload = true) {
   transport = value === "wifi" ? "wifi" : "usb";
+  document.querySelector('#connection-title').textContent = transport === 'wifi' ? 'A little more freedom' : 'Start with a cable';
+  document.querySelector('#connection-description').textContent = transport === 'wifi' ? 'Pair once over USB. Then go wireless.' : 'A direct connection. A simple first step.';
   localStorage.setItem("handset-transport", transport);
   document.querySelectorAll("[data-transport]").forEach((btn) => {
     const active = btn.dataset.transport === transport;
@@ -77,6 +79,9 @@ function renderWifi() {
   wifiPair.hidden = ready;
   wifiPair.disabled = !usbConnected;
   wifiPair.title = usbConnected ? "One-time setup over the cable" : "Plug in the cable once to set up Wi‑Fi";
+  const setupNeeded = transport === 'wifi' ? !ready : !usbConnected;
+  document.querySelector('#setup-title').textContent = setupNeeded ? "Let's get you connected." : 'Need a hand?';
+  document.querySelector('#setup-card .eyebrow').textContent = setupNeeded ? 'SETUP NEEDED' : 'HELP & SETUP';
 }
 
 async function setUpWifi() {

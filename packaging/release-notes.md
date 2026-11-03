@@ -1,13 +1,14 @@
-Pane 1.1.1 for Windows x64
+Pane 1.2.0 for Windows x64
 
-- Reconstructed automatic updater, restricted to rubenthi/pane-iphone-mirror-windows. Checks on startup and stages verified newer releases for installation after Pane closes.
-- Corrected the Windows PowerShell helper environment and added a real process-handoff regression test. The v1.1.0 workflow was cancelled before publication; its tag is preserved.
-- Standalone installer, desktop shortcut, SHA-256/size validation, bounded exit wait, and retained executable backups.
-- Fixed malformed API requests, proxy framing, restart reporting, Wi-Fi connection cleanup, concurrent stream switching, stale UI responses, and control ordering.
-- Secured the upstream stream server with a process-specific credential and pinned the Windows build dependencies.
-- Added Windows installer failure-path tests, Python and JavaScript regression tests, and packaged dependency/local UI smoke checks.
+- Floating, rounded phone window with a horizontally expanding connection sidebar, pinning, and display-aspect adaptation.
+- Expandable iOS 27 setup guide covering prerequisites, USB, Trust, Developer Mode, input control, and optional Wi-Fi pairing. Includes optional AltStore Classic installation directions when Developer Mode is missing.
+- Public device compatibility and verification records distinguish detected metadata from tested mirroring and control.
+- Native WebView2 renderer, window-region and drawer integration tests, plus retained installer and updater failure-path tests.
 
-The earlier uncommitted cloud workspace was unavailable. These changes were reconstructed and tested from the fork's published source. The pinned streaming engine requires iOS 27 or later. Physical iPhone mirroring, keyboard/mouse control, and Wi-Fi require validation with a connected phone. This executable is not code-signed.
+Requires Windows x64 and Microsoft Edge WebView2 Runtime. Apple Devices and a supported iPhone are needed for phone features. Browser fallback is available if the native renderer cannot start. The window follows display aspect ratio, not an exact physical bezel or cutout for every model.
 
-Install: download install.ps1, then run `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Version 1.1.1`.
-Rollback: close Pane and restore a retained `Pane.exe.backup-*` file over `Pane.exe`. Temporarily disconnect networking when launching the older version if you do not want it to check for updates.
+Existing Pane 1.1.1 checks this fork on startup, stages the verified release, and installs it after Pane closes, retaining a backup. New installs: download install.ps1 and run powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Version 1.2.0.
+
+USB discovery and Developer Mode metadata were observed for iPhone19,3 / iOS 27.0.1. Physical video, keyboard/mouse control, Wi-Fi pairing, and the AltStore workaround have not been verified. This executable is not code-signed.
+
+Rollback: close Pane and restore a retained Pane.exe.backup-* over Pane.exe. Disconnect networking temporarily if you do not want the older version to check for updates.

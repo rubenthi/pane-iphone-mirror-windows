@@ -297,6 +297,7 @@ function drawFrame(f) {
   if (targetW !== canvas.width || targetH !== canvas.height) {
     canvas.width = targetW;
     canvas.height = targetH;
+    window.parent.postMessage({source: 'pane-display', width: targetW, height: targetH}, location.origin);
     fitCanvas();
   }
   const dstW = canvas.width;
