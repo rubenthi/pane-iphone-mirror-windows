@@ -62,9 +62,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     // A same-origin message from the mirror iframe represents a decoded display size.
     const mirror = page.frames().find(frame=>frame.parentFrame()===page.mainFrame());
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:932,height:430},parent.location.origin));
-    await page.waitForFunction(()=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--phone-width'))>700);
+    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-16)/(parseFloat(css.getPropertyValue('--phone-height'))-16)>2;});
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:390,height:844},parent.location.origin));
-    await page.waitForFunction(()=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--phone-width'))===360);
+    await page.waitForFunction(w=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--phone-width'))===w-28,compact.width);
     await page.screenshot({path:path.join(output,'pane-expanded.png')});
     await page.getByRole('button',{name:'Close connection sidebar',exact:true}).click();
     await page.waitForFunction(w=>innerWidth===w,compact.width);
