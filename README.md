@@ -28,6 +28,13 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## Features
 
+**Development preview: two control methods.** The connection sidebar now offers
+the existing Developer Mode touch/keyboard path and a Bluetooth cursor path used
+with a separate AirPlay receiver. Both can use Bluetooth media playback and
+iPhone notifications. Calls and laptop microphone use are handed off to Phone
+Link; native microphone injection is not implemented. These new Bluetooth paths
+are not yet hardware-verified. See [setup, limits and build instructions](docs/bluetooth.md).
+
 - 📱 **Live iPhone screen mirroring on Windows**: low-latency HEVC (H.265) video decoded in hardware.
 - 🖱️ **Control the iPhone with your mouse**: tap, long-press, drag and swipe directly on the mirrored screen.
 - ⌨️ **Type on your iPhone with the PC keyboard**: real keystrokes, including Ctrl+C / Ctrl+V / Ctrl+A / Ctrl+Z mapped to ⌘ shortcuts.
@@ -51,7 +58,7 @@ See the [compatibility and verification table](docs/compatibility.md). A connect
 
 This repository is public and licensed under GPL-3.0: anyone can view or fork it under the license terms.
 
-## Quick start
+## Quick start (Developer Mode control)
 
 1. **Download** `Pane.exe` from the [latest release](../../releases/latest).
 2. Install Apple's USB driver by installing **[Apple Devices](https://apps.microsoft.com/detail/9np83lwlpz9k)** (or iTunes) from the Microsoft Store.
@@ -83,7 +90,7 @@ This repository is public and licensed under GPL-3.0: anyone can view or fork it
 
 - Windows 10 or Windows 11 (64-bit)
 - Microsoft Edge WebView2 Runtime (native window); Chrome or Edge is a fallback if the runtime is unavailable
-- iPhone or iPad running **iOS / iPadOS 27 or newer** with Developer Mode enabled
+- For the existing developer video/control path: iPhone or iPad running **iOS / iPadOS 27 or newer** with Developer Mode enabled. Bluetooth cursor + external AirPlay does not use that service; see the [Bluetooth guide](docs/bluetooth.md).
 - Apple Devices app or iTunes (for the USB driver)
 
 ## Run from source
@@ -150,4 +157,4 @@ See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published c
 
 ### Floating controls in 1.3.0
 
-Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag the bottom-right resize grip to resize the phone proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. Scroll the mouse wheel or trackpad over the mirrored picture to swipe; the sidebar scrolls independently. Audio is not included.
+Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag the bottom-right resize grip to resize the phone proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. In Developer Mode, scroll over the mirrored picture to swipe; the sidebar scrolls independently. Bluetooth media audio is configured separately in the sidebar; the developer video tunnel remains video-only.

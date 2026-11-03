@@ -10,3 +10,6 @@ venv/
 .idea/
 node_modules/
 test-results/
+native/Pane.Bluetooth.exe
+native/**/bin/
+native/**/obj/

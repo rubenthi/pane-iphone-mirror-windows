@@ -178,15 +178,6 @@ async def _serve(udid: str, transport: str) -> None:
             await auto_mount(rsd)
 
 
-async def _silence_phone(server) -> None:
-    # iOS exposes relative media-volume buttons, not an absolute volume setter.
-    # Complete the down/up pairs before enabling UI controls for this session.
-    for _ in range(20):
-        code, _ = await server._handle_button(b'{"name":"volume-down","state":"press"}')
-        if code != 200:
-            raise RuntimeError('The iPhone rejected a volume-down command.')
-
-
 async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
     from pymobiledevice3.remote.core_device.display_service import is_media_in_use_error
     from handset.security import ACCESS_TOKEN
@@ -231,12 +222,9 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
                 await asyncio.sleep(.1)
         else:
             raise TimeoutError('The stream server did not become ready.')
-        note = None
-        try:
-            await server._ensure_fresh_stream(force=False)
-            await asyncio.wait_for(_silence_phone(server), timeout=15)
-        except Exception:
-            note = 'Could not lower iPhone volume automatically. Use the phone or the volume buttons.'
+        # Media volume also affects the Bluetooth stream. Never mute it to hide
+        # missing audio; route sound explicitly through the Bluetooth panel.
+        note = 'For laptop audio, connect Bluetooth audio and select this PC on the iPhone.'
         _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=note)
         await task
     finally:

@@ -97,6 +97,8 @@ def main() -> None:
     server.shutdown()
     server.server_close()
     stop_screen()
+    from handset.bluetooth import bridge
+    bridge.close()
     updater.apply_on_exit()
     os._exit(0)
 

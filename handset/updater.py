@@ -13,7 +13,7 @@ import tempfile
 import threading
 import urllib.request
 
-from handset.version import REPOSITORY, VERSION
+from handset.version import REPOSITORY, VERSION, AUTO_UPDATE_ENABLED
 
 BASE = f'https://github.com/{REPOSITORY}/releases'
 MANIFEST_URL = f'{BASE}/latest/download/update.json'
@@ -50,6 +50,9 @@ def validate_manifest(data):
 
 def check():
     global _STAGED
+    if not AUTO_UPDATE_ENABLED:
+        _set(phase='disabled', note='Automatic updates are disabled for this development fork.')
+        return
     if not getattr(sys, 'frozen', False) or os.name != 'nt':
         _set(phase='source', note='Automatic updates apply to the Windows executable.')
         return

@@ -2,6 +2,7 @@
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+& "$root\packaging\build-bluetooth.ps1"
 
 python -m PyInstaller --noconfirm --clean `
   --distpath "$root\dist" `
