@@ -6,7 +6,7 @@ This is the verification record for **this fork**. A supported OS requirement, a
 
 | Device model | iOS version | USB video | Mouse / keyboard | Wi-Fi video / input | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| iPhone19,3 | 27.0.1 | Live full-frame video observed; user confirmed USB works | Coordinate math and wheel events tested synthetically; physical accuracy pending | Live Wi-Fi video decoded; cable-removal and physical input tests pending | 1.3.0 diagnostic build: 1328 × 2896 frames over USB and Wi-Fi. No five-minute rotation/reconnect acceptance record yet. |
+| iPhone19,3 | 27.0.1 | Live full-frame video observed; user confirmed USB works | Coordinate math and wheel events tested synthetically; physical accuracy pending | Installed 1.3.2: live Wi-Fi video with zero USB devices; physical input tests pending | 1.3.0 diagnostic build: 1328 × 2896 frames over USB and Wi-Fi. No five-minute rotation/reconnect acceptance record yet. |
 
 ## Reported, awaiting a hardware test
 
