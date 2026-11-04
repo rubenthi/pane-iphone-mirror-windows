@@ -27,6 +27,12 @@ class WindowLayoutTests(unittest.TestCase):
                 self.assertLessEqual(layout['height'], 720)
                 self.assertAlmostEqual((layout['phone_width']-SCREEN_CHROME)/(layout['height']-SCREEN_CHROME), aspect, delta=.01)
 
+    def test_hover_menu_keeps_desktop_gutter_after_resize(self):
+        for height in (360, 420, 591, 760):
+            layout = dimensions(preferred_height=height)
+            self.assertGreaterEqual(layout['rail_top'] - 158, 8)
+            self.assertLessEqual(layout['rail_top'] + 292 * layout['rail_scale'], height)
+
     def test_fractional_drag_height_keeps_the_live_video_aspect(self):
         for aspect in (1290/2796, 1800/1920, 1920/1800, 2532/1170):
             for height in (590.38, 590.5, 591.4, 760):

@@ -33,8 +33,9 @@ def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_heig
     # a fractional drag height here distorts wider displays after rounding.
     height = round(height)
     width = round((height - SCREEN_CHROME) * aspect) + SCREEN_CHROME
-    rail_scale = min(1, max(.15, (height-166)/292))
-    rail_top = max(158, (height-288*rail_scale)/2)
+    # Reserve 158px for the three menu buttons and grip plus an 8px top gutter.
+    rail_scale = min(1, max(.15, (height-174)/292))
+    rail_top = max(166, (height-288*rail_scale)/2)
     return {'phone_width': width, 'height': round(height), 'width': width + extra, 'expanded': expanded,
             'rail_scale': rail_scale, 'rail_top': rail_top}
 
