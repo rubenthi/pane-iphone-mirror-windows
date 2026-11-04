@@ -89,7 +89,8 @@ def verify_native_window():
             finally:
                 shell.g.DeleteObject(region)
         except Exception as error:
-            errors.append(repr(error))
+            import traceback
+            errors.append(traceback.format_exc())
         finally:
             window.destroy()
     window.events.loaded += verify

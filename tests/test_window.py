@@ -1,9 +1,17 @@
 import math
+import os
 import unittest
 from handset.window import dimensions, DRAWER, TAB, DEFAULT_ASPECT, SCREEN_CHROME, FloatingWindow
 
 
 class WindowLayoutTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows CLR pointer conversion')
+    def test_high_bit_native_handles_preserve_pointer_width(self):
+        import clr
+        from handset.window import _native_pointer
+        for handle in (0x1234, 0x80001234, 0xFFFFFFFF, 0x123456789AB):
+            self.assertEqual(_native_pointer(handle).ToInt64(), handle)
+
     def test_connection_overlay_preserves_window_geometry(self):
         compact = dimensions()
         expanded = dimensions(expanded=True)

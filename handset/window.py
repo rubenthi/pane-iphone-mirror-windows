@@ -17,6 +17,13 @@ DEFAULT_ASPECT = 390 / 844
 SCREEN_CHROME = 14  # CSS: symmetric 7px bezel on all four sides
 
 
+def _native_pointer(handle):
+    # pythonnet otherwise selects IntPtr(Int32), which rejects GDI handles
+    # with bit 31 set. Preserve the full native pointer width explicitly.
+    from System import Int64, IntPtr
+    return IntPtr(Int64(ctypes.c_ssize_t(handle).value))
+
+
 def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
@@ -169,10 +176,9 @@ class FloatingWindow:
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)
-                from System import IntPtr
                 from System.Drawing import Region
                 try:
-                    managed = Region.FromHrgn(IntPtr(region))
+                    managed = Region.FromHrgn(_native_pointer(region))
                     previous = self._form.Region
                     self._form.Region = managed
                     previous_web = self._form.webview.Region
