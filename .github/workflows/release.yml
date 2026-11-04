@@ -2,6 +2,7 @@ name: Build and publish Pane
 on:
   push:
     tags: ['v*']
+    branches: ['release/**']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,10 +27,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          if ('${{ github.ref_type }}' -ne 'tag') { throw 'Run this workflow on a version tag.' }
+          $version = ((Get-Content handset/version.py | Select-String '^VERSION = "([0-9.]+)"').Matches.Groups[1].Value)
+          if (-not $version) { throw 'Missing release version' }
+          $tag = "v$version"
+          if ('${{ github.ref_name }}' -ne $tag -and '${{ github.ref_name }}' -ne "release/$version") { throw 'Use a matching version tag or release branch' }
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
           $releases = gh api repos/${{ github.repository }}/releases --paginate | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect releases.' }
-          if ($releases | Where-Object tag_name -eq '${{ github.ref_name }}') { throw 'Version already exists; choose a new version.' }
+          if ($releases | Where-Object tag_name -eq $tag) { throw 'Version already exists; choose a new version.' }
       - run: python -m pip install -r requirements-build.txt
       - run: python -m unittest discover -s tests -v
       - run: node --test tests/ui.test.cjs tests/hevc.test.cjs
@@ -43,7 +48,7 @@ jobs:
           node --check handset/web/hevc.js
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/install_update.tests.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1
-      - run: python packaging/release_manifest.py --tag '${{ github.ref_name }}'
+      - run: python packaging/release_manifest.py --tag '${{ env.RELEASE_TAG }}'
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/smoke.ps1
       - name: Verify executable metadata and manifest
         shell: pwsh
@@ -53,7 +58,7 @@ jobs:
           if ((Get-FileHash dist/Pane.exe).Hash -ne $m.sha256) { throw 'Checksum mismatch' }
       - uses: actions/upload-artifact@v4
         with:
-          name: Pane-${{ github.ref_name }}
+          name: Pane-${{ env.RELEASE_TAG }}
           path: |
             dist/Pane.exe
             dist/update.json
@@ -63,7 +68,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create '${{ github.ref_name }}' dist/Pane.exe dist/update.json dist/install.ps1 --repo '${{ github.repository }}' --verify-tag --draft --title 'Pane ${{ github.ref_name }}' --notes-file packaging/release-notes.md
+          gh release create '${{ env.RELEASE_TAG }}' dist/Pane.exe dist/update.json dist/install.ps1 --repo '${{ github.repository }}' --target '${{ github.sha }}' --draft --title 'Pane ${{ env.RELEASE_TAG }}' --notes-file packaging/release-notes.md
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; draft retained.' }
-          gh release edit '${{ github.ref_name }}' --repo '${{ github.repository }}' --draft=false --latest
+          gh release edit '${{ env.RELEASE_TAG }}' --repo '${{ github.repository }}' --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
