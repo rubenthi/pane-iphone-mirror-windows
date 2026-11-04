@@ -52,29 +52,8 @@ let screenTimer = 0;
 let transport = localStorage.getItem("handset-transport") === "wifi" ? "wifi" : "usb";
 let wifiPaired = [];
 let usbConnected = false;
-let controlMode = "developer";
-window.paneSetControlMode = async function (mode) {
-  if (!["developer", "bluetooth"].includes(mode)) throw new Error("Unknown control mode.");
-  if (mode === controlMode) return;
-  if (mode === "bluetooth") {
-    await keyboard.releaseAll();
-    await postJson("/api/screen/stop", {});
-    screenGeneration.next();
-    window.clearTimeout(screenTimer);
-    screenView.hidden = true;
-    screenView.src = "about:blank";
-    workspace.classList.remove("is-live");
-    phoneShell.classList.remove("live");
-    remotePanel.hidden = true;
-    document.querySelectorAll(".rail-navigation button:not(#drawer-toggle)").forEach(b => b.disabled = true);
-    setPill(pillConnection, "Bluetooth + AirPlay", "");
-    screenNote.textContent = "Use your AirPlay receiver for video. Bluetooth controls the iPhone cursor.";
-  }
-  controlMode = mode;
-  document.body.dataset.controlMode = mode;
-  document.querySelector("#bluetooth-view").hidden = mode !== "bluetooth";
-  if (mode === "developer") { load(); watchScreen(); }
-};
+let connectionPhase = "idle";
+let connectionBusy = false;
 
 document.querySelectorAll("[data-transport]").forEach((btn) => {
   btn.addEventListener("click", () => setTransport(btn.dataset.transport));
@@ -163,7 +142,6 @@ async function load() {
 }
 
 function renderPills(state) {
-  if (controlMode === "bluetooth") return;
   const driver = state.driver || {};
   const connected = (state.devices || []).length > 0;
   const overWifi = transport === "wifi" && wifiPaired.length > 0;
@@ -201,7 +179,6 @@ function setPill(el, text, tone) {
 }
 
 function renderStatus(state) {
-  if (controlMode === "bluetooth") return;
   const library = state.library || {};
   const driver = state.driver || {};
   statusList.replaceChildren(
@@ -313,8 +290,8 @@ function renderDetail(device) {
 }
 
 function renderScreen(screen) {
-  if (controlMode === "bluetooth") return;
   if (!screen) return;
+  connectionPhase = screen.phase;
   if (screen.update) document.querySelector("#update-note").textContent = `Pane ${screen.update.version} · ${screen.update.note || screen.update.phase}`;
   const mirroring = screen.phase === "running";
   document.querySelectorAll(".rail-navigation button:not(#drawer-toggle)").forEach(button=>button.disabled=!mirroring);
@@ -327,9 +304,8 @@ function renderScreen(screen) {
     kbToggle.hidden = false;
     screenNote.textContent = screen.error || screen.note || "Mirroring — typing on your keyboard goes to the iPhone.";
     screenNote.className = "";
-    showScreen.textContent = "Mirroring…";
-    showScreen.disabled = selectedStream;
-    if (!selectedStream) showScreen.textContent = "Switch mirroring";
+    showScreen.textContent = "Disconnect";
+    showScreen.disabled = connectionBusy;
     if (screenView.getAttribute("src") !== MIRROR_PAGE) screenView.src = MIRROR_PAGE;
     screenView.hidden = false;
     return;
@@ -342,14 +318,14 @@ function renderScreen(screen) {
   kbToggle.hidden = true;
   screenView.hidden = true;
   screenView.src = "about:blank";
-  showScreen.textContent = "Start mirroring";
+  showScreen.textContent = "Connect";
   showScreen.disabled = false;
 
   if (screen.phase === "starting") {
     screenNote.textContent = screen.note || "Starting stream… keep the iPhone unlocked.";
     screenNote.className = "";
-    showScreen.disabled = true;
-    showScreen.textContent = "Connecting…";
+    showScreen.disabled = connectionBusy;
+    showScreen.textContent = "Disconnect";
     return;
   }
   if (screen.error) {
@@ -362,20 +338,26 @@ function renderScreen(screen) {
 }
 
 async function showPhone() {
-  if (controlMode !== "developer") return;
+  if (connectionBusy) return;
+  const disconnect = connectionPhase === "running" || connectionPhase === "starting";
+  connectionBusy = true;
   screenGeneration.next();
+  loadGeneration.next();
   window.clearTimeout(screenTimer);
   showScreen.disabled = true;
-  showScreen.textContent = "Connecting…";
+  showScreen.textContent = disconnect ? "Disconnecting…" : "Connecting…";
   try {
-    renderScreen(await postJson("/api/screen", { udid: selectedUdid, transport }));
-    watchScreen();
-    load();
+    if (disconnect) await keyboard.releaseAll();
+    const result = await postJson(disconnect ? "/api/screen/stop" : "/api/screen", disconnect ? {} : { udid: selectedUdid, transport });
+    connectionBusy = false;
+    renderScreen(result);
   } catch (error) {
     screenNote.textContent = error.message;
     screenNote.className = "warn";
-    showScreen.textContent = "Start mirroring";
+  } finally {
+    connectionBusy = false;
     showScreen.disabled = false;
+    showScreen.textContent = connectionPhase === "running" ? "Disconnect" : "Connect";
     watchScreen();
   }
 }
@@ -545,7 +527,7 @@ function setKeyboard(on) {
 
 const keyboard = window.HandsetKeys.attach({
   post: (payload) => mirrorPost("/key", payload),
-  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live"),
+  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live") && !document.body.classList.contains("drawer-open"),
 });
 
 function wireRemoteControls() {

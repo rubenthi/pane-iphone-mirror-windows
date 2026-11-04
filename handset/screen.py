@@ -121,6 +121,7 @@ def _start_screen(udid: str | None, transport: str) -> dict:
 def stop_screen() -> bool:
     with _COMMAND_LOCK:
         if _WORKER is None or not _WORKER.is_alive():
+            _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None)
             return True
         if not _READY.wait(5):
             return False
@@ -222,9 +223,8 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
                 await asyncio.sleep(.1)
         else:
             raise TimeoutError('The stream server did not become ready.')
-        # Media volume also affects the Bluetooth stream. Never mute it to hide
-        # missing audio; route sound explicitly through the Bluetooth panel.
-        note = 'For laptop audio, connect Bluetooth audio and select this PC on the iPhone.'
+        # Preserve the user-selected phone volume; this stream is video-only.
+        note = None
         _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=note)
         await task
     finally:

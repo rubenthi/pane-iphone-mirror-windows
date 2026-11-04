@@ -28,12 +28,10 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## Features
 
-**Development preview: two control methods.** The connection sidebar now offers
-the existing Developer Mode touch/keyboard path and a Bluetooth cursor path used
-with a separate AirPlay receiver. Both can use Bluetooth media playback and
-iPhone notifications. Calls and laptop microphone use are handed off to Phone
-Link; native microphone injection is not implemented. These new Bluetooth paths
-are not yet hardware-verified. See [setup, limits and build instructions](docs/bluetooth.md).
+Version 1.5.0 returns to Developer Mode control. The connection panel overlays
+the phone screen; Bluetooth connectivity has been removed. The window outline
+contains only the phone and its dark glass button rail. Drag a corner to resize;
+hover the three-line handle for minimize, maximize/restore and close.
 
 - 📱 **Live iPhone screen mirroring on Windows**: low-latency HEVC (H.265) video decoded in hardware.
 - 🖱️ **Control the iPhone with your mouse**: tap, long-press, drag and swipe directly on the mirrored screen.
@@ -48,7 +46,7 @@ are not yet hardware-verified. See [setup, limits and build instructions](docs/b
 
 ## This fork's release and updater
 
-Version 1.2.1 adds a native, phone-shaped floating window and an expandable connection sidebar. Open its arrow, then the iOS 27 setup guide for prerequisites, USB/Wi-Fi instructions, and the optional AltStore Classic fallback for a missing Developer Mode setting. The outline follows the live display aspect ratio; before video starts it uses a standard portrait shape. It is not an exact physical bezel/camera-cutout replica of every model. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
+Version 1.2.1 adds a native, phone-shaped floating window and an connection panel over the phone screen. Open its arrow, then the iOS 27 setup guide for prerequisites, USB/Wi-Fi instructions, and the optional AltStore Classic fallback for a missing Developer Mode setting. The outline follows the live display aspect ratio; before video starts it uses a standard portrait shape. It is not an exact physical bezel/camera-cutout replica of every model. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
 
 The pinned screen-streaming library requires **iOS 27+**. The older iOS 17+ claim described tunnel support, not verified display streaming. Physical USB/Wi-Fi mirroring and input must be tested with a compatible phone; automated tests use local stand-ins.
 
@@ -90,7 +88,7 @@ This repository is public and licensed under GPL-3.0: anyone can view or fork it
 
 - Windows 10 or Windows 11 (64-bit)
 - Microsoft Edge WebView2 Runtime (native window); Chrome or Edge is a fallback if the runtime is unavailable
-- For the existing developer video/control path: iPhone or iPad running **iOS / iPadOS 27 or newer** with Developer Mode enabled. Bluetooth cursor + external AirPlay does not use that service; see the [Bluetooth guide](docs/bluetooth.md).
+- For the existing developer video/control path: iPhone or iPad running **iOS / iPadOS 27 or newer** with Developer Mode enabled.
 - Apple Devices app or iTunes (for the USB driver)
 
 ## Run from source
@@ -157,4 +155,4 @@ See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published c
 
 ### Floating controls in 1.3.0
 
-Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag the bottom-right resize grip to resize the phone proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. In Developer Mode, scroll over the mirrored picture to swipe; the sidebar scrolls independently. Bluetooth media audio is configured separately in the sidebar; the developer video tunnel remains video-only.
+Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag a phone corner to resize it proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. In Developer Mode, scroll over the mirrored picture to swipe; the sidebar scrolls independently. Audio stays on the iPhone.

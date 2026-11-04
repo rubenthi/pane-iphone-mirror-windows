@@ -7,7 +7,7 @@ from handset.screen import _stream
 
 
 class StartVolumeTests(unittest.IsolatedAsyncioTestCase):
-    async def test_stream_start_preserves_bluetooth_media_volume(self):
+    async def test_stream_start_preserves_phone_media_volume(self):
         stopped = asyncio.Event()
         server = SimpleNamespace(_handle_button=AsyncMock(), _ensure_fresh_stream=AsyncMock())
         async def serve():

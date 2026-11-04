@@ -20,7 +20,7 @@ DEFAULT_ASPECT = 390 / 844
 def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
-    extra = DRAWER if expanded else TAB
+    extra = TAB
     height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - 6) / aspect + 6))
     width = round((height - 6) * aspect) + 6
     rail_scale = min(1, max(.15, (height-112)/288))
@@ -128,16 +128,8 @@ class FloatingWindow:
                     return self.g.CreateRoundRectRgn(*(round(v*scale) for v in (left, top, right, bottom, radius*2, radius*2)))
                 pw, h = geometry['phone_width'], geometry['height']
                 region = rounded(0, 0, pw, h, 44)
-                parts = [rounded(pw+8, 12, pw+52, 46, 13)]
-                parts.append(rounded(pw+8, h-42, pw+52, h-8, 13))
-                if self.menu_open:
-                    parts.append(rounded(pw+8, 46, pw+52, 158, 13))
                 rail_top, rail_scale = geometry['rail_top'], geometry['rail_scale']
-                for index in range(7):
-                    top = rail_top + (index*40 + (4 if index >= 2 else 0) + (8 if index > 2 else 0))*rail_scale
-                    parts.append(rounded(pw+8, top, pw+8+44*rail_scale, top+(40 if index==2 else 36)*rail_scale, 12*rail_scale))
-                if expanded:
-                    parts.append(rounded(pw+72, 0, geometry['width'], h, 24))
+                parts = [rounded(pw-16, rail_top-50, pw+52, rail_top+292*rail_scale, 28)]
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)
@@ -153,9 +145,20 @@ class FloatingWindow:
             height = payload.get('height')
             if type(height) not in (float, int) or not math.isfinite(height) or not 360 <= height <= 10000:
                 raise ValueError('Invalid window height.')
+            corner = payload.get('corner', 'se')
+            if corner not in ('nw', 'ne', 'sw', 'se'):
+                raise ValueError('Invalid resize corner.')
+            before = W.RECT()
+            if self.handle: self.u.GetWindowRect(self.handle, ctypes.byref(before))
             self.preferred_height = height
             self.maximized = False
-            return self.layout(self.expanded, self.aspect)
+            result = self.layout(self.expanded, self.aspect)
+            if self.handle:
+                after = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(after))
+                x = before.right - (after.right-after.left) if 'w' in corner else after.left
+                y = before.bottom - (after.bottom-after.top) if 'n' in corner else after.top
+                self.u.SetWindowPos(self.handle, 0, x, y, 0, 0, 0x0015)
+            return result
         if action == 'maximize':
             self.maximized = not self.maximized
             self.preferred_height = 10000 if self.maximized else 760

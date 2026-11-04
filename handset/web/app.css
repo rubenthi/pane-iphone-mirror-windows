@@ -21,3 +21,31 @@
 .rail-button,.drawer-toggle,.rail-grip{background:radial-gradient(ellipse at 28% 0%,#ffffff8c 0%,transparent 65%),linear-gradient(155deg,#b4e6ff70 0%,#73bae54d 45%,#15568c66 50%,#4ca2d755 100%);border-color:#cbefff8c;box-shadow:inset 0 1px 1px #ffffffb0,inset 0 -1px 2px #7dd3ff70,0 4px 12px #001c3f33;color:#f0faff}.rail-button:hover:not(:disabled),.rail-grip:hover,.drawer-toggle:hover{background:radial-gradient(ellipse at 30% 0%,#ffffffe0,transparent 65%),linear-gradient(155deg,#b2e8ff99,#257bbfa0);filter:none}.rail-button:active,.drawer-toggle:active{box-shadow:inset 0 2px 6px #00284877}.rail-button:disabled{opacity:.55}
 
 .rail-navigation{top:var(--rail-top,240px);transform:scale(var(--rail-scale,1));transform-origin:top left}
+/* 1.5: phone-shaped surface, joined dark glass rail, and in-screen pairing. */
+:root{background:transparent;--accent:#7dd5ff;--muted:#a3afbd;--line:#c0d7ee18}
+body{background:transparent}
+.workspace,body.drawer-open .workspace{width:calc(var(--phone-width) + 60px)}
+.phone{border:2px solid #9eafbf;border-radius:44px;background:#020405;box-shadow:inset 0 0 0 2px #293340,inset 0 0 0 5px #05080d}
+.phone-screen{inset:5px;border-radius:37px;background:#000}
+.window-rail{left:calc(var(--phone-width) + 8px);z-index:10}
+.window-rail:before{content:'';position:absolute;left:-8px;right:-8px;top:calc(var(--rail-top,240px) - 50px);height:calc(50px + 292px * var(--rail-scale,1));border:1px solid #52617080;border-left:0;border-radius:0 28px 28px 0;background:linear-gradient(100deg,#0d141d,#1d2733 80%,#151e29);z-index:-1}
+.handle-cluster{top:calc(var(--rail-top,240px) - 44px)}
+.handle-cluster>.rail-grip{background:transparent;border:0;box-shadow:none;height:34px;border-radius:10px}
+.rail-button{border:0;border-bottom:1px solid #b9ccdf24;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;color:#edf2f8}
+.rail-button:hover:not(:disabled){background:#cadfff15}
+.drawer-toggle{border:1px solid #8ca8d0;border-radius:11px;background:linear-gradient(130deg,#597ca9,#263f64);box-shadow:inset 0 1px 3px #cce3ff55,0 2px 5px #0005}
+.window-menu{position:absolute;top:34px;bottom:auto;left:0;padding:4px 0;gap:3px}
+.window-menu button{background:linear-gradient(130deg,#273748,#111a27);border:1px solid #68788b77;box-shadow:inset 0 1px 0 #fff1}
+.drawer{left:7px;top:7px;width:calc(var(--phone-width) - 14px);height:calc(var(--phone-height) - 14px);border-radius:36px;z-index:8;background:linear-gradient(135deg,#111d2aed,#080f19f7);border:1px solid #7893af55;box-shadow:inset 0 1px 0 #d4e6ff24,0 12px 40px #0008;backdrop-filter:blur(28px)}
+.drawer-heading{padding:27px 24px 19px;align-items:flex-start}.drawer-heading h2{font-size:23px;line-height:1.25;letter-spacing:-.6px;font-weight:600}.drawer-heading .eyebrow{color:#dae3ed;font-size:11px;letter-spacing:4px;margin-bottom:18px}
+.drawer-scroll{padding:18px 24px 24px;min-height:0;scrollbar-color:#65758a66 transparent}
+.phone-toolbar{padding:10px 24px}.drag-handle{font-size:17px;letter-spacing:0}.live-dot{background:#77d6ff}
+.pill{background:#26334399;border-color:#b1c6dd18;color:#dce6f0}.pill-ok:before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#64d65c;margin-right:7px}
+.primary{background:linear-gradient(115deg,#6287b7,#25364e 70%,#1b2735);border:1px solid #809cbe55;color:#f3f7fd;box-shadow:inset 0 1px 0 #fff2;border-radius:12px}
+.secondary,.ctl{background:linear-gradient(115deg,#202d3c,#141e2b);border:1px solid #70849b22;font-size:12px;padding:12px;box-shadow:inset 0 1px 0 #fff05}
+.segmented{background:#0b1420;border-color:#62768e33}.segmented button{color:#bdc9da;font-size:12px}.segmented button.is-active{background:linear-gradient(120deg,#496c9b,#243956);border:1px solid #678bb766;color:white}
+.setup-card{background:linear-gradient(130deg,#1a2736,#101c29);border-color:#61738b33}.setup-card>p:not(.eyebrow),.fine,.step-body,.connection-summary p{color:#b3c1d3}
+.placeholder{background:radial-gradient(ellipse at 15% 5%,#243a5277,transparent 60%),#080f18}.orb{background:linear-gradient(135deg,#3b536b55,#152231);border-color:#839db54d;box-shadow:inset 0 1px 0 #ffffff30}.placeholder #placeholder-hint{color:#b3c1d3}
+.resize-corner{position:absolute;width:32px;height:32px;z-index:40;background:transparent;touch-action:none}
+.corner-nw{left:8px;top:8px;cursor:nwse-resize}.corner-ne{left:calc(var(--phone-width) - 40px);top:8px;cursor:nesw-resize}.corner-sw{left:8px;bottom:8px;cursor:nesw-resize}.corner-se{left:calc(var(--phone-width) - 40px);bottom:8px;cursor:nwse-resize}
+body.browser-mode{background:transparent}

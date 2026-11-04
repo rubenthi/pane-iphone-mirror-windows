@@ -16,8 +16,9 @@
     document.body.classList.toggle('browser-mode', !native);
     for (const id of ['pin-window','minimize-window','maximize-window','close-window']) document.querySelector('#'+id).hidden = !native;
     drawer.hidden = !expanded;
+    if (expanded) keyboard.releaseAll();
     arrow.setAttribute('aria-expanded', String(expanded));
-    arrow.setAttribute('aria-label', expanded ? 'Close connection sidebar' : 'Open connection sidebar');
+    arrow.setAttribute('aria-label', expanded ? 'Close connection panel' : 'Open connection panel');
     arrow.title=arrow.getAttribute('aria-label');
     document.querySelector('#maximize-window').setAttribute('aria-label',state.maximized?'Restore window':'Maximize window');
     document.querySelector('#pin-window').setAttribute('aria-pressed', String(state.pinned));
@@ -67,12 +68,25 @@
   cluster.addEventListener('pointerleave',()=>{menuTimer=setTimeout(()=>{cluster.classList.remove('menu-open');command('window-menu',{open:false}).catch(()=>{});},250);});
   cluster.addEventListener('focusin',()=>{cluster.classList.add('menu-open');command('window-menu',{open:true}).catch(()=>{});});
   let resizing=null, resizeBusy=false, wantedHeight=null;
-  const resizeGrip=document.querySelector('#resize-window');
-  resizeGrip.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();resizing={y:event.screenY,height:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--phone-height'))};resizeGrip.setPointerCapture(event.pointerId);});
-  async function flushResize(){resizeBusy=true;try{while(wantedHeight!==null){const height=wantedHeight;wantedHeight=null;render(await command('resize',{height}));}}finally{resizeBusy=false;}}
-  resizeGrip.addEventListener('pointermove',event=>{if(!resizing)return;wantedHeight=Math.max(360,Math.min(10000,resizing.height+event.screenY-resizing.y));if(!resizeBusy)flushResize().catch(()=>{});});
-  const endResize=()=>{resizing=null;};
-  resizeGrip.addEventListener('pointerup',endResize);resizeGrip.addEventListener('pointercancel',endResize);resizeGrip.addEventListener('lostpointercapture',endResize);
+  async function flushResize(){resizeBusy=true;try{while(wantedHeight!==null){const height=wantedHeight;wantedHeight=null;render(await command('resize',{height,corner:resizing?.corner||'se'}));}}finally{resizeBusy=false;}}
+  document.querySelectorAll('[data-resize-corner]').forEach(corner=>{
+    corner.addEventListener('pointerdown',event=>{
+      if(event.button!==0)return;
+      event.preventDefault();
+      resizing={x:event.screenX,y:event.screenY,height:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--phone-height')),corner:corner.dataset.resizeCorner};
+      corner.setPointerCapture(event.pointerId);
+    });
+    corner.addEventListener('pointermove',event=>{
+      if(!resizing)return;
+      const dy=(event.screenY-resizing.y)*(resizing.corner.includes('n')?-1:1);
+      const dx=(event.screenX-resizing.x)*(resizing.corner.includes('w')?-1:1)/aspect;
+      wantedHeight=Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)));
+      if(!resizeBusy)flushResize().catch(()=>{});
+    });
+    const end=()=>{resizing=null;};
+    corner.addEventListener('pointerup',end);corner.addEventListener('pointercancel',end);corner.addEventListener('lostpointercapture',end);
+  });
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&expanded)layout(false).catch(()=>{});});
 
   async function initialize() {
     // The browser can load before the launcher has attached the native shell.
