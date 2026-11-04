@@ -1,13 +1,12 @@
-Pane 1.5.2 for Windows x64
+Pane 1.6.0 for Windows x64
 
-- Fixes the phone-shaped native window by applying a persistent WinForms region to the actual Pane WebView window and disabling the rectangular DWM shadow.
-- Window controls expand upward; Minimize replaces the three-line handle without overlapping the volume or phone buttons.
-- Hold Home for 0.6 seconds to invoke Siri. A short click still goes Home.
-- Notification Center and Control Center buttons toggle their panels closed on the next press. Opening gestures are serialized, including rapid clicks.
-- Replaces the duplicate Gestures, Buttons and View controls in the connection overlay with a practical How to use Pane guide.
-- Sizes the frame around the actual video area, including its bezel insets. Adapts to small model aspect-ratio differences, rotation and near-square/wider displays without a model list. iPhone Duo hardware compatibility is not yet verified.
-- Retains USB/Wi-Fi Developer Mode control, Connect/Disconnect, and external AirPlay receiver setup for laptop audio.
+- Adds a bundled Windows Bluetooth audio receiver. Pair once, select the iPhone once if it cannot be uniquely identified, and Pane automatically opens its remembered audio connection while mirroring. Initial pairing approval remains required; if iOS retains another audio route, selecting this PC once may still be necessary. AirPlay remains an optional manual route; no external Bluetooth receiver app is needed.
+- Clips the WebView2 child renderer windows as well as the parent, requests a transparent WebView background, and repairs clipping when renderer windows are recreated. Windows tests verify actual desktop pixels outside the phone and rail, including after resizing.
+- Uses one symmetric 7px bezel and explicitly positioned video to eliminate uneven inset/baseline spacing. Continues adapting to live phone dimensions.
+- App Switcher, Notification Center and Control Center now send Home on a consecutive repeat click. A different button or manual input resets the repeat action; changing between buttons no longer injects an extra Home.
+- Reduces motion-time keyframe pressure, enables per-frame receiver feedback over USB, prefers hardware decoding, avoids repeated network-buffer copies and bounds the decode backlog.
+- Shows measured received/displayed FPS and live resolution in the connection panel. 60 FPS is a target, not a guaranteed lock: iOS controls the encoder and may reduce frame rate or resolution. Native HEVC video is decoded without an extra transcoding step. Use USB for the most stable results.
 
-Automatic updates: launch Pane, wait for the verified update, close normally and reopen. Verify Product version 1.5.2 in Pane.exe Properties > Details or the version in the connection panel.
+Windows build, native desktop/UI tests, audio-helper packaging checks, regression tests and updater checks run before publication. Physical iPhone audio routing, sustained FPS, and iPhone Duo compatibility still require device verification. Bluetooth A2DP handles media playback; it does not provide an iPhone microphone or call route.
 
-Windows native tests inspect the actual HWND region before and after resize, plus hover-menu placement. UI tests exercise Home click/hold/cancel, panel toggles and failure recovery. Siri and system gestures still need verification on a physical iPhone; Siri must be enabled on the phone.
+Automatic updates: launch Pane, wait for the verified download, close normally and reopen. Verify Product version 1.6.0 in Pane.exe Properties > Details.

@@ -314,7 +314,7 @@ function renderScreen(screen) {
   workspace.classList.remove("is-live");
   phoneShell.classList.remove("live");
   remotePanel.hidden = false;
-  openSystemPanel = null;
+  lastNavigation = null;
   restartScreen.hidden = true;
   kbToggle.hidden = true;
   screenView.hidden = true;
@@ -424,7 +424,7 @@ function reloadMirrorIframe() {
 }
 
 async function restartMirror() {
-  openSystemPanel = null;
+  lastNavigation = null;
   restartScreen.disabled = true;
   screenNote.textContent = "Restarting screen… keep the iPhone unlocked.";
   screenNote.className = "";
@@ -448,6 +448,7 @@ async function restartMirror() {
 }
 
 async function mirrorPost(path, payload) {
+  if (path === "/key") window.paneManualInput?.();
   try { await window.paneControl(path, payload); }
   catch (error) { screenNote.textContent = error.message; screenNote.className = "warn"; }
 }
@@ -478,14 +479,22 @@ const GESTURES = {
 
 // A swipe-up injected over USB is too slow for iOS to treat as the Home
 // gesture, so Home and the app switcher use the Home button instead.
-let openSystemPanel = null;
+let lastNavigation = null;
 let gestureChain = Promise.resolve();
+window.paneManualInput = () => { lastNavigation = null; };
+document.addEventListener("click", event => {
+  const button = event.target.closest?.("button");
+  if (button && !["switcher", "notifications", "control"].includes(button.dataset.gesture)) window.paneManualInput();
+}, true);
 function queueGesture(name) {
+  const toggles = ["switcher", "notifications", "control"];
+  const close = toggles.includes(name) && lastNavigation === name;
+  lastNavigation = !close && toggles.includes(name) ? name : null;
   gestureChain = gestureChain.then(async () => {
     if (!workspace.classList.contains("is-live")) return;
-    await gesture(name);
+    await gesture(close ? "home" : name);
   }).catch(error => {
-    openSystemPanel = null;
+    lastNavigation = null;
     screenNote.textContent = error.message;
     screenNote.className = "warn";
   });
@@ -493,7 +502,6 @@ function queueGesture(name) {
 }
 
 async function pressHome(times) {
-  openSystemPanel = null;
   for (let i = 0; i < times; i++) {
     if (i) await sleep(120);
     await window.paneControl("/button", { name: "home", state: "press" });
@@ -502,15 +510,12 @@ async function pressHome(times) {
 
 async function gesture(name) {
   if (name === "siri") {
-    openSystemPanel = null;
     return window.paneControl("/button", { name: "siri", state: "press" });
   }
   if (name === "home") return pressHome(1);
   if (name === "switcher") return pressHome(2);
   const g = GESTURES[name];
   if (!g) return;
-  if (openSystemPanel === name) return pressHome(1);
-  if (openSystemPanel) await pressHome(1);
   const [x0, y0] = g.from;
   const [x1, y1] = g.to;
   try {
@@ -525,7 +530,6 @@ async function gesture(name) {
   } finally {
     await window.paneControl("/touch", { type: "release", x: x1, y: y1 });
   }
-  openSystemPanel = name;
 }
 
 function toggleFullscreen() {

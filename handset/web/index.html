@@ -31,7 +31,16 @@
       <div class="wifi-row"><span id="wifi-state">Wi-Fi not set up</span><button id="wifi-pair" class="text-button">Set up Wi-Fi</button></div>
       <button id="show-screen" class="primary primary-block">Connect <span aria-hidden="true">↗</span></button>
       <button id="restart-screen" class="secondary" hidden>Restart screen</button><button id="kb-toggle" class="secondary" aria-pressed="true" hidden>Keyboard → iPhone: On</button>
-      <details class="airplay-audio setup-card"><summary>Audio on laptop · AirPlay</summary><p>Start your Windows AirPlay receiver. Keep the laptop and iPhone on the same Wi-Fi network.</p><ol><li>On iPhone, open Control Center and expand the Now Playing card.</li><li>Tap the audio-output / AirPlay icon and select the laptop receiver.</li><li>Play audio and confirm it is audible on the laptop. Keep the iPhone media volume up; it also controls AirPlay volume.</li></ol><p>Developer Mode continues to handle video and controls. Audio routing is controlled by iOS and your receiver; Pane cannot verify or force it. If AirPlay disconnects, iOS may play audio on the phone again.</p></details>
+      <section class="setup-card audio-card" aria-label="Laptop audio">
+        <h3>Laptop audio · Bluetooth</h3>
+        <p id="audio-note" role="status">Checking audio receiver…</p>
+        <label><input id="audio-auto" type="checkbox" checked> Automatically connect when mirroring</label>
+        <select id="audio-device" aria-label="Paired iPhone for audio"><option value="">Select paired iPhone…</option></select>
+        <div class="audio-actions"><button id="audio-refresh" class="secondary">Refresh devices</button><button id="audio-select" class="secondary">Use this phone</button><button id="audio-settings" class="secondary">Bluetooth settings</button><button id="audio-retry" class="secondary">Retry audio</button></div>
+        <p>Pair once in Windows Bluetooth settings and approve the pairing on iPhone. Pane remembers your selected phone and opens its audio connection automatically. If iOS keeps a different output selected, choose this PC once in the iPhone audio picker. Media playback uses the laptop; calls and microphone routing are separate.</p>
+        <details><summary>Prefer AirPlay?</summary><p>Start your Windows receiver and select it in the iPhone audio picker. Turn automatic Bluetooth audio off here to keep that route. Pane cannot force an AirPlay route on iOS.</p></details>
+      </section>
+      <p id="video-performance" role="status">Video target: 60 FPS · waiting for live frames</p>
       <section class="setup-card" id="setup-card"><p class="eyebrow">FIRST TIME HERE?</p><h3 id="setup-title">Let's get you connected.</h3><p id="setup-description">Everything you need, from the right cable to your first mirror.</p><button id="toggle-guide" class="guide-toggle" aria-expanded="false" aria-controls="run-guide">iOS 27 setup guide <span aria-hidden="true">＋</span></button></section>
       <section id="run-guide" class="guide" hidden>
         <div class="guide-intro"><span class="eyebrow">STEP BY STEP</span><h2>Make yourself at home.</h2><p>A complete guide for iOS 27. Keep your iPhone nearby and unlocked.</p></div>
@@ -49,11 +58,11 @@
           <li><strong>Connect:</strong> choose Cable or paired Wi-Fi and press Connect. The same button disconnects.</li>
           <li><strong>Touch &amp; type:</strong> click the picture to tap, drag to swipe, and scroll with the mouse wheel. Close this panel to type on the iPhone when Keyboard → iPhone is on.</li>
           <li><strong>Home &amp; Siri:</strong> click the house to go Home. Hold it for a moment to invoke Siri (if enabled on your iPhone). Right-click the picture for Home.</li>
-          <li><strong>Side buttons:</strong> adjust volume or open the app switcher. Click the bell for Notification Center or the sliders for Control Center; click the same button again to close it. If you close a panel on the phone itself, click Home to reset the controls.</li>
+          <li><strong>Side buttons:</strong> adjust volume or open the app switcher. Click the bell for Notification Center or the sliders for Control Center; click the same button a second time to send Home. The app-switcher button works the same way. Clicking another button or using the picture resets this repeat action.</li>
           <li><strong>Phone size:</strong> the picture and frame follow the connected display’s live proportions, including rotation and display-size changes. The initial outline is a placeholder until the first video frame arrives.</li>
           <li><strong>Window:</strong> hover over the three lines for Minimize, with Maximize/Restore and Close above it. Drag the pane label in this panel to move the window. Drag a phone corner to resize; the crosshair keeps Pane on top.</li>
           <li><strong>Connection panel:</strong> the arrow opens and closes this overlay. Escape also closes it. Use Restart screen if the picture freezes.</li>
-          <li><strong>Laptop audio:</strong> use the AirPlay instructions above to select your Windows receiver on the iPhone.</li>
+          <li><strong>Laptop audio:</strong> pair the iPhone in Bluetooth settings, then choose it above once. Pane reconnects its audio while mirroring.</li>
         </ul>
       </section>
 
@@ -65,5 +74,5 @@
     </div>
   </aside>
 <div class="resize-corner corner-nw" data-resize-corner="nw" aria-hidden="true"></div><div class="resize-corner corner-ne" data-resize-corner="ne" aria-hidden="true"></div><div class="resize-corner corner-sw" data-resize-corner="sw" aria-hidden="true"></div><div class="resize-corner corner-se" data-resize-corner="se" aria-hidden="true"></div></main>
-<script src="/controls.js"></script><script src="/keys.js"></script><script src="/app.js"></script><script src="/shell.js"></script>
+<script src="/controls.js"></script><script src="/keys.js"></script><script src="/app.js"></script><script src="/shell.js"></script><script src="/audio.js"></script>
 </body></html>

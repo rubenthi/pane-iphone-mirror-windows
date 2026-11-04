@@ -53,7 +53,12 @@
     document.querySelector(`#${action}-window`).addEventListener('click', () => command(action).then(render).catch(() => {}));
   }
   window.addEventListener('message', event => {
-    if (event.origin !== location.origin || event.source !== document.querySelector('#screen-view').contentWindow || !['pane-display','pane-stream-status'].includes(event.data?.source)) return;
+    if (event.origin !== location.origin || event.source !== document.querySelector('#screen-view').contentWindow || !['pane-display','pane-stream-status','pane-video-stats'].includes(event.data?.source)) return;
+    if(event.data.source==='pane-video-stats'){
+      const s=event.data;
+      if([s.width,s.height,s.received,s.presented].every(Number.isFinite)) document.querySelector('#video-performance').textContent=`${s.width} × ${s.height} · received ${s.received.toFixed(1)} FPS · displayed ${s.presented.toFixed(1)} FPS · target 60`;
+      return;
+    }
     if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':event.data.text;arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
     const { width, height } = event.data;
     if (![width, height].every(value => Number.isInteger(value) && value > 0 && value <= 16384)) return;

@@ -14,7 +14,7 @@ import threading
 DRAWER = 416
 TAB = 60
 DEFAULT_ASPECT = 390 / 844
-SCREEN_CHROME = 14  # CSS: two 2px borders + two 5px screen insets
+SCREEN_CHROME = 14  # CSS: symmetric 7px bezel on all four sides
 
 
 def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
@@ -50,7 +50,8 @@ class FloatingWindow:
         self.g = ctypes.WinDLL('gdi32', use_last_error=True)
         self.callback = ctypes.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)
         signatures = {
-            'EnumWindows': ([self.callback, W.LPARAM], W.BOOL),
+            'EnumChildWindows': ([W.HWND, self.callback, W.LPARAM], W.BOOL),
+            'SetWindowRgn': ([W.HWND, W.HRGN, W.BOOL], ctypes.c_int),
             'GetWindowThreadProcessId': ([W.HWND, ctypes.POINTER(W.DWORD)], W.DWORD),
             'IsWindowVisible': ([W.HWND], W.BOOL),
             'IsWindow': ([W.HWND], W.BOOL),
@@ -74,6 +75,10 @@ class FloatingWindow:
         self.g.CreateRoundRectRgn.restype = W.HRGN
         self.g.CombineRgn.argtypes = [W.HRGN, W.HRGN, W.HRGN, ctypes.c_int]
         self.g.CombineRgn.restype = ctypes.c_int
+        self.g.EqualRgn.argtypes = [W.HRGN, W.HRGN]
+        self.g.EqualRgn.restype = W.BOOL
+        self.g.OffsetRgn.argtypes = [W.HRGN, ctypes.c_int, ctypes.c_int]
+        self.g.OffsetRgn.restype = ctypes.c_int
         self.g.DeleteObject.argtypes = [W.HANDLE]
         self.g.DeleteObject.restype = W.BOOL
 
@@ -111,7 +116,17 @@ class FloatingWindow:
             for attribute, value in ((2, 1), (33, 1), (34, 0xFFFFFFFE)):
                 setting = W.DWORD(value)
                 dwm.DwmSetWindowAttribute(self.handle, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
+            from System.Drawing import Color
+            from System.Windows.Forms import Timer
+            self._form.webview.DefaultBackgroundColor = Color.Transparent
             self.layout(False, DEFAULT_ASPECT)
+            # WebView2 can recreate its child renderer after navigation, DPI or
+            # GPU changes. Clip its native hosts as well as the WinForms parent.
+            self._shape_timer = Timer()
+            self._shape_timer.Interval = 400
+            self._shape_timer.Tick += lambda *_: self._repair_regions()
+            self._shape_timer.Start()
+            self._form.FormClosed += lambda *_: self._shape_timer.Stop()
             return True
         return self._on_ui(configure)
 
@@ -160,12 +175,56 @@ class FloatingWindow:
                     managed = Region.FromHrgn(IntPtr(region))
                     previous = self._form.Region
                     self._form.Region = managed
+                    previous_web = self._form.webview.Region
+                    self._form.webview.Region = managed.Clone()
+                    if previous_web is not None:
+                        previous_web.Dispose()
                     if previous is not None:
                         previous.Dispose()
                 finally:
                     self.g.DeleteObject(region)
             self.aspect, self.expanded, self._geometry = aspect, expanded, geometry
+            if self.handle: self._repair_regions()
             return self.status()
+
+    def _repair_regions(self):
+        """Restore clipping on the HWNDs actually used by WebView2 composition."""
+        if self._form.IsDisposed or self._form.Region is None:
+            return
+        self.handle = self._form.Handle.ToInt64()
+        from System.Drawing import Graphics
+        graphics = Graphics.FromHwnd(self._form.Handle)
+        try:
+            expected = self._form.Region.GetHrgn(graphics).ToInt64()
+        finally:
+            graphics.Dispose()
+        parent = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(parent))
+        def apply(hwnd, dx=0, dy=0):
+            desired = self.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
+            actual = self.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
+            try:
+                self.g.CombineRgn(desired, expected, expected, 5)  # RGN_COPY
+                self.g.OffsetRgn(desired, -dx, -dy)
+                matches = self.u.GetWindowRgn(hwnd, actual) and self.g.EqualRgn(desired, actual)
+                if not matches:
+                    if not self.u.SetWindowRgn(hwnd, desired, True):
+                        raise OSError('Windows could not apply the Pane outline.')
+                    desired = None  # Windows owns it after success.
+            finally:
+                if desired: self.g.DeleteObject(desired)
+                self.g.DeleteObject(actual)
+        try:
+            apply(self.handle)
+            @self.callback
+            def child(hwnd, _):
+                rect = W.RECT(); self.u.GetWindowRect(hwnd, ctypes.byref(rect))
+                # Only full-surface browser hosts, never small controls/popups.
+                if abs((rect.right-rect.left)-(parent.right-parent.left)) <= 2 and abs((rect.bottom-rect.top)-(parent.bottom-parent.top)) <= 2:
+                    apply(hwnd, rect.left-parent.left, rect.top-parent.top)
+                return True
+            self.u.EnumChildWindows(self.handle, child, 0)
+        finally:
+            self.g.DeleteObject(expected)
 
     def command(self, payload):
         if self._form is not None and self._form.InvokeRequired:

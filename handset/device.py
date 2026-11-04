@@ -11,6 +11,7 @@ from handset.mux import MuxError, list_devices, lockdown_request, open_lockdown
 
 INFO_KEYS = (
     "DeviceName",
+    "BluetoothAddress",
     "DeviceClass",
     "ProductType",
     "ProductVersion",

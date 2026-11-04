@@ -56,3 +56,11 @@ body.browser-mode{background:transparent}
 .airplay-audio{font-size:11px;line-height:1.7}.airplay-audio summary{cursor:pointer;font-size:12px;color:#e2edfa;font-weight:600}.airplay-audio p{margin-top:10px;color:#b3c1d3}.airplay-audio ol{padding-left:18px;color:#b3c1d3}
 
 .usage-guide{margin-top:18px;font-size:12px;color:#b3c1d3}.usage-guide h2{font-size:17px;color:#f3f7fd}.usage-guide ul{padding-left:18px}.usage-guide li{margin:10px 0}.usage-guide strong{color:#e2edfa}
+
+/* One symmetric bezel; no border-box/inset mixing or iframe baseline gap. */
+.phone{border:0;box-shadow:inset 0 0 0 2px #9eafbf,inset 0 0 0 4px #293340,inset 0 0 0 7px #05080d}
+.phone-screen{inset:7px;border-radius:37px;padding:0;margin:0}
+#screen-view{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;display:block}
+#video-performance{font-size:11px;color:#b3c1d3;margin:10px 0}
+
+.audio-card{font-size:11px;line-height:1.6}.audio-card p{margin:8px 0;color:#b3c1d3}.audio-card select{width:100%;margin:10px 0;background:#101c29;color:#e2edfa;border:1px solid #65758a;border-radius:8px;padding:8px}.audio-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}.audio-card summary{cursor:pointer;margin-top:10px}

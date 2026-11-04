@@ -79,6 +79,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/screen":
             self._json({**screen_status(), "update": updater.status()})
             return
+        if path == '/api/audio':
+            from handset.audio import manager
+            self._json(manager.status())
+            return
         if path == '/api/window':
             self._json(shell.status())
             return
@@ -109,6 +113,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._json({"error": "Expected a JSON object."}, status=400)
+            return
+        if path == '/api/audio':
+            from handset.audio import manager
+            try:
+                self._json(manager.command(payload))
+            except (ValueError, OSError, RuntimeError) as error:
+                self._json({'error': str(error)}, status=400)
             return
         if path == '/api/window':
             try:

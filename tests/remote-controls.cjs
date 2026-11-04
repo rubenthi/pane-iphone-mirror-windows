@@ -27,6 +27,21 @@ module.exports = async function checkRemoteControls(page) {
     assert.equal(events.filter(e=>e.type==='release').length,1);
     assert.deepEqual(events.at(-1),{path:'/button',name:'home',state:'press'});
   }
+  // App switcher opens with two Home taps; an immediate repeat sends one.
+  await home.click(); await page.evaluate(()=>window.controlEvents=[]);
+  await page.locator('[data-gesture="switcher"]').dblclick({delay:30});
+  await page.waitForFunction(()=>window.controlEvents.length===3);
+  assert.ok((await page.evaluate(()=>window.controlEvents)).every(e=>e.name==='home'));
+  // Another button breaks the repeat chain; changing panels must not send Home.
+  await page.evaluate(()=>window.controlEvents=[]);
+  await page.locator('[data-gesture="notifications"]').click();
+  await page.waitForFunction(()=>window.controlEvents.at(-1)?.type==='release');
+  await page.locator('[data-btn="volume-up"]').click();
+  await page.locator('[data-gesture="notifications"]').click();
+  await page.locator('[data-gesture="control"]').click();
+  await page.waitForFunction(()=>window.controlEvents.filter(e=>e.type==='release').length===3);
+  assert.equal(await page.evaluate(()=>window.controlEvents.some(e=>e.name==='home')),false);
+  await home.click();
   // A failed opening attempt must not make the next click dismiss an unopened panel.
   await page.evaluate(()=>{
     let fail=true;

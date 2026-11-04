@@ -28,14 +28,22 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## Features
 
-Version 1.5.2 fixes the native window shape and retains Developer Mode control. The connection panel overlays
-the phone screen; Bluetooth connectivity has been removed. The window outline
-contains only the phone and its dark glass button rail. Drag a corner to resize;
-hover the three-line handle for Minimize, with Maximize/Restore and Close above it.
-Hold Home for Siri; click Notification Center or Control Center again to dismiss it.
-The connection panel includes a How to use Pane guide. The frame follows the live
-display dimensions, including rotation or display-size changes; no model-specific
-size is hardcoded. iPhone Duo hardware compatibility remains unverified.
+Version 1.6.0 adds automatic Bluetooth media-audio reconnection for the selected
+paired iPhone, repairs clipping on WebView2 renderer windows, and uses an even
+7px bezel. Repeat App Switcher, Notification Center or Control Center to send
+Home; any other button/input resets the repeat action. Hold Home for Siri.
+
+The frame follows live display dimensions, including rotation and wider or
+near-square displays. The video pipeline targets 60 FPS and reports measured
+received/displayed rates and resolution. It cannot force iOS to lock its encoder
+at 60 FPS. iPhone Duo and sustained device performance remain hardware-unverified.
+
+Pair the iPhone in Windows Bluetooth settings once and, while mirroring, select
+its audio device in Pane if automatic identification is unavailable. Pane remembers
+that choice and reopens its A2DP connection on subsequent mirror sessions. iOS may
+still require selecting this PC once if it retains another audio route. AirPlay
+can still be used manually with automatic Bluetooth audio disabled. Calls and
+microphone routing are separate from this media-audio receiver.
 
 - 📱 **Live iPhone screen mirroring on Windows**: low-latency HEVC (H.265) video decoded in hardware.
 - 🖱️ **Control the iPhone with your mouse**: tap, long-press, drag and swipe directly on the mirrored screen.

@@ -83,6 +83,8 @@ def main() -> None:
     server = SingleServer((HOST, PORT), Handler)
     threading.Thread(target=server.serve_forever, name="pane-server", daemon=True).start()
     threading.Thread(target=updater.check, name="pane-update", daemon=True).start()
+    from handset.audio import manager as audio
+    audio.start()
     logging.info("Pane listening on %s", URL)
 
     try:
@@ -97,6 +99,7 @@ def main() -> None:
     server.shutdown()
     server.server_close()
     stop_screen()
+    audio.close()
     updater.apply_on_exit()
     os._exit(0)
 
@@ -107,9 +110,11 @@ def run_native_window():
     webview.settings['ALLOW_FILE_URLS'] = False
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
     window = webview.create_window('Pane — iPhone', URL, width=388, height=760,
-                                   frameless=True, easy_drag=False, resizable=False, shadow=False,
+                                   frameless=True, easy_drag=False, resizable=False, shadow=False, transparent=True,
                                    background_color='#090c0d', text_select=True)
     def shown():
+        if shell.handle:
+            return
         if not shell.attach(window):
             logging.error('Could not attach the native window region.')
     window.events.shown += shown

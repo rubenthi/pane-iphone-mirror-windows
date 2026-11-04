@@ -168,7 +168,7 @@ async def _serve(udid: str, transport: str) -> None:
     for attempt in range(2):
         async with _open_tunnel(udid, transport) as rsd:
             if DISPLAY_SERVICE in (rsd.peer_info or {}).get("Services", {}):
-                await _stream(rsd, udid, ScreenStreamServer)
+                await _stream(rsd, udid, ScreenStreamServer, transport)
                 return
             if attempt:
                 raise RuntimeError(
@@ -179,7 +179,7 @@ async def _serve(udid: str, transport: str) -> None:
             await auto_mount(rsd)
 
 
-async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
+async def _stream(rsd, udid: str, ScreenStreamServer, transport="usb") -> None:
     from pymobiledevice3.remote.core_device.display_service import is_media_in_use_error
     from handset.security import ACCESS_TOKEN
 
@@ -188,6 +188,11 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
         bind="127.0.0.1",
         http_port=8766,
         audio_default_on=False,
+        # Per-frame receiver receipts help USB encoder pacing. Avoid the
+        # local-tunnel feedback assumptions over Wi-Fi. Keep settle/recovery
+        # keyframes but remove the periodic motion-time IDR pressure.
+        rctl_enabled=transport == "usb",
+        motion_idr=False,
         password=ACCESS_TOKEN,
     )
 

@@ -44,6 +44,13 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert.deepEqual(state.region_test, {kind:3, phone:true, corner:false, above_rail:false, below_rail:false, rail:true, menu, exact_handle:true, managed_region:true}, JSON.stringify(state));
     }
     await checkRegion();
+    async function checkDesktopPixels(){
+      await page.waitForFunction(async()=>{
+        const s=await getJson('/api/window'),p=s.pixels,b=s.backdrop_color;
+        return p.corner===b && p.above===b && p.below===b && p.phone!==b;
+      },null,{timeout:10000}).catch(async e=>{console.log('Desktop clipping failure:',await page.evaluate(()=>getJson('/api/window')));throw e;});
+    }
+    await checkDesktopPixels();
     const compact=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
     const position=await page.evaluate(()=>({x:screenX,y:screenY}));
     await page.locator('#drag-handle').dispatchEvent('pointerdown',{button:0,pointerId:1,screenX:400,screenY:100});
@@ -116,6 +123,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     // region against the current requested menu state, whether open or closed.
     await page.waitForFunction(async ()=>{const s=await getJson('/api/window');return innerWidth===s.width&&innerHeight===s.height;});
     await checkRegion();
+    await checkDesktopPixels();
     await page.evaluate(async()=>renderScreen({phase:'idle'}));
     assert.deepEqual(errors,[]);
     // Exercise the real mirror document with synthetic full-size video frames.
@@ -170,9 +178,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert.deepEqual(await picture.evaluate(()=>{const r=canvas.getBoundingClientRect();return touchCoords({clientX:r.left+r.width/2,clientY:r.top+r.height/2});}),{x:32768,y:32768});
       await checkRegion();
     }
+    await checkDesktopPixels();
+    const bezel=await page.evaluate(()=>{const outer=document.querySelector('#phone-shell').getBoundingClientRect(),inner=document.querySelector('#phone-screen').getBoundingClientRect();return [inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom];});
+    assert.deepEqual(bezel,[7,7,7,7]);
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
-    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['live display aspect changes including near-square and landscape','actual HWND shape and managed region','upward hover menu geometry','Home hold Siri','system panel toggles','usage guide','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
+    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['live display aspect changes including near-square and landscape','actual desktop pixels outside the shape','equal four-sided bezel','actual HWND shape and managed region','upward hover menu geometry','Home hold Siri','system panel toggles','usage guide','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
   } finally {
     if(page) await page.evaluate(async()=>{const auth=await fetch('/api/auth').then(r=>r.json());await fetch('/api/window',{method:'POST',headers:{'X-Pane-Token':auth.token,'Content-Type':'application/json'},body:JSON.stringify({action:'close'})});}).catch(()=>{});

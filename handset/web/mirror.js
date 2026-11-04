@@ -41,8 +41,14 @@ let rafScheduled = false;
 let lastFrame = null;
 let lastFrameLandscape = null;
 let frameCount = 0;
+let frameStats = new PaneFrameStats();
+let decodeDepth = 0;
 let runGeneration = 0;
 let abortStream = null;
+setInterval(() => {
+  const sample = frameStats.sample(canvas.width, canvas.height, decodeDepth);
+  if (sample) window.parent.postMessage(sample, location.origin);
+}, 1000);
 
 function setStatus(text, tone) {
   if (!statusEl) return;
@@ -96,6 +102,7 @@ function touchCoords(e) {
 
 async function postJson(path, payload) {
   try {
+    window.parent.paneManualInput?.();
     if (window.parent !== window && window.parent.paneControl) return await window.parent.paneControl(path, payload);
     const response = await mirrorFetch(path, {
       method: "POST",
@@ -356,6 +363,7 @@ function drawPending() {
   lastFrameLandscape = landscape;
   try {
     drawFrame(f);
+    frameStats.presented++;
     if (frameCount > 0) setStatus("Live", "ok");
   } catch (_) {}
   if (lastFrame && lastFrame !== f) {
@@ -369,6 +377,7 @@ function drawPending() {
 async function run(generation) {
   setStatus("Connecting to stream…");
   frameCount = 0;
+  frameStats = new PaneFrameStats();
   const startedAt = performance.now();
   const watchdog = window.setInterval(() => {
     if (generation !== runGeneration) {
@@ -388,8 +397,12 @@ async function run(generation) {
   const { codec, description, geometry } = await fetchCodecWithRetry();
   if (generation !== runGeneration) return;
 
-  let decoderConfig = { codec, description, codedWidth: geometry.width, codedHeight: geometry.height, optimizeForLatency: true };
-  const support = await VideoDecoder.isConfigSupported(decoderConfig);
+  let decoderConfig = { codec, description, codedWidth: geometry.width, codedHeight: geometry.height, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' };
+  let support = await VideoDecoder.isConfigSupported(decoderConfig);
+  if (!support.supported) {
+    decoderConfig = {...decoderConfig, hardwareAcceleration:'no-preference'};
+    support = await VideoDecoder.isConfigSupported(decoderConfig);
+  }
   if (!support.supported) {
     setStatus("This browser cannot decode the iPhone video stream.", "warn");
     return;
@@ -404,6 +417,7 @@ async function run(generation) {
         if (pendingFrame) {
           try {
             pendingFrame.close();
+            frameStats.skipped++;
           } catch (_) {}
         }
         pendingFrame = frame;
@@ -461,24 +475,16 @@ async function run(generation) {
 
   const reader = resp.body.getReader();
   abortStream = () => reader.cancel().catch(() => {});
-  let buf = new Uint8Array(0);
+  const packets = new PanePackets();
+  let lastBacklogRecovery = -Infinity;
   let timestamp = 0;
   let gotKey = false;
 
   while (generation === runGeneration) {
     const { value, done } = await reader.read();
     if (done) break;
-    const merged = new Uint8Array(buf.length + value.length);
-    merged.set(buf);
-    merged.set(value, buf.length);
-    buf = merged;
-    while (buf.length >= 4) {
-      const len = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
-      if (buf.length < 4 + len) break;
-      const type = buf[4];
-      const data = buf.slice(5, 4 + len);
-      buf = buf.subarray(4 + len);
-
+    for (const {type, data} of packets.push(value)) {
+      frameStats.received++;
       const updated = PaneHEVC.update(decoderConfig.description, data);
       if (updated) {
         const size = PaneHEVC.dimensions(updated);
@@ -513,6 +519,17 @@ async function run(generation) {
         decoder = buildDecoder();
         decoder.configure(decoderConfig);
         needsResync = true;
+        continue;
+      }
+      decodeDepth = decoder.decodeQueueSize;
+      if (decodeDepth > 6) {
+        // Drop a stale dependency chain as a unit; resume only at a clean key.
+        // Keep interactive latency bounded without feeding broken delta frames.
+        needsResync = true;
+        if (performance.now()-lastBacklogRecovery > 1000) {
+          lastBacklogRecovery = performance.now();
+          mirrorFetch('/pli', {method:'POST',cache:'no-store'}).catch(()=>{});
+        }
         continue;
       }
       try {

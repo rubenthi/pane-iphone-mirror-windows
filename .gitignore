@@ -13,3 +13,5 @@ test-results/
 native/Pane.Bluetooth.exe
 native/**/bin/
 native/**/obj/
+
+native/Pane.Audio.exe

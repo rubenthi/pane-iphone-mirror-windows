@@ -25,3 +25,5 @@ class StartVolumeTests(unittest.IsolatedAsyncioTestCase):
             await _stream(None, 'phone', factory)
         server._handle_button.assert_not_awaited()
         self.assertFalse(factory.call_args.kwargs['audio_default_on'])
+        self.assertFalse(factory.call_args.kwargs['motion_idr'])
+        self.assertTrue(factory.call_args.kwargs['rctl_enabled'])
