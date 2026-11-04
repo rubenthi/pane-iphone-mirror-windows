@@ -49,3 +49,5 @@ body{background:transparent}
 .resize-corner{position:absolute;width:32px;height:32px;z-index:40;background:transparent;touch-action:none}
 .corner-nw{left:8px;top:8px;cursor:nwse-resize}.corner-ne{left:calc(var(--phone-width) - 40px);top:8px;cursor:nesw-resize}.corner-sw{left:8px;bottom:8px;cursor:nesw-resize}.corner-se{left:calc(var(--phone-width) - 40px);bottom:8px;cursor:nwse-resize}
 body.browser-mode{background:transparent}
+
+.airplay-audio{font-size:11px;line-height:1.7}.airplay-audio summary{cursor:pointer;font-size:12px;color:#e2edfa;font-weight:600}.airplay-audio p{margin-top:10px;color:#b3c1d3}.airplay-audio ol{padding-left:18px;color:#b3c1d3}
