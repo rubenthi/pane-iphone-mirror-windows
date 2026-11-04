@@ -47,8 +47,13 @@ class HandoffTests(unittest.TestCase):
             subprocess.run([sys.executable, __file__, '--child', directory], check=True, timeout=30)
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
-                if (root / 'Pane.exe').read_bytes() == NEW:
-                    break
+                # A concurrent Windows ReplaceFile can briefly deny a reader
+                # access to the destination while it creates the backup.
+                try:
+                    if (root / 'Pane.exe').read_bytes() == NEW:
+                        break
+                except (FileNotFoundError, PermissionError):
+                    pass
                 time.sleep(.1)
             logs = '\n'.join(p.read_text(errors='replace') for p in (root / 'stage').glob('*.log'))
             self.assertEqual((root / 'Pane.exe').read_bytes(), NEW, logs)
