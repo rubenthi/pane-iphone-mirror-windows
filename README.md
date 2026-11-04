@@ -28,7 +28,7 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## Features
 
-Version 1.5.1 fixes the native window shape and retains Developer Mode control. The connection panel overlays
+Version 1.5.2 fixes the native window shape and retains Developer Mode control. The connection panel overlays
 the phone screen; Bluetooth connectivity has been removed. The window outline
 contains only the phone and its dark glass button rail. Drag a corner to resize;
 hover the three-line handle for Minimize, with Maximize/Restore and Close above it.

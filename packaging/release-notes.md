@@ -1,4 +1,4 @@
-Pane 1.5.1 for Windows x64
+Pane 1.5.2 for Windows x64
 
 - Fixes the phone-shaped native window by applying a persistent WinForms region to the actual Pane WebView window and disabling the rectangular DWM shadow.
 - Window controls expand upward; Minimize replaces the three-line handle without overlapping the volume or phone buttons.
@@ -8,6 +8,6 @@ Pane 1.5.1 for Windows x64
 - Sizes the frame around the actual video area, including its bezel insets. Adapts to small model aspect-ratio differences, rotation and near-square/wider displays without a model list. iPhone Duo hardware compatibility is not yet verified.
 - Retains USB/Wi-Fi Developer Mode control, Connect/Disconnect, and external AirPlay receiver setup for laptop audio.
 
-Automatic updates: launch Pane, wait for the verified update, close normally and reopen. Verify Product version 1.5.1 in Pane.exe Properties > Details or the version in the connection panel.
+Automatic updates: launch Pane, wait for the verified update, close normally and reopen. Verify Product version 1.5.2 in Pane.exe Properties > Details or the version in the connection panel.
 
 Windows native tests inspect the actual HWND region before and after resize, plus hover-menu placement. UI tests exercise Home click/hold/cancel, panel toggles and failure recovery. Siri and system gestures still need verification on a physical iPhone; Siri must be enabled on the phone.
