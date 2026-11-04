@@ -1,5 +1,17 @@
 const assert = require('node:assert/strict');
 module.exports = async function checkRemoteControls(page) {
+  // Exercise the real fetch/queue boundary with the pinned service's response.
+  const touches = [];
+  await page.route('**/mirror/touch', async route => {
+    touches.push(route.request().postDataJSON());
+    await route.fulfill({contentType: 'text/plain', body: 'ok'});
+  });
+  await Promise.all([
+    page.waitForResponse(r => r.url().endsWith('/mirror/touch') && r.request().postDataJSON().type === 'release'),
+    page.locator('[data-gesture="control"]').click(),
+  ]);
+  assert.equal(touches.filter(e => e.type === 'contact').length, 13);
+  await page.unroute('**/mirror/touch');
   await page.evaluate(()=>{
     window.controlEvents=[];
     window.paneControl=async(path,payload)=>window.controlEvents.push({path,...payload});

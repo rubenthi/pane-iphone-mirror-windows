@@ -403,6 +403,12 @@ async function postJson(url, payload) {
     headers: { "Content-Type": "application/json", "X-Pane-Token": await paneToken() },
     body: JSON.stringify(payload),
   });
+  // CoreDevice acknowledges HID commands with plain text ("ok").
+  if (url.startsWith(MIRROR_API + "/")) {
+    const message = await response.text();
+    if (!response.ok) throw new Error(message || `Phone control failed (${response.status})`);
+    return message;
+  }
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
   return body;

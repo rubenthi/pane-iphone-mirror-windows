@@ -146,13 +146,14 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.ok(Math.abs(geometry.width/geometry.height-1170/2532)<.002);
     assert.ok(geometry.top>=-1 && geometry.bottom<=geometry.viewportHeight+1);
     assert.equal(geometry.center.x,32768);assert.equal(geometry.center.y,32768);
-    await page.evaluate(()=>{window.testTouches=[];window.paneControl=async(path,payload)=>window.testTouches.push({path,...payload});});
+    await page.evaluate(()=>{window.testTouches=[];window.originalPaneControl=window.paneControl;window.paneControl=async(path,payload)=>window.testTouches.push({path,...payload});});
     await picture.evaluate(()=>{const r=canvas.getBoundingClientRect();canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:100,clientX:r.left+r.width/2,clientY:r.top+r.height/2,bubbles:true,cancelable:true}));});
     await page.waitForFunction(()=>window.testTouches.some(t=>t.type==='release'));
     const touches=await page.evaluate(()=>window.testTouches);
     assert.equal(touches[0].type,'contact');assert.equal(touches.at(-1).type,'release');assert.ok(touches.at(-1).y<touches[0].y);
     assert.equal(await page.locator('#phone-shell .phone-toolbar').count(),0);
     assert.equal(await page.locator('#phone-shell .phone-status').count(),0);
+    await page.evaluate(()=>{window.paneControl=window.originalPaneControl;});
     await require('./remote-controls.cjs')(page);
     // Synthetic folded/unfolded-like sizes; these are not claimed Duo specs.
     // Every frame passes through the actual canvas -> shell -> native resize path.
