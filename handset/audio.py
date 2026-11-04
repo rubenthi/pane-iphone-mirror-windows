@@ -100,9 +100,7 @@ class AudioManager:
             enabled = self._config['enabled']
             preferred = self._config['phones'].get(screen.get('udid'))
         udid = screen.get('udid')
-        session_ready = (screen.get('phase') in {'running', 'audio-only'} or
-                         (screen.get('phase') == 'starting' and screen.get('audioReady')))
-        if not enabled or not session_ready:
+        if not enabled or screen.get('phase') != 'running':
             if self._receiver or self._active:
                 bridge.command({'action': 'audio.disconnect'})
             self._active = self._receiver = None
@@ -117,15 +115,13 @@ class AudioManager:
             bridge.command({'action': 'audio.disconnect'}); self._active = self._receiver = None
             self._retry_at = 0
             self._set(phase='connecting', note='Connecting the selected iPhone audio…')
-        if self._receiver or self._active:
+        if self._active:
             state = bridge.command({'action': 'status'})
             if state.get('state') == 'Opened':
-                self._active = self._receiver
                 self._set(phase='connected', note='Paired · audio connection open. Play media to check sound. If needed, choose this PC in the iPhone output picker.')
                 return
-            if self._active:
-                self._active = None
-                self._set(phase='connecting', note='Bluetooth audio disconnected. Retrying automatically…')
+            self._active = None
+            self._set(phase='connecting', note='Bluetooth audio disconnected; retrying automatically…')
         if time.monotonic() < self._retry_at: return
         self._retry_at = time.monotonic() + 15
         self._set(phase='connecting', note='Connecting paired iPhone audio…')
@@ -149,10 +145,7 @@ class AudioManager:
                         self._retry_at = 0
                     else:
                         os.startfile('ms-settings:bluetooth')
-                    note = result['note']
-                    if not result['paired']:
-                        note += ' In Windows choose Add device → Bluetooth, select your iPhone and confirm the code on both screens.'
-                    self._set(phase='setup', note=note)
+                    self._set(phase='setup', note=result['note'])
                     return
                 os.startfile('ms-settings:bluetooth')
             self._set(phase='setup', note='Choose Add device in Windows Bluetooth settings, approve matching codes, then retry audio.')
@@ -160,17 +153,14 @@ class AudioManager:
         self._set(phase='paired', note='Paired. Opening the Windows Bluetooth media receiver…')
         result = bridge.command({'action': 'audio.connect', 'device': device})
         self._receiver = (udid, device)
-        # StartAsync enabled this exact endpoint. Remember it even when the
-        # phone has not started sending media or OpenAsync asks us to wait.
-        with self._lock:
-            if preferred != device and self._config['phones'].get(udid) == preferred:
-                self._config['phones'][udid] = device
-                self._save()
         if result.get('state') != 'Opened':
-            self._retry_at = time.monotonic() + 15
-            self._set(phase='listening', note=result.get('note', 'Paired. Receiver ready. Waiting for the iPhone to open media audio.'))
+            self._set(phase='listening', note=result.get('note', 'Paired. Waiting for iPhone media audio.'))
             return
         self._active = (udid, device)
+        if preferred != device:
+            with self._lock:
+                self._config['phones'][udid] = device
+                self._save()
         self._set(phase='connected', note='Paired · audio connection open. Play media to check sound. If needed, choose this PC in the iPhone output picker.')
 
     def _run(self):

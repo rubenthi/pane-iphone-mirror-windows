@@ -1,11 +1,9 @@
-Pane 1.7.3 for Windows x64
+Pane 1.7.4 for Windows x64
 
-- Ship the checksum-verified, unchanged Bluetooth receiver from Pane v1.7.0. Windows applies its normal application-control policy when launching it.
-- Keep the WebView aligned with the phone outline after minimizing and restoring, including when moving between displays.
-- Complete multi-step phone controls when CoreDevice returns its plain-text acknowledgement. Notification Center and Control Center send their original swipe, and App Switcher sends its original double press. Repeated sidebar clicks no longer inject an extra Home action.
-- Connect remembers the Bluetooth receiver for the identified iPhone as soon as Windows enables it. This fixes a reconnection loop on PCs that still remember another phone.
-- Pane checks whether the receiver has opened while waiting for the iPhone. A paired phone, an open connection, and sound playing through the PC are distinct.
-- Bluetooth audio can start as soon as the trusted phone is reachable. If iOS refuses video capture because its camera or microphone is busy, you can keep using audio, restart the screen, or disconnect both.
-- On first pairing, compare the codes and confirm on the iPhone and Windows. Later connections reuse that pairing. iOS controls its final output selection.
+Restores the Bluetooth audio connection behavior from v1.7.0 at the user's request after audible playback regressed on the test laptop. Pane waits for the selected phone's screen connection before opening Bluetooth audio and uses the original receiver retry and device-saving behavior. The bundled receiver is byte-for-byte identical to the one in v1.7.0.
 
-To update, open Pane, wait for the verified download, close Pane normally, and reopen. Pane.exe Properties → Details shows Product version 1.7.3.
+Existing Bluetooth pairings and Wi-Fi trust are preserved. The window restore, display scaling, sidebar gesture and updater fixes from later releases remain included.
+
+Windows can report an open connection while playback is silent. An open connection alone is insufficient to confirm that the speakers are playing.
+
+To update, open Pane, wait for the verified download, close normally and reopen. Pane.exe Properties → Details shows Product version 1.7.4.

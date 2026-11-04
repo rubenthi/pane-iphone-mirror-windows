@@ -50,8 +50,6 @@ def _restart_screen(udid: str | None = None) -> dict:
     if state['phase'] in {'starting', 'running'} and udid and udid != state['udid']:
         return {**state, 'error': 'Select the active device before restarting its stream.'}
     chosen = (udid or "").strip() or state.get("udid") or _only_udid()
-    if state['phase'] == 'audio-only':
-        return start_screen(chosen, state['transport'])
     nudged = False
     for path in ("/restart", "/pli"):
         conn = http.client.HTTPConnection("127.0.0.1", 8766, timeout=20)
@@ -113,7 +111,7 @@ def _start_screen(udid: str | None, transport: str) -> dict:
             return {**screen_status(), "error": "Previous stream is still closing. Try again shortly."}
     with _LOCK:
         note = "Looking for the iPhone on Wi-Fi…" if transport == "wifi" else None
-        _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport, audioReady=False)
+        _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport)
     _READY.clear()
     _WORKER = threading.Thread(target=_run, args=(chosen, transport), name="handset-screen", daemon=True)
     _WORKER.start()
@@ -145,8 +143,7 @@ def _run(udid: str, transport: str) -> None:
 
     try:
         asyncio.run(run())
-        if screen_status()["phase"] != "audio-only":
-            _set(phase="idle", udid=udid, url=None, error="The screen stream stopped.")
+        _set(phase="idle", udid=udid, url=None, error="The screen stream stopped.")
     except asyncio.CancelledError:
         _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None)
     except Exception as error:
@@ -171,24 +168,7 @@ async def _serve(udid: str, transport: str) -> None:
     for attempt in range(2):
         async with _open_tunnel(udid, transport) as rsd:
             if DISPLAY_SERVICE in (rsd.peer_info or {}).get("Services", {}):
-                from handset.audio import manager
-                from pymobiledevice3.remote.core_device.display_service import is_media_in_use_error
-                # Read identity while the trusted tunnel is available. iOS can
-                # separately refuse video capture while the phone is locked.
-                try:
-                    values = await asyncio.wait_for(rsd.get_value(), 3)
-                    manager.remember_identity(udid, values)
-                except Exception:
-                    pass
-                _set(audioReady=True)
-                try:
-                    await _stream(rsd, udid, ScreenStreamServer, transport)
-                except Exception as error:
-                    if not is_media_in_use_error(error):
-                        raise
-                    _set(phase="audio-only", udid=udid, url=None, error=None,
-                         note="iOS declined screen capture. Unlock the phone or finish camera or microphone use, then press Restart screen. Bluetooth audio remains available until Disconnect.")
-                    return
+                await _stream(rsd, udid, ScreenStreamServer, transport)
                 return
             if attempt:
                 raise RuntimeError(
@@ -248,6 +228,14 @@ async def _stream(rsd, udid: str, ScreenStreamServer, transport="usb") -> None:
                 await asyncio.sleep(.1)
         else:
             raise TimeoutError('The stream server did not become ready.')
+        if transport == "wifi":
+            # Remote lockdown reads identity over the active tunnel, even with no USB.
+            from handset.audio import manager
+            try:
+                identity = await asyncio.wait_for(rsd.get_value(), 3)
+                manager.remember_identity(udid, identity)
+            except Exception:
+                pass  # Manual audio-device selection remains available.
         # Preserve the user-selected phone volume; this stream is video-only.
         note = None
         _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=note)
