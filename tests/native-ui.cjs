@@ -29,6 +29,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.ok(page, 'dedicated test page exists');
     const errors=[];
     page.on('pageerror', error => errors.push(error.message));
+    page.on('response', async response=>{if(response.url().endsWith('/api/window') && response.status()>=400) console.log('Window API error:',await response.text());});
     await page.reload();
     await page.waitForFunction(async () => {
       const auth = await fetch('/api/auth').then(r=>r.json());
@@ -145,6 +146,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     // Synthetic folded/unfolded-like sizes; these are not claimed Duo specs.
     // Every frame passes through the actual canvas -> shell -> native resize path.
     for (const [width,height] of [[1290,2796],[1800,1920],[1920,1800],[2532,1170],[1170,2532]]) {
+      console.log('Live display target:',width,height);
       await picture.evaluate(({width,height})=>{
         const source=document.createElement('canvas');source.width=width;source.height=height;
         const brush=source.getContext('2d');brush.fillStyle='#153b64';brush.fillRect(0,0,width,height);
@@ -154,7 +156,10 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       await page.waitForFunction(({width,height})=>{
         const screen=document.querySelector('#phone-screen').getBoundingClientRect();
         return Math.abs(screen.width/screen.height-width/height)<.002;
-      },{width,height});
+      },{width,height}).catch(async error=>{
+        console.log('Display mismatch:', await page.evaluate(async()=>({native:await getJson('/api/window'),screen:document.querySelector('#phone-screen').getBoundingClientRect().toJSON(),note:document.querySelector('#screen-note').textContent})), await picture.evaluate(()=>({width:canvas.width,height:canvas.height})));
+        throw error;
+      });
       await picture.waitForFunction(({width,height})=>{
         const r=canvas.getBoundingClientRect();
         return Math.abs(innerWidth/innerHeight-width/height)<.002 &&
