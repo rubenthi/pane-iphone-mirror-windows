@@ -294,6 +294,11 @@ function renderScreen(screen) {
   connectionPhase = screen.phase;
   if (screen.update) document.querySelector("#update-note").textContent = `Pane ${screen.update.version} · ${screen.update.note || screen.update.phase}`;
   const mirroring = screen.phase === "running";
+  const panel = mirroring ? screen.display_size : null;
+  if (panel?.[0] !== window.paneDisplaySize?.[0] || panel?.[1] !== window.paneDisplaySize?.[1]) {
+    window.paneDisplaySize = panel;
+    screenView.contentWindow?.postMessage({source:'handset',cmd:'display-size'}, location.origin);
+  }
   document.querySelectorAll(".rail-navigation button:not(#drawer-toggle)").forEach(button=>button.disabled=!mirroring);
   const selectedStream = screen.udid === selectedUdid && screen.transport === transport;
   if (mirroring) {

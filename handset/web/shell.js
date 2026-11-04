@@ -11,6 +11,7 @@
   let chain = Promise.resolve();
   function render(state) {
     native = state.native;
+    document.body.classList.toggle('native-window',native);
     document.documentElement.style.setProperty('--rail-scale',state.rail_scale??1);
     document.documentElement.style.setProperty('--rail-top',`${state.rail_top??240}px`);
     expanded = state.expanded;
@@ -83,7 +84,7 @@
     corner.addEventListener('pointerdown',event=>{
       if(event.button!==0)return;
       event.preventDefault();
-      resizing={x:event.screenX,y:event.screenY,height:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--phone-height')),corner:corner.dataset.resizeCorner};
+      resizing={x:event.screenX,y:event.screenY,height:document.querySelector('#phone-shell').getBoundingClientRect().height,corner:corner.dataset.resizeCorner};
       corner.setPointerCapture(event.pointerId);
     });
     corner.addEventListener('pointermove',event=>{

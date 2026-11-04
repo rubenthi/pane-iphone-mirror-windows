@@ -14,7 +14,7 @@ import threading
 DRAWER = 416
 TAB = 60
 DEFAULT_ASPECT = 390 / 844
-SCREEN_CHROME = 14  # CSS: symmetric 7px bezel on all four sides
+SCREEN_CHROME = 2  # One CSS pixel around the visible display
 
 
 def _native_pointer(handle):
@@ -120,6 +120,24 @@ class FloatingWindow:
             self.u.GetWindowThreadProcessId(self.handle, ctypes.byref(pid))
             if pid.value != os.getpid():
                 raise ValueError('The Pane window must belong to this process.')
+            # DWM uses the caption/minimize styles for the taskbar transition.
+            # Keep that system behavior with a full-client custom frame.
+            subclass = ctypes.WinDLL('comctl32')
+            proc_type = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, W.HWND, W.UINT, W.WPARAM,
+                                           W.LPARAM, ctypes.c_size_t, ctypes.c_size_t)
+            subclass.DefSubclassProc.argtypes = [W.HWND, W.UINT, W.WPARAM, W.LPARAM]
+            subclass.DefSubclassProc.restype = ctypes.c_ssize_t
+            subclass.SetWindowSubclass.argtypes = [W.HWND, proc_type, ctypes.c_size_t, ctypes.c_size_t]
+            @proc_type
+            def full_client(hwnd, msg, wp, lp, _id, _data):
+                if msg == 0x0083:  # WM_NCCALCSIZE
+                    return 0
+                return subclass.DefSubclassProc(hwnd, msg, wp, lp)
+            self._frame_proc = full_client
+            if subclass.SetWindowSubclass(self.handle, full_client, 1, 0):
+                style = self.u.GetWindowLongPtrW(self.handle, -16)
+                self.u.SetWindowLongPtrW(self.handle, -16, style | 0x00C00000 | 0x00020000)
+                self.u.SetWindowPos(self.handle, 0, 0, 0, 0, 0, 0x0037)
             # Disable DWM's rectangular frame/shadow on the actual WebView form.
             dwm = ctypes.WinDLL('dwmapi')
             dwm.DwmSetWindowAttribute.argtypes = [W.HWND, W.DWORD, ctypes.c_void_p, W.DWORD]
@@ -134,7 +152,9 @@ class FloatingWindow:
             self._form.Activated += disable_backdrop
             from System.Drawing import Color
             from System.Windows.Forms import Timer
-            self._form.webview.DefaultBackgroundColor = Color.Transparent
+            surface = Color.FromArgb(9, 12, 13)
+            self._form.BackColor = surface
+            self._form.webview.DefaultBackgroundColor = surface
             self.layout(False, DEFAULT_ASPECT)
             # WebView2 can recreate its child renderer after navigation, DPI or
             # GPU changes. Clip its native hosts as well as the WinForms parent.
@@ -149,9 +169,9 @@ class FloatingWindow:
     def status(self):
         return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
 
-    def layout(self, expanded, aspect):
+    def layout(self, expanded, aspect, corner="se"):
         if self._form is not None and self._form.InvokeRequired:
-            return self._on_ui(lambda: self.layout(expanded, aspect))
+            return self._on_ui(lambda: self.layout(expanded, aspect, corner))
         with self._lock:
             if self.handle and self.u.IsIconic(self.handle):
                 return self.status()
@@ -168,9 +188,11 @@ class FloatingWindow:
                 geometry = dimensions(aspect, expanded, (work.right-work.left)/scale, (work.bottom-work.top)/scale, self.preferred_height)
                 rect = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(rect))
                 width, height = round(geometry['width']*scale), round(geometry['height']*scale)
-                x = min(max(rect.left, work.left), work.right-width)
-                y = min(max(rect.top, work.top), work.bottom-height)
-                self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, x, y, width, height, 0x0030)
+                left = rect.right - width if 'w' in corner else rect.left
+                top = rect.bottom - height if 'n' in corner else rect.top
+                x = min(max(left, work.left), work.right-width)
+                y = min(max(top, work.top), work.bottom-height)
+                self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, x, y, width, height, 0x0110)
                 def rounded(left, top, right, bottom, radius):
                     return self.g.CreateRoundRectRgn(*(round(v*scale) for v in (left, top, right, bottom, radius*2, radius*2)))
                 pw, h = geometry['phone_width'], geometry['height']
@@ -178,7 +200,9 @@ class FloatingWindow:
                 rail_top, rail_scale = geometry['rail_top'], geometry['rail_scale']
                 parts = [rounded(pw-16, rail_top-50, pw+60, rail_top+292*rail_scale, 28)]
                 if self.menu_open:
-                    parts.append(rounded(pw+8, rail_top-158, pw+52, rail_top-44, 11))
+                    # Three independent buttons. Exclude the desktop between them.
+                    for offset in (-158, -120, -82):
+                        parts.append(rounded(pw+8, rail_top+offset, pw+52, rail_top+offset+34, 11))
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)
@@ -259,17 +283,9 @@ class FloatingWindow:
             corner = payload.get('corner', 'se')
             if corner not in ('nw', 'ne', 'sw', 'se'):
                 raise ValueError('Invalid resize corner.')
-            before = W.RECT()
-            if self.handle: self.u.GetWindowRect(self.handle, ctypes.byref(before))
             self.preferred_height = height
             self.maximized = False
-            result = self.layout(self.expanded, self.aspect)
-            if self.handle:
-                after = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(after))
-                x = before.right - (after.right-after.left) if 'w' in corner else after.left
-                y = before.bottom - (after.bottom-after.top) if 'n' in corner else after.top
-                self.u.SetWindowPos(self.handle, 0, x, y, 0, 0, 0x0015)
-            return result
+            return self.layout(self.expanded, self.aspect, corner)
         if action == 'maximize':
             self.maximized = not self.maximized
             self.preferred_height = 10000 if self.maximized else 760
@@ -299,7 +315,7 @@ class FloatingWindow:
             x, y = self._drag_origin
             self.u.SetWindowPos(self.handle, 0, round(x+dx*scale), round(y+dy*scale), 0, 0, 0x0015)
         elif action == 'minimize':
-            self.u.ShowWindow(self.handle, 6)
+            self.u.PostMessageW(self.handle, 0x0112, 0xF020, 0)  # WM_SYSCOMMAND / SC_MINIMIZE
         elif action == 'close':
             self.u.PostMessageW(self.handle, 0x0010, 0, 0)
         elif action == 'focus':

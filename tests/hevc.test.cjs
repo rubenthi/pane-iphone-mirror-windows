@@ -9,3 +9,11 @@ test('HEVC portrait dimensions replace Windows 1280x720 fallback',()=>{const d=h
 test('HEVC conformance crop uses chroma subsampling',()=>{const d=hevc.dimensions(fixture(1920,1088,[0,0,0,4]).description);assert.equal(d.height,1080)});
 test('in-band rotation SPS updates decoder dimensions',()=>{const portrait=fixture(1328,2896),landscape=fixture(2896,1328);const n=landscape.nal.length;const chunk=Uint8Array.from([0,0,n>>8,n&255,...landscape.nal]);const updated=hevc.update(portrait.description,chunk);assert.equal(hevc.dimensions(updated).width,2896);assert.equal(hevc.update(updated,chunk),null)});
 test('truncated HEVC metadata is rejected',()=>{for(const description of [new Uint8Array(),fixture(1328,2896).description.slice(0,-2)])assert.throws(()=>hevc.dimensions(description));});
+
+test('visible picture excludes only native panel alignment padding in each orientation',()=>{
+  const {visibleSize}=require('../handset/web/hevc.js');
+  assert.deepEqual(visibleSize(1328,2896,[1320,2868]),[1320,2868]);
+  assert.deepEqual(visibleSize(2896,1328,[1320,2868]),[2868,1320]);
+  assert.deepEqual(visibleSize(720,1280,[1320,2868]),[720,1280]);
+  assert.deepEqual(visibleSize(1328,2896,null),[1328,2896]);
+});

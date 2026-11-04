@@ -42,7 +42,7 @@ def checked_status():
             state['region_test'] = {'kind': kind, 'phone': inside(pw/2, h/2),
                     'corner': inside(0, 0), 'above_rail': inside(pw+30, 2),
                     'below_rail': inside(pw+30, h-2), 'rail': inside(pw+30, top+50),
-                    'menu': inside(pw+30, top-103),
+                    'menu': inside(pw+30, top-103), 'between_buttons': inside(pw+30, top-122),
                     'exact_handle': shell.handle == shell._form.Handle.ToInt64(),
                     'managed_region': shell._form.Region is not None}
             shell.u.GetDC.argtypes = [W.HWND]; shell.u.GetDC.restype = W.HDC

@@ -40,5 +40,13 @@
     const result=new Uint8Array(out);
     return result.length===d.length&&result.every((v,i)=>v===d[i])?null:result;
   }
-  root.PaneHEVC={dimensions,update};if(typeof module!=='undefined')module.exports=root.PaneHEVC;
+  function visibleSize(width, height, panel){
+    if(!Array.isArray(panel) || panel.length !== 2 || !panel.every(n=>Number.isInteger(n) && n>0)) return [width,height];
+    let [w,h]=panel;
+    if((w>h)!==(width>height)) [w,h]=[h,w];
+    // Only remove trailing codec alignment pixels at native resolution.
+    if(width<w || height<h || width-w>=32 || height-h>=32) return [width,height];
+    return [w,h];
+  }
+  root.PaneHEVC={dimensions,update,visibleSize};if(typeof module!=='undefined')module.exports=root.PaneHEVC;
 })(typeof window==='undefined'?globalThis:window);

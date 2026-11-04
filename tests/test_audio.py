@@ -31,6 +31,19 @@ class AudioTests(unittest.TestCase):
             self.assertEqual(manager.status()['phase'],'off')
         self.assertEqual([p['action'] for p in seen],['devices','audio.connect','status','audio.disconnect'])
         self.assertEqual(seen[1]['device'],'a')
+    def test_picker_and_refresh_show_only_the_mirrored_phone(self):
+        manager = AudioManager()
+        manager.remember_identity('phone', {'BluetoothAddress': self.devices[0]['address']})
+        self.devices[1]['address'] = '11:22:33:44:55:66'
+        manager._config['phones']['phone'] = 'b'
+        with patch('handset.screen.screen_status', return_value={'udid':'phone'}), \
+             patch('handset.audio.bridge.command', return_value={'devices': self.devices}):
+            state = manager.command({'action':'refresh'})
+            self.assertEqual(state['devices'], [self.devices[0]])
+            self.assertEqual(state['selected'], 'a')
+            with self.assertRaises(ValueError):
+                manager.command({'action':'select', 'device':'b'})
+
     def test_unknown_phone_does_not_connect_an_arbitrary_device(self):
         manager=AudioManager();manager._identity['unknown']={}
         with patch('handset.audio.bridge.command',return_value={'devices':self.devices}) as command,patch('handset.audio.os.name','nt'):

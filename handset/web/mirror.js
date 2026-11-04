@@ -201,7 +201,7 @@ function releaseActive() {
 // Listen on the whole document so a drag can start on the black margin just
 // below the picture; coordinates clamp onto the screen edge.
 document.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0 || wheelBusy) return;
+  if (e.button !== 0 || wheelPoint) return;
   e.preventDefault();
   canvas.focus({ preventScroll: true });
   try {
@@ -238,37 +238,41 @@ function onUp(e) {
   releaseActive();
 }
 
-// Translate wheel/trackpad movement only on the phone picture into a bounded swipe.
-let wheelBusy = false;
-let wheelX = 0, wheelY = 0;
-let wheelPoint = null;
+// Keep one iOS contact down throughout a precision-trackpad gesture. Moves
+// use the same ordered, coalescing queue as a finger drag.
+let wheelPoint = null, wheelTimer;
+function endWheel() {
+  clearTimeout(wheelTimer);
+  if (wheelPoint) sendTouch('release', touchCoords(wheelPoint));
+  wheelPoint = null;
+}
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
-  if(activePointer !== null || !lastFrame) return;
-  const unit=event.deltaMode===1?16:event.deltaMode===2?canvas.getBoundingClientRect().height:1;
-  wheelX=Math.max(-500,Math.min(500,wheelX+event.deltaX*unit));
-  wheelY=Math.max(-500,Math.min(500,wheelY+event.deltaY*unit));
-  wheelPoint={clientX:event.clientX,clientY:event.clientY};
-  if(!wheelBusy) pumpWheel();
+  if (activePointer !== null || !lastFrame || (!event.deltaX && !event.deltaY)) return;
+  const rect=canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+  const unit=event.deltaMode===1 ? 16 : event.deltaMode===2 ? rect.height : 1;
+  const start=()=>{
+    wheelPoint={clientX:clamp(event.clientX,rect.left+rect.width*.25,rect.right-rect.width*.25),
+                clientY:clamp(event.clientY,rect.top+rect.height*.25,rect.bottom-rect.height*.25)};
+    sendTouch('contact',touchCoords(wheelPoint));
+  };
+  if(!wheelPoint) start();
+  const dx=clamp(event.deltaX*unit,-rect.width*.6,rect.width*.6);
+  const dy=clamp(event.deltaY*unit,-rect.height*.6,rect.height*.6);
+  const left=rect.left+2,right=rect.right-2,top=rect.top+2,bottom=rect.bottom-2;
+  if ((dx>0 && wheelPoint.clientX<=left) || (dx<0 && wheelPoint.clientX>=right) ||
+      (dy>0 && wheelPoint.clientY<=top) || (dy<0 && wheelPoint.clientY>=bottom)) {
+    endWheel(); start();
+  }
+  wheelPoint={clientX:clamp(wheelPoint.clientX-dx,left,right),clientY:clamp(wheelPoint.clientY-dy,top,bottom)};
+  sendTouch('contact',touchCoords(wheelPoint),true);
+  clearTimeout(wheelTimer);
+  wheelTimer=setTimeout(endWheel,90);
 },{passive:false});
-async function pumpWheel(){
-  wheelBusy=true;
-  try{
-    while(wheelX || wheelY){
-      const rect=canvas.getBoundingClientRect();
-      const dx=wheelX,dy=wheelY;wheelX=wheelY=0;
-      const start={clientX:Math.max(rect.left+rect.width*.2,Math.min(rect.right-rect.width*.2,wheelPoint.clientX)),clientY:Math.max(rect.top+rect.height*.2,Math.min(rect.bottom-rect.height*.2,wheelPoint.clientY))};
-      const end={clientX:Math.max(rect.left+1,Math.min(rect.right-1,start.clientX-dx)),clientY:Math.max(rect.top+1,Math.min(rect.bottom-1,start.clientY-dy))};
-      let coordinates=touchCoords(start);
-      await postJson('/touch',{type:'contact',...coordinates});
-      try{for(let i=1;i<=8;i++){
-        await new Promise(resolve=>setTimeout(resolve,12));
-        coordinates=touchCoords({clientX:start.clientX+(end.clientX-start.clientX)*i/8,clientY:start.clientY+(end.clientY-start.clientY)*i/8});
-        await postJson('/touch',{type:'contact',...coordinates});
-      }}finally{await postJson('/touch',{type:'release',...coordinates});}
-    }
-  }finally{wheelBusy=false;}
-}
+window.addEventListener('blur',endWheel);
+window.addEventListener('pagehide',endWheel);
 
 window.addEventListener("pointermove", onMove);
 window.addEventListener("pointerup", onUp);
@@ -307,6 +311,8 @@ window.addEventListener("message", (e) => {
     fitCanvas();
   } else if (d.cmd === "zoom-in") {
     setZoom(zoom * ZOOM_STEP);
+  } else if (d.cmd === "display-size") {
+    if (lastFrame) drawFrame(lastFrame);
   } else if (d.cmd === "zoom-out") {
     setZoom(zoom / ZOOM_STEP);
   } else if (d.cmd === "zoom-reset") {
@@ -343,8 +349,7 @@ async function fetchCodecWithRetry() {
 
 function drawFrame(f) {
   const sideways = Math.abs(visualRotation % 180) === 90;
-  const fw = f.displayWidth;
-  const fh = f.displayHeight;
+  const [fw, fh] = PaneHEVC.visibleSize(f.displayWidth, f.displayHeight, window.parent.paneDisplaySize);
   const targetW = sideways ? fh : fw;
   const targetH = sideways ? fw : fh;
   if (targetW !== canvas.width || targetH !== canvas.height) {
@@ -360,7 +365,7 @@ function drawFrame(f) {
   ctx.save();
   ctx.translate(dstW / 2, dstH / 2);
   if (visualRotation) ctx.rotate((visualRotation * Math.PI) / 180);
-  ctx.drawImage(f, -fpW / 2, -fpH / 2, fpW, fpH);
+  ctx.drawImage(f, 0, 0, fw, fh, -fpW / 2, -fpH / 2, fpW, fpH);
   ctx.restore();
 }
 

@@ -11,6 +11,9 @@
       if([...select.options].some(o=>o.value===previous))select.value=previous;
       select.dataset.devices=signature;
     }
+    if(state.selected) select.value=state.selected;
+    select.disabled=!state.devices?.length || Boolean(state.selected);
+    document.querySelector('#audio-select').hidden=Boolean(state.selected);
   }
   async function act(payload){
     if(busy)return; busy=true;note.textContent='Updating audio connection…';

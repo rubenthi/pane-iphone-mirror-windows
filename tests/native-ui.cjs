@@ -41,7 +41,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     async function checkRegion(menu) {
       const state = await page.evaluate(()=>getJson('/api/window'));
       menu ??= state.menu_open;
-      assert.deepEqual(state.region_test, {kind:3, phone:true, corner:false, above_rail:false, below_rail:false, rail:true, menu, exact_handle:true, managed_region:true}, JSON.stringify(state));
+      assert.deepEqual(state.region_test, {kind:3, phone:true, corner:false, above_rail:false, below_rail:false, rail:true, menu, between_buttons:false, exact_handle:true, managed_region:true}, JSON.stringify(state));
     }
     await checkRegion();
     async function checkDesktopPixels(){
@@ -109,7 +109,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     // A same-origin message from the mirror iframe represents a decoded display size.
     const mirror = page.frames().find(frame=>frame.parentFrame()===page.mainFrame());
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:932,height:430},parent.location.origin));
-    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-14)/(parseFloat(css.getPropertyValue('--phone-height'))-14)>2;});
+    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-2)/(parseFloat(css.getPropertyValue('--phone-height'))-2)>2;});
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:390,height:844},parent.location.origin));
     await page.waitForFunction(w=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--phone-width'))===w-60,compact.width);
     await page.screenshot({path:path.join(output,'pane-expanded.png')});
@@ -134,7 +134,10 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(h => document.querySelector('.workspace').getBoundingClientRect().height === h, compact.height);
     const grip=await page.locator('.corner-se').boundingBox();
     await page.mouse.move(grip.x+16,grip.y+16);await page.mouse.down();await page.mouse.move(grip.x+16,grip.y-65,{steps:6});await page.mouse.up();
-    await page.waitForFunction(h=>innerHeight<h,compact.height);
+    await page.waitForFunction(h=>innerHeight<h,compact.height).catch(async error=>{
+      console.log('Corner drag geometry',grip,await page.evaluate(async()=>({inner:[innerWidth,innerHeight],corner:document.querySelector('.corner-se').getBoundingClientRect().toJSON(),state:await getJson('/api/window')})));
+      throw error;
+    });
     await page.mouse.move(150,200);
     // Native resize may move the window under the OS pointer; verify the
     // region against the current requested menu state, whether open or closed.
@@ -160,11 +163,23 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.ok(Math.abs(geometry.width/geometry.height-1170/2532)<.002);
     assert.ok(geometry.top>=-1 && geometry.bottom<=geometry.viewportHeight+1);
     assert.equal(geometry.center.x,32768);assert.equal(geometry.center.y,32768);
+    // The device fills the top-left with the real panel. Paint the encoder's
+    // trailing rows and columns in red so any padding leak is unmistakable.
+    const edges=await picture.evaluate(()=>{
+      parent.paneDisplaySize=[1320,2868];
+      const source=document.createElement('canvas');source.width=1328;source.height=2896;
+      const brush=source.getContext('2d');brush.fillStyle='red';brush.fillRect(0,0,1328,2896);
+      brush.fillStyle='lime';brush.fillRect(0,0,1320,2868);
+      const frame=new VideoFrame(source,{timestamp:1});drawFrame(frame);frame.close();
+      return [canvas.width,canvas.height,...ctx.getImageData(canvas.width-1,canvas.height-1,1,1).data];
+    });
+    assert.deepEqual(edges,[1320,2868,0,255,0,255]);
+    await page.evaluate(()=>{window.paneDisplaySize=null;});
     await page.evaluate(()=>{window.testTouches=[];window.originalPaneControl=window.paneControl;window.paneControl=async(path,payload)=>window.testTouches.push({path,...payload});});
-    await picture.evaluate(()=>{const r=canvas.getBoundingClientRect();canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:100,clientX:r.left+r.width/2,clientY:r.top+r.height/2,bubbles:true,cancelable:true}));});
+    await picture.evaluate(()=>{const r=canvas.getBoundingClientRect();for(let n=0;n<10;n++) canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:10,clientX:r.left+r.width/2,clientY:r.top+r.height/2,bubbles:true,cancelable:true}));});
     await page.waitForFunction(()=>window.testTouches.some(t=>t.type==='release'));
     const touches=await page.evaluate(()=>window.testTouches);
-    assert.equal(touches[0].type,'contact');assert.equal(touches.at(-1).type,'release');assert.ok(touches.at(-1).y<touches[0].y);
+    assert.equal(touches.filter(t=>t.type==='release').length,1);assert.equal(touches[0].type,'contact');assert.equal(touches.at(-1).type,'release');assert.ok(touches.at(-1).y<touches[0].y);
     assert.equal(await page.locator('#phone-shell .phone-toolbar').count(),0);
     assert.equal(await page.locator('#phone-shell .phone-status').count(),0);
     await page.evaluate(()=>{window.paneControl=window.originalPaneControl;});
@@ -198,7 +213,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     }
     await checkDesktopPixels();
     const bezel=await page.evaluate(()=>{const outer=document.querySelector('#phone-shell').getBoundingClientRect(),inner=document.querySelector('#phone-screen').getBoundingClientRect();return [inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom];});
-    assert.deepEqual(bezel,[7,7,7,7]);
+    assert.deepEqual(bezel,[1,1,1,1]);
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
     fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['live display aspect changes including near-square and landscape','actual desktop pixels outside the shape','equal four-sided bezel','actual HWND shape and managed region','upward hover menu geometry','Home hold Siri','single-action panel gestures','usage guide','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));

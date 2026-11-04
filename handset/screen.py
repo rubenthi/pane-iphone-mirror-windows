@@ -111,7 +111,7 @@ def _start_screen(udid: str | None, transport: str) -> dict:
             return {**screen_status(), "error": "Previous stream is still closing. Try again shortly."}
     with _LOCK:
         note = "Looking for the iPhone on Wi-Fi…" if transport == "wifi" else None
-        _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport)
+        _STATE.update(display_size=None, phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport)
     _READY.clear()
     _WORKER = threading.Thread(target=_run, args=(chosen, transport), name="handset-screen", daemon=True)
     _WORKER.start()
@@ -237,8 +237,20 @@ async def _stream(rsd, udid: str, ScreenStreamServer, transport="usb") -> None:
             except Exception:
                 pass  # Manual audio-device selection remains available.
         # Preserve the user-selected phone volume; this stream is video-only.
-        note = None
-        _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=note)
+        _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=None)
+        # HEVC can pad the right and bottom edges of the primary display.
+        # Query the actual panel once per stream. Older devices may omit it.
+        display_size = None
+        try:
+            from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+            async with asyncio.timeout(2):
+                async with DeviceInfoService(rsd) as info:
+                    displays = (await info.get_display_info()).get('displays', [])
+                    primary = next(d for d in displays if d.get('primary') and not d.get('external'))
+                    display_size = primary.get('nativeSize')
+        except Exception:
+            pass
+        _set(display_size=display_size)
         await task
     finally:
         task.cancel()

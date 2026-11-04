@@ -49,7 +49,19 @@ class AudioManager:
 
     def status(self):
         with self._lock:
-            return {**self._state, 'enabled': self._config['enabled'], 'available': os.name == 'nt'}
+            from handset.screen import screen_status
+            udid = screen_status().get('udid')
+            devices = self._state['devices'] if udid else []
+            identity = self._identity.get(udid, {})
+            address = identity.get('BluetoothAddress')
+            saved = self._config['phones'].get(udid)
+            # Scope the picker to the mirrored phone. Receiver selection and
+            # the open/retry lifecycle continue using the released algorithm.
+            selected = choose_device(devices, saved, identity.get('DeviceName'), address)
+            if selected or address:
+                devices = [d for d in devices if d['id'] == selected]
+            return {**self._state, 'devices': devices, 'selected': selected,
+                    'enabled': self._config['enabled'], 'available': os.name == 'nt'}
 
     def _set(self, **values):
         with self._lock: self._state.update(values)
@@ -84,7 +96,7 @@ class AudioManager:
                     udid = screen_status().get('udid')
                     device = payload.get('device')
                     if not udid: raise ValueError('Connect the iPhone screen first, then select its paired audio device.')
-                    if not isinstance(device, str) or device not in {d['id'] for d in self._state['devices']}:
+                    if not isinstance(device, str) or device not in {d['id'] for d in self.status()['devices']}:
                         raise ValueError('Refresh and choose a paired device.')
                     self._config['phones'][udid] = device
                     self._config['enabled'] = True
