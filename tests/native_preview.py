@@ -24,6 +24,7 @@ def checked_status():
     def inspect():
         # Read geometry and its native region in the same UI-thread turn.
         state = original_status()
+        state['menu_open'] = shell.menu_open
         scale = (shell.u.GetDpiForWindow(shell.handle) or 96) / 96
         region = shell.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
         shell.g.PtInRegion.argtypes = [W.HRGN, ctypes.c_int, ctypes.c_int]

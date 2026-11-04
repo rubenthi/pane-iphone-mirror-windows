@@ -37,8 +37,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     });
     await page.getByText('No iPhone detected.',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.locator('#connection-drawer').isVisible(),false);
-    async function checkRegion(menu = false) {
+    async function checkRegion(menu) {
       const state = await page.evaluate(()=>getJson('/api/window'));
+      menu ??= state.menu_open;
       assert.deepEqual(state.region_test, {kind:3, phone:true, corner:false, above_rail:false, below_rail:false, rail:true, menu, exact_handle:true, managed_region:true}, JSON.stringify(state));
     }
     await checkRegion();
@@ -110,7 +111,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.mouse.move(grip.x+16,grip.y+16);await page.mouse.down();await page.mouse.move(grip.x+16,grip.y-65,{steps:6});await page.mouse.up();
     await page.waitForFunction(h=>innerHeight<h,compact.height);
     await page.mouse.move(150,200);
-    await page.waitForFunction(async ()=>!(await getJson('/api/window')).region_test.menu);
+    // Native resize may move the window under the OS pointer; verify the
+    // region against the current requested menu state, whether open or closed.
+    await page.waitForFunction(async ()=>{const s=await getJson('/api/window');return innerWidth===s.width&&innerHeight===s.height;});
     await checkRegion();
     await page.evaluate(async()=>renderScreen({phase:'idle'}));
     assert.deepEqual(errors,[]);
