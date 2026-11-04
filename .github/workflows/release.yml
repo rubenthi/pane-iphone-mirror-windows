@@ -54,7 +54,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1 -ReleaseReceiver
       - run: python packaging/release_manifest.py --tag '${{ env.RELEASE_TAG }}'
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/smoke.ps1
       - name: Verify executable metadata and manifest

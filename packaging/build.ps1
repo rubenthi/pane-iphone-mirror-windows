@@ -1,9 +1,15 @@
 # Builds dist\Pane.exe from the repository root.
+param([switch]$ReleaseReceiver)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-& "$PSScriptRoot\build-audio.ps1"
+if ($ReleaseReceiver) {
+    python "$PSScriptRoot\release_receiver.py"
+    if ($LASTEXITCODE -ne 0) { throw 'Release receiver verification failed.' }
+} else {
+    & "$PSScriptRoot\build-audio.ps1"
+}
 
 python -m PyInstaller --noconfirm --clean `
   --distpath "$root\dist" `

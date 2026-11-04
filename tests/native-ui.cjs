@@ -51,6 +51,20 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       },null,{timeout:10000}).catch(async e=>{console.log('Desktop clipping failure:',await page.evaluate(()=>getJson('/api/window')));throw e;});
     }
     await checkDesktopPixels();
+    const token=(await (await fetch('http://127.0.0.1:18776/api/auth')).json()).token;
+    const windowCommand=action=>fetch('http://127.0.0.1:18776/api/window', {
+      method:'POST', headers:{'X-Pane-Token':token,'Content-Type':'application/json'}, body:JSON.stringify({action})
+    }).then(r=>r.json());
+    await windowCommand('minimize');
+    await sleep(650);
+    const minimized=await (await fetch('http://127.0.0.1:18776/api/window', {headers:{'X-Pane-Token':token}})).json();
+    assert.equal(minimized.minimized,true);
+    await windowCommand('focus');
+    await page.waitForFunction(async()=>{
+      const s=await getJson('/api/window');
+      return !s.minimized && s.web_offset.every(v=>v===0);
+    });
+    await checkDesktopPixels();
     const compact=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
     const position=await page.evaluate(()=>({x:screenX,y:screenY}));
     await page.locator('#drag-handle').dispatchEvent('pointerdown',{button:0,pointerId:1,screenX:400,screenY:100});

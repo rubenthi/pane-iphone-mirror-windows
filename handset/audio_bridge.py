@@ -66,9 +66,15 @@ class AudioBridge:
         exe = self.executable()
         if not exe.is_file():
             raise RuntimeError("Native Bluetooth helper missing. Run packaging/build-audio.ps1.")
-        self._process = subprocess.Popen([str(exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, encoding="utf-8", bufsize=1,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            self._process = subprocess.Popen([str(exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, text=True, encoding="utf-8", bufsize=1,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as error:
+            if getattr(error, 'winerror', None) == 4551:
+                raise RuntimeError("Windows Application Control blocked the Bluetooth receiver. "
+                                   "Your administrator can review Pane.Audio.exe in the Code Integrity log.") from error
+            raise
         responses = self._responses = queue.Queue(maxsize=2)
         process = self._process
 

@@ -61,6 +61,8 @@ class FloatingWindow:
             'EnumChildWindows': ([W.HWND, self.callback, W.LPARAM], W.BOOL),
             'SetWindowRgn': ([W.HWND, W.HRGN, W.BOOL], ctypes.c_int),
             'GetWindowThreadProcessId': ([W.HWND, ctypes.POINTER(W.DWORD)], W.DWORD),
+            'IsIconic': ([W.HWND], W.BOOL),
+            'ClientToScreen': ([W.HWND, ctypes.POINTER(W.POINT)], W.BOOL),
             'IsWindowVisible': ([W.HWND], W.BOOL),
             'IsWindow': ([W.HWND], W.BOOL),
             'GetWindowLongPtrW': ([W.HWND, ctypes.c_int], ctypes.c_ssize_t),
@@ -151,6 +153,8 @@ class FloatingWindow:
         if self._form is not None and self._form.InvokeRequired:
             return self._on_ui(lambda: self.layout(expanded, aspect))
         with self._lock:
+            if self.handle and self.u.IsIconic(self.handle):
+                return self.status()
             geometry = dimensions(aspect, expanded, preferred_height=self.preferred_height)
             if self.handle:
                 scale = (self.u.GetDpiForWindow(self.handle) or 96) / 96
@@ -200,6 +204,16 @@ class FloatingWindow:
         if self._form.IsDisposed or self._form.Region is None:
             return
         self.handle = self._form.Handle.ToInt64()
+        if self.u.IsIconic(self.handle):
+            return
+        # The WebView is DockStyle.Fill. During minimize Windows parks the
+        # form offscreen. On restore its child can retain that parking offset
+        # even though WinForms still reports the correct managed bounds.
+        view = self._form.webview.Handle.ToInt64()
+        origin, bounds = W.POINT(), W.RECT()
+        if self.u.ClientToScreen(self.handle, ctypes.byref(origin)) and self.u.GetWindowRect(view, ctypes.byref(bounds)):
+            if bounds.left != origin.x or bounds.top != origin.y:
+                self.u.SetWindowPos(view, 0, 0, 0, 0, 0, 0x0015)  # move only
         from System.Drawing import Graphics
         graphics = Graphics.FromHwnd(self._form.Handle)
         try:

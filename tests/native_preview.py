@@ -25,6 +25,11 @@ def checked_status():
         # Read geometry and its native region in the same UI-thread turn.
         state = original_status()
         state['menu_open'] = shell.menu_open
+        origin, view = W.POINT(), W.RECT()
+        shell.u.ClientToScreen(shell.handle, ctypes.byref(origin))
+        shell.u.GetWindowRect(shell._form.webview.Handle.ToInt64(), ctypes.byref(view))
+        state['web_offset'] = [view.left-origin.x, view.top-origin.y]
+        state['minimized'] = bool(shell.u.IsIconic(shell.handle))
         scale = (shell.u.GetDpiForWindow(shell.handle) or 96) / 96
         region = shell.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
         shell.g.PtInRegion.argtypes = [W.HRGN, ctypes.c_int, ctypes.c_int]
