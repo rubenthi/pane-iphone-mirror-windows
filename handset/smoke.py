@@ -59,12 +59,12 @@ def verify_native_window():
         def log_message(self, *args): pass
     server=ThreadingHTTPServer(('127.0.0.1',0),Page)
     thread=threading.Thread(target=server.serve_forever,daemon=True); thread.start()
-    window=webview.create_window('Pane runtime check',f'http://127.0.0.1:{server.server_port}',width=388,height=760,frameless=True,easy_drag=False,resizable=False)
+    window=webview.create_window('Pane runtime check',f'http://127.0.0.1:{server.server_port}',width=388,height=760,frameless=True,easy_drag=False,resizable=False,shadow=False)
     errors=[]
     def verify():
         try:
             shell=FloatingWindow()
-            assert shell.attach(os.getpid()), 'Native window did not attach'
+            assert shell.attach(window), 'Native window did not attach'
             for expanded in (False,True,False):
                 state=shell.layout(expanded,390/844)
                 time.sleep(.2)
