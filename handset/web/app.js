@@ -314,14 +314,14 @@ function renderScreen(screen) {
   workspace.classList.remove("is-live");
   phoneShell.classList.remove("live");
   remotePanel.hidden = false;
-  restartScreen.hidden = true;
+  restartScreen.hidden = screen.phase !== "audio-only";
   kbToggle.hidden = true;
   screenView.hidden = true;
   if (screenView.getAttribute("src") !== "about:blank") screenView.src = "about:blank";
   showScreen.textContent = "Connect";
   showScreen.disabled = false;
 
-  if (screen.phase === "starting") {
+  if (["starting", "audio-only"].includes(screen.phase)) {
     screenNote.textContent = screen.note || "Starting stream… keep the iPhone unlocked.";
     screenNote.className = "";
     showScreen.disabled = connectionBusy;
@@ -339,7 +339,7 @@ function renderScreen(screen) {
 
 async function showPhone() {
   if (connectionBusy) return;
-  const disconnect = connectionPhase === "running" || connectionPhase === "starting";
+  const disconnect = ["running", "starting", "audio-only"].includes(connectionPhase);
   connectionBusy = true;
   screenGeneration.next();
   loadGeneration.next();
@@ -357,7 +357,7 @@ async function showPhone() {
   } finally {
     connectionBusy = false;
     showScreen.disabled = false;
-    showScreen.textContent = ["running", "starting"].includes(connectionPhase) ? "Disconnect" : "Connect";
+    showScreen.textContent = ["running", "starting", "audio-only"].includes(connectionPhase) ? "Disconnect" : "Connect";
     watchScreen();
   }
 }

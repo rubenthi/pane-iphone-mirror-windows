@@ -61,6 +61,20 @@ class AudioTests(unittest.TestCase):
             manager._tick({'phase':'idle'})
             self.assertEqual(command.call_args.args[0], {'action':'audio.disconnect'})
 
+    def test_closed_receiver_replaces_stale_preference_without_disconnect(self):
+        manager = AudioManager()
+        manager._config['phones']['phone'] = 'stale'
+        manager.remember_identity('phone', {'BluetoothAddress': self.devices[0]['address']})
+        replies = [{'devices': self.devices}, {'state': 'Closed'}, {'state': 'Opened'}, {}]
+        with patch('handset.audio.bridge.command', side_effect=replies) as command, patch('handset.audio.os.name', 'nt'):
+            manager._tick({'phase': 'starting', 'audioReady': True, 'udid': 'phone'})
+            self.assertEqual(manager._config['phones']['phone'], 'a')
+            manager._tick({'phase': 'audio-only', 'udid': 'phone'})
+            self.assertEqual(manager.status()['phase'], 'connected')
+            manager._tick({'phase': 'idle'})
+            self.assertEqual([c.args[0]['action'] for c in command.call_args_list],
+                             ['devices', 'audio.connect', 'status', 'audio.disconnect'])
+
     def test_first_connection_pairs_only_the_mirrored_phone_once(self):
         manager = AudioManager()
         address = self.devices[0]['address']

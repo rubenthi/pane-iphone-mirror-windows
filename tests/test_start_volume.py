@@ -2,7 +2,7 @@ import asyncio
 import sys
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from handset.screen import _stream
 
 
@@ -27,3 +27,19 @@ class StartVolumeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(factory.call_args.kwargs['audio_default_on'])
         self.assertFalse(factory.call_args.kwargs['motion_idr'])
         self.assertTrue(factory.call_args.kwargs['rctl_enabled'])
+
+    async def test_busy_display_leaves_a_disconnectable_audio_session(self):
+        from handset import screen
+        from pymobiledevice3.exceptions import CoreDeviceError
+        rsd = SimpleNamespace(peer_info={'Services': {screen.DISPLAY_SERVICE: {}}},
+                              get_value=AsyncMock(return_value={'DeviceName': 'My iPhone'}))
+        tunnel = MagicMock()
+        tunnel.__aenter__.return_value = rsd
+        with patch.object(screen, '_open_tunnel', return_value=tunnel), \
+             patch.object(screen, '_stream', side_effect=CoreDeviceError("Busy", code=9022)), \
+             patch('handset.audio.manager.remember_identity') as remember:
+            await screen._serve('phone', 'wifi')
+            self.assertEqual(screen.screen_status()['phase'], 'audio-only')
+            remember.assert_called_once_with('phone', {'DeviceName': 'My iPhone'})
+            self.assertTrue(screen.stop_screen())
+            self.assertEqual(screen.screen_status()['phase'], 'idle')
