@@ -12,6 +12,7 @@ class AudioTests(unittest.TestCase):
         self.assertEqual(choose_device(self.devices,name='MY IPHONE'),'a')
         self.assertIsNone(choose_device(self.devices,preferred='missing',name='My iPhone'))
         self.assertIsNone(choose_device(self.devices,name='Unknown'))
+        self.assertIsNone(choose_device(self.devices,name='My iPhone',address='11:22:33:44:55:66'))
         self.assertIsNone(choose_device(self.devices + [{'id':'c','name':'My iPhone'}],name='My iPhone'))
     def test_connect_reuse_disconnect_and_disabled_preference(self):
         manager=AudioManager();manager._identity['phone']={'DeviceName':'My iPhone'}
@@ -35,6 +36,14 @@ class AudioTests(unittest.TestCase):
             manager._tick({'phase':'running','udid':'unknown'})
             self.assertEqual(manager.status()['phase'],'setup')
             command.assert_called_once_with({'action':'devices'})
+    def test_lost_connection_is_not_reported_as_connected_during_retry_wait(self):
+        import time
+        manager=AudioManager();manager._active=('phone','a');manager._retry_at=time.monotonic()+30
+        manager._state['phase']='connected'
+        with patch('handset.audio.bridge.command',return_value={'state':'Closed'}),patch('handset.audio.os.name','nt'):
+            manager._tick({'phase':'running','udid':'phone'})
+            self.assertEqual(manager.status()['phase'],'connecting')
+
     def test_no_command_shell_or_other_bluetooth_features(self):
         for payload in ({'action':'cursor.start'},{'action':'notifications.connect'},{'action':'audio.connect','device':''},{'action':'audio.connect','device':'x\0y'}):
             with self.assertRaises(ValueError):validate(payload)

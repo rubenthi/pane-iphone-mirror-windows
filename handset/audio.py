@@ -15,7 +15,8 @@ def choose_device(devices, preferred=None, name=None, address=None):
         return ''.join(c for c in str(value or '').lower() if c in '0123456789abcdef')
     matches = [d for d in devices if address and mac(d.get('address')) == mac(address)]
     if not matches and name:
-        matches = [d for d in devices if d.get('name', '').casefold() == name.casefold()]
+        matches = [d for d in devices if d.get('name', '').casefold() == name.casefold()
+                   and not (address and d.get('address') and mac(d['address']) != mac(address))]
     return matches[0]['id'] if len(matches) == 1 else None
 
 
@@ -97,12 +98,15 @@ class AudioManager:
             return
         if self._active and (self._active[0] != udid or (preferred and self._active[1] != preferred)):
             bridge.command({'action': 'audio.disconnect'}); self._active = None
+            self._retry_at = 0
+            self._set(phase='connecting', note='Connecting the selected iPhone audio…')
         if self._active:
             state = bridge.command({'action': 'status'})
             if state.get('state') == 'Opened':
                 self._set(phase='connected', note='Bluetooth audio connection open · output: laptop. If iOS retains another route, select this PC once on the iPhone.')
                 return
             self._active = None
+            self._set(phase='connecting', note='Bluetooth audio disconnected; retrying automatically…')
         if time.monotonic() < self._retry_at: return
         self._retry_at = time.monotonic() + 15
         self._set(phase='connecting', note='Connecting paired iPhone audio…')
