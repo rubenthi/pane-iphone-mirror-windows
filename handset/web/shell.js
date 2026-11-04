@@ -1,6 +1,10 @@
 (() => {
   const arrow = document.querySelector('#drawer-toggle');
   const drawer = document.querySelector('#connection-drawer');
+  const fpsSelect = document.querySelector('#fps-target');
+  const saved = localStorage.getItem('pane-display-fps');
+  if (['15','30','60'].includes(saved)) fpsSelect.value = saved;
+  fpsSelect.addEventListener('change', () => localStorage.setItem('pane-display-fps', fpsSelect.value));
   let expanded = false;
   let aspect = 390 / 844;
   let native = false;
@@ -56,7 +60,7 @@
     if (event.origin !== location.origin || event.source !== document.querySelector('#screen-view').contentWindow || !['pane-display','pane-stream-status','pane-video-stats'].includes(event.data?.source)) return;
     if(event.data.source==='pane-video-stats'){
       const s=event.data;
-      if([s.width,s.height,s.received,s.presented].every(Number.isFinite)) document.querySelector('#video-performance').textContent=`${s.width} × ${s.height} · received ${s.received.toFixed(1)} FPS · displayed ${s.presented.toFixed(1)} FPS · target 60`;
+      if([s.width,s.height,s.received,s.presented].every(Number.isFinite)) document.querySelector('#video-performance').textContent=`${s.width} × ${s.height} · received ${s.received.toFixed(1)} FPS · displayed ${s.presented.toFixed(1)} FPS · target ${fpsSelect.value}`;
       return;
     }
     if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':event.data.text;arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
@@ -74,7 +78,7 @@
   cluster.addEventListener('pointerleave',()=>{menuTimer=setTimeout(()=>{cluster.classList.remove('menu-open');command('window-menu',{open:false}).catch(()=>{});},250);});
   cluster.addEventListener('focusin',()=>{cluster.classList.add('menu-open');command('window-menu',{open:true}).catch(()=>{});});
   let resizing=null, resizeBusy=false, wantedHeight=null;
-  async function flushResize(){resizeBusy=true;try{while(wantedHeight!==null){const height=wantedHeight;wantedHeight=null;render(await command('resize',{height,corner:resizing?.corner||'se'}));}}finally{resizeBusy=false;}}
+  async function flushResize(){resizeBusy=true;try{while(wantedHeight!==null){const height=wantedHeight;wantedHeight=null;render(await command('resize',height));}}finally{resizeBusy=false;}}
   document.querySelectorAll('[data-resize-corner]').forEach(corner=>{
     corner.addEventListener('pointerdown',event=>{
       if(event.button!==0)return;
@@ -86,7 +90,7 @@
       if(!resizing)return;
       const dy=(event.screenY-resizing.y)*(resizing.corner.includes('n')?-1:1);
       const dx=(event.screenX-resizing.x)*(resizing.corner.includes('w')?-1:1)/aspect;
-      wantedHeight=Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)));
+      wantedHeight={corner:resizing.corner,height:Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)))};
       if(!resizeBusy)flushResize().catch(()=>{});
     });
     const end=()=>{resizing=null;};

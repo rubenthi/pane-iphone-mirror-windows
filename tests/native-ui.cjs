@@ -109,14 +109,15 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const minBox = await page.locator('#minimize-window').boundingBox();
     const maxBox = await page.locator('#maximize-window').boundingBox();
     const closeBox = await page.locator('#close-window').boundingBox();
-    assert.equal(minBox.y, handleBox.y);
+    assert.ok(minBox.y + minBox.height <= handleBox.y - 3);
     assert.ok(closeBox.y + closeBox.height <= maxBox.y && maxBox.y + maxBox.height <= minBox.y);
-    assert.equal(await page.locator('.rail-grip').isVisible(),false);
+    assert.equal(await page.locator('.rail-grip').isVisible(),true);
     await page.getByRole('button',{name:'Maximize window',exact:true}).waitFor({state:'visible'});
     assert.equal(await page.locator('.rail-button[aria-label="Volume up"]').getAttribute('title'),'Volume up');
     await page.getByRole('button',{name:'Maximize window',exact:true}).click();
     await page.getByRole('button',{name:'Restore window',exact:true}).click();
     await page.waitForFunction(h=>innerHeight===h,compact.height);
+    await page.waitForFunction(h => document.querySelector('.workspace').getBoundingClientRect().height === h, compact.height);
     const grip=await page.locator('.corner-se').boundingBox();
     await page.mouse.move(grip.x+16,grip.y+16);await page.mouse.down();await page.mouse.move(grip.x+16,grip.y-65,{steps:6});await page.mouse.up();
     await page.waitForFunction(h=>innerHeight<h,compact.height);
@@ -185,7 +186,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.deepEqual(bezel,[7,7,7,7]);
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
-    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['live display aspect changes including near-square and landscape','actual desktop pixels outside the shape','equal four-sided bezel','actual HWND shape and managed region','upward hover menu geometry','Home hold Siri','system panel toggles','usage guide','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
+    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['live display aspect changes including near-square and landscape','actual desktop pixels outside the shape','equal four-sided bezel','actual HWND shape and managed region','upward hover menu geometry','Home hold Siri','single-action panel gestures','usage guide','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
   } finally {
     if(page) await page.evaluate(async()=>{const auth=await fetch('/api/auth').then(r=>r.json());await fetch('/api/window',{method:'POST',headers:{'X-Pane-Token':auth.token,'Content-Type':'application/json'},body:JSON.stringify({action:'close'})});}).catch(()=>{});

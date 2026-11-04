@@ -19,18 +19,18 @@ module.exports = async function checkRemoteControls(page) {
   for(const panel of ['notifications','control']) {
     await page.evaluate(()=>window.controlEvents=[]);
     await page.locator(`[data-gesture="${panel}"]`).dblclick({delay:30});
-    await page.waitForFunction(()=>window.controlEvents.at(-1)?.name==='home');
+    await page.waitForFunction(()=>window.controlEvents.filter(e=>e.type==='release').length===2);
     const events=await page.evaluate(()=>window.controlEvents);
     assert.equal(events[0].type,'contact');
     assert.equal(events[0].y,0);
     assert.equal(events[0].x,panel==='notifications'?16000:58000);
-    assert.equal(events.filter(e=>e.type==='release').length,1);
-    assert.deepEqual(events.at(-1),{path:'/button',name:'home',state:'press'});
+    assert.equal(events.filter(e=>e.type==='release').length,2);
+    assert.ok(events.every(e=>e.path==='/touch'));
   }
-  // App switcher opens with two Home taps; an immediate repeat sends one.
+  // App switcher opens with two Home taps; each press sends its own pair.
   await home.click(); await page.evaluate(()=>window.controlEvents=[]);
   await page.locator('[data-gesture="switcher"]').dblclick({delay:30});
-  await page.waitForFunction(()=>window.controlEvents.length===3);
+  await page.waitForFunction(()=>window.controlEvents.length===4);
   assert.ok((await page.evaluate(()=>window.controlEvents)).every(e=>e.name==='home'));
   // Another button breaks the repeat chain; changing panels must not send Home.
   await page.evaluate(()=>window.controlEvents=[]);

@@ -228,6 +228,14 @@ async def _stream(rsd, udid: str, ScreenStreamServer, transport="usb") -> None:
                 await asyncio.sleep(.1)
         else:
             raise TimeoutError('The stream server did not become ready.')
+        if transport == "wifi":
+            # Remote lockdown reads identity over the active tunnel, even with no USB.
+            from handset.audio import manager
+            try:
+                identity = await asyncio.wait_for(rsd.get_value(), 3)
+                manager.remember_identity(udid, identity)
+            except Exception:
+                pass  # Manual audio-device selection remains available.
         # Preserve the user-selected phone volume; this stream is video-only.
         note = None
         _set(phase="running", udid=udid, url=VIEW_URL, error=None, note=note)

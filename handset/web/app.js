@@ -314,11 +314,10 @@ function renderScreen(screen) {
   workspace.classList.remove("is-live");
   phoneShell.classList.remove("live");
   remotePanel.hidden = false;
-  lastNavigation = null;
   restartScreen.hidden = true;
   kbToggle.hidden = true;
   screenView.hidden = true;
-  screenView.src = "about:blank";
+  if (screenView.getAttribute("src") !== "about:blank") screenView.src = "about:blank";
   showScreen.textContent = "Connect";
   showScreen.disabled = false;
 
@@ -417,14 +416,13 @@ function mirrorMessage(cmd, extra = {}) {
 function reloadMirrorIframe() {
   if (screenView.hidden) return;
   const stamp = `t=${Date.now()}`;
-  screenView.src = "about:blank";
+  if (screenView.getAttribute("src") !== "about:blank") screenView.src = "about:blank";
   requestAnimationFrame(() => {
     screenView.src = `${MIRROR_PAGE}?${stamp}`;
   });
 }
 
 async function restartMirror() {
-  lastNavigation = null;
   restartScreen.disabled = true;
   screenNote.textContent = "Restarting screen… keep the iPhone unlocked.";
   screenNote.className = "";
@@ -448,7 +446,6 @@ async function restartMirror() {
 }
 
 async function mirrorPost(path, payload) {
-  if (path === "/key") window.paneManualInput?.();
   try { await window.paneControl(path, payload); }
   catch (error) { screenNote.textContent = error.message; screenNote.className = "warn"; }
 }
@@ -479,22 +476,11 @@ const GESTURES = {
 
 // A swipe-up injected over USB is too slow for iOS to treat as the Home
 // gesture, so Home and the app switcher use the Home button instead.
-let lastNavigation = null;
 let gestureChain = Promise.resolve();
-window.paneManualInput = () => { lastNavigation = null; };
-document.addEventListener("click", event => {
-  const button = event.target.closest?.("button");
-  if (button && !["switcher", "notifications", "control"].includes(button.dataset.gesture)) window.paneManualInput();
-}, true);
 function queueGesture(name) {
-  const toggles = ["switcher", "notifications", "control"];
-  const close = toggles.includes(name) && lastNavigation === name;
-  lastNavigation = !close && toggles.includes(name) ? name : null;
   gestureChain = gestureChain.then(async () => {
-    if (!workspace.classList.contains("is-live")) return;
-    await gesture(close ? "home" : name);
+    if (workspace.classList.contains("is-live")) await gesture(name);
   }).catch(error => {
-    lastNavigation = null;
     screenNote.textContent = error.message;
     screenNote.className = "warn";
   });

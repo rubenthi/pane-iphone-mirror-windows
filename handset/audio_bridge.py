@@ -6,17 +6,23 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import subprocess
 import sys
 import threading
 
-ACTIONS = frozenset({'devices', 'audio.connect', 'audio.disconnect', 'status'})
+ACTIONS = frozenset({'devices', 'audio.connect', 'audio.disconnect', 'audio.pair', 'notification.devices', 'notification.probe', 'status'})
 def validate(payload):
     action = payload.get('action')
     if not isinstance(action, str) or action not in ACTIONS:
         raise ValueError('Unknown audio action.')
     result = {'action': action}
-    if action == 'audio.connect':
+    if action == 'audio.pair':
+        address = payload.get('address')
+        if not isinstance(address, str) or not re.fullmatch(r'(?:[a-fA-F0-9]{2}:){5}[a-fA-F0-9]{2}', address):
+            raise ValueError('Invalid Bluetooth address.')
+        result['address'] = address
+    if action in {'audio.connect', 'notification.probe'}:
         device = payload.get('device')
         if not isinstance(device, str) or not device or len(device) > 4096 or '\0' in device:
             raise ValueError('Select a paired audio device.')
@@ -87,7 +93,7 @@ class AudioBridge:
                 raise RuntimeError("Bluetooth helper stopped. Refresh devices to retry.")
             self._process.stdin.write(json.dumps(command) + "\n")
             self._process.stdin.flush()
-            response = self._responses.get(timeout=40)
+            response = self._responses.get(timeout=90 if command['action'] == 'audio.pair' else 40)
             if not isinstance(response, dict):
                 raise RuntimeError("Bluetooth helper disconnected.")
             if not response.get("ok"):

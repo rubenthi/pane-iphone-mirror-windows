@@ -9,10 +9,13 @@ from handset.audio_bridge import bridge
 
 
 def choose_device(devices, preferred=None, name=None, address=None):
-    if preferred:
-        return next((d['id'] for d in devices if d['id'] == preferred), None)
     def mac(value):
         return ''.join(c for c in str(value or '').lower() if c in '0123456789abcdef')
+    if preferred:
+        saved = next((d for d in devices if d['id'] == preferred), None)
+        if saved and not (address and saved.get('address') and mac(address) != mac(saved['address'])):
+            return preferred
+        if not address: return None
     matches = [d for d in devices if address and mac(d.get('address')) == mac(address)]
     if not matches and name:
         matches = [d for d in devices if d.get('name', '').casefold() == name.casefold()
@@ -29,6 +32,8 @@ class AudioManager:
         self._config = {'enabled': True, 'phones': {}}
         self._state = {'phase': 'idle', 'note': 'Audio connects automatically after Bluetooth pairing and phone selection.', 'devices': []}
         self._active = None
+        self._pair_prompted = False
+        self._receiver = None
         self._retry_at = 0
         self._identity = {}
         self._path = Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Pane'))) / 'audio.json'
@@ -48,6 +53,16 @@ class AudioManager:
 
     def _set(self, **values):
         with self._lock: self._state.update(values)
+
+    def remember_identity(self, udid, values):
+        with self._lock:
+            self._identity[udid] = {key: values.get(key) for key in ('DeviceName', 'BluetoothAddress')}
+
+    def _save(self):
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(self._config), encoding='utf-8')
+        temporary.replace(self._path)
 
     def command(self, payload):
         from handset.screen import screen_status
@@ -73,11 +88,9 @@ class AudioManager:
                         raise ValueError('Refresh and choose a paired device.')
                     self._config['phones'][udid] = device
                     self._config['enabled'] = True
-                self._path.parent.mkdir(parents=True, exist_ok=True)
-                temporary = self._path.with_suffix('.tmp')
-                temporary.write_text(json.dumps(self._config), encoding='utf-8')
-                temporary.replace(self._path)
-        elif action != 'retry': raise ValueError('Unknown audio action.')
+                self._save()
+        elif action == 'retry': self._pair_prompted = False
+        else: raise ValueError('Unknown audio action.')
         self._retry_at = 0
         self._wake.set()
         return self.status()
@@ -88,22 +101,24 @@ class AudioManager:
             preferred = self._config['phones'].get(screen.get('udid'))
         udid = screen.get('udid')
         if not enabled or screen.get('phase') != 'running':
-            if self._active:
+            if self._receiver or self._active:
                 bridge.command({'action': 'audio.disconnect'})
-            self._active = None
+            self._active = self._receiver = None
+            self._pair_prompted = False
+            self._retry_at = 0
             self._set(phase='idle' if enabled else 'off', note='Waiting for iPhone mirroring.' if enabled else 'Automatic laptop audio is off.')
             return
         if os.name != 'nt':
             self._set(phase='unavailable', note='Bluetooth audio reception requires Windows 10 2004+ or Windows 11.')
             return
-        if self._active and (self._active[0] != udid or (preferred and self._active[1] != preferred)):
-            bridge.command({'action': 'audio.disconnect'}); self._active = None
+        if self._receiver and (self._receiver[0] != udid or (preferred and preferred != self._receiver[1])):
+            bridge.command({'action': 'audio.disconnect'}); self._active = self._receiver = None
             self._retry_at = 0
             self._set(phase='connecting', note='Connecting the selected iPhone audio…')
         if self._active:
             state = bridge.command({'action': 'status'})
             if state.get('state') == 'Opened':
-                self._set(phase='connected', note='Bluetooth audio connection open · output: laptop. If iOS retains another route, select this PC once on the iPhone.')
+                self._set(phase='connected', note='Paired · audio connection open. Play media to check sound. If needed, choose this PC in the iPhone output picker.')
                 return
             self._active = None
             self._set(phase='connecting', note='Bluetooth audio disconnected; retrying automatically…')
@@ -120,12 +135,33 @@ class AudioManager:
         identity = self._identity[udid]
         device = choose_device(devices, preferred, identity.get('DeviceName'), identity.get('BluetoothAddress'))
         if not device:
-            self._set(phase='setup', note='Pair the iPhone in Windows Bluetooth settings, then choose it below once. Pane remembers it for future connections.')
+            address = identity.get('BluetoothAddress')
+            if not self._pair_prompted and (address or not devices):
+                self._pair_prompted = True
+                if address:
+                    self._set(phase='pairing', note='Keep Settings > Bluetooth open on the iPhone. Confirm matching codes when Windows asks.')
+                    result = bridge.command({'action':'audio.pair', 'address':address})
+                    if result['paired']:
+                        self._retry_at = 0
+                    else:
+                        os.startfile('ms-settings:bluetooth')
+                    self._set(phase='setup', note=result['note'])
+                    return
+                os.startfile('ms-settings:bluetooth')
+            self._set(phase='setup', note='Choose Add device in Windows Bluetooth settings, approve matching codes, then retry audio.')
             return
+        self._set(phase='paired', note='Paired. Opening the Windows Bluetooth media receiver…')
         result = bridge.command({'action': 'audio.connect', 'device': device})
-        if result.get('state') != 'Opened': raise RuntimeError('Windows has not opened the Bluetooth audio connection.')
+        self._receiver = (udid, device)
+        if result.get('state') != 'Opened':
+            self._set(phase='listening', note=result.get('note', 'Paired. Waiting for iPhone media audio.'))
+            return
         self._active = (udid, device)
-        self._set(phase='connected', note='Bluetooth audio connection open · output: laptop. If iOS retains another route, select this PC once on the iPhone.')
+        if preferred != device:
+            with self._lock:
+                self._config['phones'][udid] = device
+                self._save()
+        self._set(phase='connected', note='Paired · audio connection open. Play media to check sound. If needed, choose this PC in the iPhone output picker.')
 
     def _run(self):
         from handset.screen import screen_status

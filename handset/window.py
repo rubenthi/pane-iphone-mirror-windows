@@ -33,8 +33,8 @@ def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_heig
     # a fractional drag height here distorts wider displays after rounding.
     height = round(height)
     width = round((height - SCREEN_CHROME) * aspect) + SCREEN_CHROME
-    rail_scale = min(1, max(.15, (height-132)/292))
-    rail_top = max(124, (height-288*rail_scale)/2)
+    rail_scale = min(1, max(.15, (height-166)/292))
+    rail_top = max(158, (height-288*rail_scale)/2)
     return {'phone_width': width, 'height': round(height), 'width': width + extra, 'expanded': expanded,
             'rail_scale': rail_scale, 'rail_top': rail_top}
 
@@ -120,9 +120,15 @@ class FloatingWindow:
             # Disable DWM's rectangular frame/shadow on the actual WebView form.
             dwm = ctypes.WinDLL('dwmapi')
             dwm.DwmSetWindowAttribute.argtypes = [W.HWND, W.DWORD, ctypes.c_void_p, W.DWORD]
-            for attribute, value in ((2, 1), (33, 1), (34, 0xFFFFFFFE)):
+            for attribute, value in ((2, 1), (33, 1), (34, 0xFFFFFFFE), (38, 1)):
                 setting = W.DWORD(value)
                 dwm.DwmSetWindowAttribute(self.handle, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
+            # pywebview enables Mica in dark mode. DWM paints that backdrop
+            # even outside an otherwise correctly hit-tested window region.
+            def disable_backdrop(*_):
+                none = W.DWORD(1)  # DWMSBT_NONE
+                dwm.DwmSetWindowAttribute(self.handle, 38, ctypes.byref(none), ctypes.sizeof(none))
+            self._form.Activated += disable_backdrop
             from System.Drawing import Color
             from System.Windows.Forms import Timer
             self._form.webview.DefaultBackgroundColor = Color.Transparent
@@ -167,12 +173,7 @@ class FloatingWindow:
                 rail_top, rail_scale = geometry['rail_top'], geometry['rail_scale']
                 parts = [rounded(pw-16, rail_top-50, pw+60, rail_top+292*rail_scale, 28)]
                 if self.menu_open:
-                    # Three 34px controls with 4px gaps, expanding upwards.
-                    # The bottom control replaces the handle at rail_top - 44.
-                    for offset in (0, 38, 76):
-                        parts.append(rounded(pw+8, rail_top-44-offset, pw+52, rail_top-10-offset, 11))
-                    # Keep the small gaps hit-testable while moving between controls.
-                    parts.append(rounded(pw+8, rail_top-120, pw+52, rail_top-10, 11))
+                    parts.append(rounded(pw+8, rail_top-158, pw+52, rail_top-44, 11))
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)

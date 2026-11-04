@@ -28,22 +28,19 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## Features
 
-Version 1.6.0 adds automatic Bluetooth media-audio reconnection for the selected
-paired iPhone, repairs clipping on WebView2 renderer windows, and uses an even
-7px bezel. Repeat App Switcher, Notification Center or Control Center to send
-Home; any other button/input resets the repeat action. Hold Home for Siri.
+Press Connect to mirror the iPhone and start the Windows Bluetooth speaker.
+On the first connection, leave Settings → Bluetooth open on the iPhone and
+confirm matching pairing codes on the PC and phone. On later connections Pane
+matches the phone over Wi-Fi or USB and reopens the media receiver. If iOS
+keeps another playback destination selected, choose the PC on the iPhone.
+Disconnecting or closing Pane releases the receiver. Video and control use
+the trusted Wi-Fi or USB connection. Bluetooth carries media audio.
 
-The frame follows live display dimensions, including rotation and wider or
-near-square displays. The video pipeline targets 60 FPS and reports measured
-received/displayed rates and resolution. It cannot force iOS to lock its encoder
-at 60 FPS. iPhone Duo and sustained device performance remain hardware-unverified.
-
-Pair the iPhone in Windows Bluetooth settings once and, while mirroring, select
-its audio device in Pane if automatic identification is unavailable. Pane remembers
-that choice and reopens its A2DP connection on subsequent mirror sessions. iOS may
-still require selecting this PC once if it retains another audio route. AirPlay
-can still be used manually with automatic Bluetooth audio disabled. Calls and
-microphone routing are separate from this media-audio receiver.
+The frame follows the incoming display dimensions. Choose 15, 30 or 60 FPS
+for local presentation and compare measured received and displayed FPS in
+the connection panel. iOS controls HEVC encoding and can vary image quality.
+The grip stays visible under the window buttons. Each navigation press opens
+the requested panel or app switcher. Hold the separate Home button for Siri.
 
 - 📱 **Live iPhone screen mirroring on Windows**: low-latency HEVC (H.265) video decoded in hardware.
 - 🖱️ **Control the iPhone with your mouse**: tap, long-press, drag and swipe directly on the mirrored screen.
@@ -167,4 +164,4 @@ See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published c
 
 ### Floating controls in 1.3.0
 
-Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag a phone corner to resize it proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. In Developer Mode, scroll over the mirrored picture to swipe; the sidebar scrolls independently. For laptop audio, start an external Windows AirPlay receiver and select it in the iPhone audio-output picker. The connection panel includes setup steps. Pane cannot force or verify the route; if AirPlay disconnects, iOS may return audio to the phone.
+Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag a phone corner to resize it proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. In Developer Mode, scroll over the mirrored picture to swipe; the sidebar scrolls independently. For laptop audio, enable automatic Bluetooth audio in the connection panel.

@@ -34,9 +34,9 @@ body{background:transparent}
 .rail-button{border:0;border-bottom:1px solid #b9ccdf24;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;color:#edf2f8}
 .rail-button:hover:not(:disabled){background:#cadfff15}
 .drawer-toggle{border:1px solid #8ca8d0;border-radius:11px;background:linear-gradient(130deg,#597ca9,#263f64);box-shadow:inset 0 1px 3px #cce3ff55,0 2px 5px #0005}
-.window-menu{position:absolute;top:auto;bottom:0;left:0;padding:0;gap:4px;flex-direction:column-reverse}
+.window-menu{position:absolute;top:auto;bottom:100%;left:0;padding:0 0 4px;gap:4px;flex-direction:column-reverse}
 .handle-cluster{height:34px}
-.handle-cluster.menu-open>.rail-grip{visibility:hidden}
+.rail-grip{touch-action:none;user-select:none}.rail-grip:active{cursor:grabbing}
 .window-menu button{height:34px;flex-shrink:0}
 .window-menu button{background:linear-gradient(130deg,#273748,#111a27);border:1px solid #68788b77;box-shadow:inset 0 1px 0 #fff1}
 .drawer{left:7px;top:7px;width:calc(var(--phone-width) - 14px);height:calc(var(--phone-height) - 14px);border-radius:36px;z-index:8;background:linear-gradient(135deg,#111d2aed,#080f19f7);border:1px solid #7893af55;box-shadow:inset 0 1px 0 #d4e6ff24,0 12px 40px #0008;backdrop-filter:blur(28px)}

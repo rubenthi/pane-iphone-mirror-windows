@@ -12,6 +12,13 @@
           const length=new DataView(this.header.buffer).getUint32(0);
           this.headerUsed=0;
           if(length<1||length>32*1024*1024)throw new Error('Invalid video packet size');
+          if (bytes.length-offset >= length) {
+            const end=offset+length;
+            const packet={type:bytes[offset], data:bytes.subarray(offset+1,end)};
+            offset=end;
+            yield packet;
+            continue;
+          }
           this.body=new Uint8Array(length);this.used=0;
         }
         const count=Math.min(this.body.length-this.used,bytes.length-offset);
@@ -24,7 +31,7 @@
     constructor(now=performance.now()){this.started=now;this.received=0;this.presented=0;this.skipped=0;}
     sample(width,height,queue,now=performance.now()){
       const seconds=(now-this.started)/1000;if(seconds<1)return null;
-      const result={source:'pane-video-stats',width,height,received:this.received/seconds,presented:this.presented/seconds,skipped:this.skipped,queue,target:60};
+      const result={source:'pane-video-stats',width,height,received:this.received/seconds,presented:this.presented/seconds,skipped:this.skipped,queue};
       this.started=now;this.received=0;this.presented=0;this.skipped=0;return result;
     }
   }

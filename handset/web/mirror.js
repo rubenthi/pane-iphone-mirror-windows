@@ -43,6 +43,18 @@ let lastFrameLandscape = null;
 let frameCount = 0;
 let frameStats = new PaneFrameStats();
 let decodeDepth = 0;
+function displayTarget() {
+  const target = Number(localStorage.getItem('pane-display-fps'));
+  return [15, 30, 60].includes(target) ? target : 60;
+}
+let frameInterval = 1000 / displayTarget();
+let nextPaint = 0;
+window.addEventListener('storage', event => {
+  if (event.key === 'pane-display-fps') {
+    frameInterval = 1000 / displayTarget();
+    nextPaint = 0;
+  }
+});
 let runGeneration = 0;
 let abortStream = null;
 setInterval(() => {
@@ -52,6 +64,8 @@ setInterval(() => {
 
 function setStatus(text, tone) {
   if (!statusEl) return;
+  if (statusEl.textContent === text && statusEl.dataset.tone === String(tone)) return;
+  statusEl.dataset.tone = String(tone);
   window.parent.postMessage({source:"pane-stream-status",text,tone},location.origin);
   statusEl.textContent = text;
   statusEl.className = "mirror-status" + (tone ? ` ${tone}` : "");
@@ -102,7 +116,6 @@ function touchCoords(e) {
 
 async function postJson(path, payload) {
   try {
-    window.parent.paneManualInput?.();
     if (window.parent !== window && window.parent.paneControl) return await window.parent.paneControl(path, payload);
     const response = await mirrorFetch(path, {
       method: "POST",
@@ -351,7 +364,11 @@ function drawFrame(f) {
   ctx.restore();
 }
 
-function drawPending() {
+function drawPending(now) {
+  if (pendingFrame && now + 0.75 < nextPaint) {
+    requestAnimationFrame(drawPending);
+    return;
+  }
   rafScheduled = false;
   const f = pendingFrame;
   pendingFrame = null;
@@ -363,6 +380,9 @@ function drawPending() {
   lastFrameLandscape = landscape;
   try {
     drawFrame(f);
+    // Carry a fractional refresh interval forward without catch-up draws.
+    nextPaint = Math.max(now, nextPaint) + frameInterval;
+    if (nextPaint - now > frameInterval + 0.75) nextPaint = now + frameInterval;
     frameStats.presented++;
     if (frameCount > 0) setStatus("Live", "ok");
   } catch (_) {}
@@ -414,6 +434,7 @@ async function run(generation) {
   const buildDecoder = () =>
     new VideoDecoder({
       output: (frame) => {
+        if (generation !== runGeneration) { frame.close(); return; }
         if (pendingFrame) {
           try {
             pendingFrame.close();
@@ -442,6 +463,7 @@ async function run(generation) {
   decoder.configure(decoderConfig);
   setStatus("Waiting for video…");
 
+  try {
   let resp = null;
   const streamDelays = [300, 600, 1200, 2000, 3000, 5000, 8000];
   for (let a = 0; a <= streamDelays.length; a++) {
@@ -536,15 +558,17 @@ async function run(generation) {
         decoder.decode(
           new EncodedVideoChunk({
             type: type === 0 || type === 2 ? "key" : "delta",
-            timestamp,
+            timestamp: timestamp = Math.max(timestamp + 1, Math.round(performance.now() * 1000)),
             data,
           }),
         );
-        timestamp += 16666;
       } catch (_) {
         needsResync = true;
       }
     }
+  }
+  } finally {
+    if (decoder.state !== "closed") decoder.close();
   }
   if (generation === runGeneration) {
     setStatus("Stream ended — press Restart screen", "warn");

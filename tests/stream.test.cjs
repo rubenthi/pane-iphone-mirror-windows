@@ -14,6 +14,6 @@ test('malformed lengths cannot accumulate unbounded video data',()=>{
 test('video telemetry reports measured decode and presentation rates, not target FPS',()=>{
   const stats=new PaneFrameStats(0);stats.received=54;stats.presented=49;stats.skipped=5;
   assert.equal(stats.sample(1170,2532,2,999),null);
-  assert.deepEqual(stats.sample(1170,2532,2,1000),{source:'pane-video-stats',width:1170,height:2532,received:54,presented:49,skipped:5,queue:2,target:60});
+  assert.deepEqual(stats.sample(1170,2532,2,1000),{source:'pane-video-stats',width:1170,height:2532,received:54,presented:49,skipped:5,queue:2});
   assert.equal(stats.sample(1170,2532,0,2000).received,0);
 });
