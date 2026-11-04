@@ -1,12 +1,13 @@
-Pane 1.5.0 for Windows x64
+Pane 1.5.1 for Windows x64
 
-- Removes Bluetooth cursor, audio, notification and Phone Link connectivity features.
-- Adds AirPlay audio setup for an external Windows receiver. Select the laptop in the iPhone audio-output picker; Pane preserves media volume. The receiver is not bundled and Pane cannot force the audio route.
-- Keeps Developer Mode mirroring and control over USB or paired Wi-Fi.
-- Connection panel overlays the phone screen without expanding the window sideways.
-- Connect becomes Disconnect while connected, and stops the active stream.
-- Dark navy glass styling, metallic phone outline and joined side-button rail inspired by the supplied reference.
-- The native window region hides and passes clicks through everything outside the phone and button rail.
-- Invisible corner resize targets replace the resize button. The three-line drag handle still reveals minimize, maximize/restore and close on hover.
+- Fixes the phone-shaped native window by applying a persistent WinForms region to the actual Pane WebView window and disabling the rectangular DWM shadow.
+- Window controls expand upward; Minimize replaces the three-line handle without overlapping the volume or phone buttons.
+- Hold Home for 0.6 seconds to invoke Siri. A short click still goes Home.
+- Notification Center and Control Center buttons toggle their panels closed on the next press. Opening gestures are serialized, including rapid clicks.
+- Replaces the duplicate Gestures, Buttons and View controls in the connection overlay with a practical How to use Pane guide.
+- Sizes the frame around the actual video area, including its bezel insets. Adapts to small model aspect-ratio differences, rotation and near-square/wider displays without a model list. iPhone Duo hardware compatibility is not yet verified.
+- Retains USB/Wi-Fi Developer Mode control, Connect/Disconnect, and external AirPlay receiver setup for laptop audio.
 
-Automatic updates: launch Pane, wait for the verified update, close normally and reopen. Hardware mirroring still requires a compatible iPhone and Developer Mode.
+Automatic updates: launch Pane, wait for the verified update, close normally and reopen. Verify Product version 1.5.1 in Pane.exe Properties > Details or the version in the connection panel.
+
+Windows native tests inspect the actual HWND region before and after resize, plus hover-menu placement. UI tests exercise Home click/hold/cancel, panel toggles and failure recovery. Siri and system gestures still need verification on a physical iPhone; Siri must be enabled on the phone.

@@ -313,7 +313,8 @@ function renderScreen(screen) {
 
   workspace.classList.remove("is-live");
   phoneShell.classList.remove("live");
-  remotePanel.hidden = true;
+  remotePanel.hidden = false;
+  openSystemPanel = null;
   restartScreen.hidden = true;
   kbToggle.hidden = true;
   screenView.hidden = true;
@@ -357,7 +358,7 @@ async function showPhone() {
   } finally {
     connectionBusy = false;
     showScreen.disabled = false;
-    showScreen.textContent = connectionPhase === "running" ? "Disconnect" : "Connect";
+    showScreen.textContent = ["running", "starting"].includes(connectionPhase) ? "Disconnect" : "Connect";
     watchScreen();
   }
 }
@@ -423,6 +424,7 @@ function reloadMirrorIframe() {
 }
 
 async function restartMirror() {
+  openSystemPanel = null;
   restartScreen.disabled = true;
   screenNote.textContent = "Restarting screen… keep the iPhone unlocked.";
   screenNote.className = "";
@@ -476,35 +478,54 @@ const GESTURES = {
 
 // A swipe-up injected over USB is too slow for iOS to treat as the Home
 // gesture, so Home and the app switcher use the Home button instead.
+let openSystemPanel = null;
+let gestureChain = Promise.resolve();
+function queueGesture(name) {
+  gestureChain = gestureChain.then(async () => {
+    if (!workspace.classList.contains("is-live")) return;
+    await gesture(name);
+  }).catch(error => {
+    openSystemPanel = null;
+    screenNote.textContent = error.message;
+    screenNote.className = "warn";
+  });
+  return gestureChain;
+}
+
 async function pressHome(times) {
+  openSystemPanel = null;
   for (let i = 0; i < times; i++) {
     if (i) await sleep(120);
-    await mirrorPost("/button", { name: "home", state: "press" });
+    await window.paneControl("/button", { name: "home", state: "press" });
   }
 }
 
 async function gesture(name) {
+  if (name === "siri") {
+    openSystemPanel = null;
+    return window.paneControl("/button", { name: "siri", state: "press" });
+  }
   if (name === "home") return pressHome(1);
   if (name === "switcher") return pressHome(2);
   const g = GESTURES[name];
   if (!g) return;
+  if (openSystemPanel === name) return pressHome(1);
+  if (openSystemPanel) await pressHome(1);
   const [x0, y0] = g.from;
   const [x1, y1] = g.to;
-  await mirrorPost("/touch", { type: "contact", x: x0, y: y0 });
-  for (let i = 1; i <= g.steps; i++) {
-    await sleep(g.dt);
-    const t = i / g.steps;
-    await mirrorPost("/touch", {
-      type: "contact",
-      x: Math.round(x0 + (x1 - x0) * t),
-      y: Math.round(y0 + (y1 - y0) * t),
-    });
+  try {
+    await window.paneControl("/touch", { type: "contact", x: x0, y: y0 });
+    for (let i = 1; i <= g.steps; i++) {
+      await sleep(g.dt);
+      const t = i / g.steps;
+      await window.paneControl("/touch", {
+        type: "contact", x: Math.round(x0 + (x1 - x0) * t), y: Math.round(y0 + (y1 - y0) * t),
+      });
+    }
+  } finally {
+    await window.paneControl("/touch", { type: "release", x: x1, y: y1 });
   }
-  if (g.hold) {
-    await sleep(g.hold);
-    await mirrorPost("/touch", { type: "contact", x: x1, y: y1 });
-  }
-  await mirrorPost("/touch", { type: "release", x: x1, y: y1 });
+  openSystemPanel = name;
 }
 
 function toggleFullscreen() {
@@ -539,7 +560,35 @@ function wireRemoteControls() {
     if (btn) btn.blur();
   });
   document.querySelectorAll("[data-gesture]").forEach((btn) => {
-    btn.addEventListener("click", () => gesture(btn.dataset.gesture));
+    if (btn.dataset.gesture !== "home") {
+      btn.addEventListener("click", () => queueGesture(btn.dataset.gesture));
+      return;
+    }
+    let holdTimer, suppressClick = false;
+    const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+    btn.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || btn.disabled) return;
+      cancelHold(); suppressClick = false;
+      btn.setPointerCapture(event.pointerId);
+      holdTimer = setTimeout(() => {
+        holdTimer = null; suppressClick = true;
+        queueGesture("siri");
+      }, 600);
+    });
+    btn.addEventListener("pointerup", cancelHold);
+    btn.addEventListener("pointermove", event => {
+      if (!holdTimer) return;
+      const r = btn.getBoundingClientRect();
+      if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) {
+        cancelHold(); suppressClick = true;
+      }
+    });
+    for (const type of ["pointercancel", "lostpointercapture"]) btn.addEventListener(type, cancelHold);
+    window.addEventListener("blur", cancelHold);
+    btn.addEventListener("click", event => {
+      if (event.detail === 0 || !suppressClick) queueGesture("home");
+      suppressClick = false;
+    });
   });
   document.querySelector("#fullscreen")?.addEventListener("click", toggleFullscreen);
   document.querySelector("#fs-exit")?.addEventListener("click", toggleFullscreen);

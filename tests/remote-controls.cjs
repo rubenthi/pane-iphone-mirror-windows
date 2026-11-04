@@ -1,0 +1,49 @@
+const assert = require('node:assert/strict');
+module.exports = async function checkRemoteControls(page) {
+  await page.evaluate(()=>{
+    window.controlEvents=[];
+    window.paneControl=async(path,payload)=>window.controlEvents.push({path,...payload});
+  });
+  const home=page.locator('[data-gesture="home"]');
+  await home.click();
+  await page.waitForFunction(()=>window.controlEvents.length===1);
+  assert.deepEqual(await page.evaluate(()=>window.controlEvents),[{path:'/button',name:'home',state:'press'}]);
+  await page.evaluate(()=>window.controlEvents=[]);
+  await home.hover(); await page.mouse.down(); await page.waitForTimeout(750); await page.mouse.up();
+  await page.waitForTimeout(100);
+  assert.deepEqual(await page.evaluate(()=>window.controlEvents),[{path:'/button',name:'siri',state:'press'}]);
+  // Leaving the Home target cancels a hold, including its eventual click.
+  await page.evaluate(()=>window.controlEvents=[]);
+  await home.hover(); await page.mouse.down(); await page.mouse.move(150,200); await page.waitForTimeout(700); await page.mouse.up();
+  assert.deepEqual(await page.evaluate(()=>window.controlEvents),[]);
+  for(const panel of ['notifications','control']) {
+    await page.evaluate(()=>window.controlEvents=[]);
+    await page.locator(`[data-gesture="${panel}"]`).dblclick({delay:30});
+    await page.waitForFunction(()=>window.controlEvents.at(-1)?.name==='home');
+    const events=await page.evaluate(()=>window.controlEvents);
+    assert.equal(events[0].type,'contact');
+    assert.equal(events[0].y,0);
+    assert.equal(events[0].x,panel==='notifications'?16000:58000);
+    assert.equal(events.filter(e=>e.type==='release').length,1);
+    assert.deepEqual(events.at(-1),{path:'/button',name:'home',state:'press'});
+  }
+  // A failed opening attempt must not make the next click dismiss an unopened panel.
+  await page.evaluate(()=>{
+    let fail=true;
+    window.controlEvents=[];
+    window.paneControl=async(path,payload)=>{
+      window.controlEvents.push({path,...payload});
+      if(fail){fail=false;throw new Error('Synthetic disconnect');}
+    };
+  });
+  await page.locator('[data-gesture="notifications"]').click();
+  await page.waitForFunction(()=>document.querySelector('#screen-note').textContent==='Synthetic disconnect');
+  await page.evaluate(()=>window.controlEvents=[]);
+  await page.locator('[data-gesture="notifications"]').click();
+  await page.waitForFunction(()=>window.controlEvents.at(-1)?.type==='release');
+  assert.equal(await page.evaluate(()=>window.controlEvents.some(e=>e.name==='home')),false);
+  await home.click();
+  assert.equal(await page.locator('#remote-panel button').count(),0);
+  assert.match(await page.locator('#remote-panel').textContent(),/How to use Pane/);
+  console.log('PASS: Home click/hold/cancel, panel toggles, failed gesture recovery and usage guide');
+};

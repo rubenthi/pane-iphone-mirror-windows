@@ -28,18 +28,22 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## Features
 
-Version 1.5.0 returns to Developer Mode control. The connection panel overlays
+Version 1.5.1 fixes the native window shape and retains Developer Mode control. The connection panel overlays
 the phone screen; Bluetooth connectivity has been removed. The window outline
 contains only the phone and its dark glass button rail. Drag a corner to resize;
-hover the three-line handle for minimize, maximize/restore and close.
+hover the three-line handle for Minimize, with Maximize/Restore and Close above it.
+Hold Home for Siri; click Notification Center or Control Center again to dismiss it.
+The connection panel includes a How to use Pane guide. The frame follows the live
+display dimensions, including rotation or display-size changes; no model-specific
+size is hardcoded. iPhone Duo hardware compatibility remains unverified.
 
 - 📱 **Live iPhone screen mirroring on Windows**: low-latency HEVC (H.265) video decoded in hardware.
 - 🖱️ **Control the iPhone with your mouse**: tap, long-press, drag and swipe directly on the mirrored screen.
 - ⌨️ **Type on your iPhone with the PC keyboard**: real keystrokes, including Ctrl+C / Ctrl+V / Ctrl+A / Ctrl+Z mapped to ⌘ shortcuts.
 - 📶 **Wireless mirroring over Wi-Fi**: pair once over USB, then go cable-free on the same network.
 - 🔌 **USB cable mode**: the most stable, lowest-latency connection.
-- 🏠 **Hardware buttons & gestures**: Home, App Switcher, Lock/Power, Siri, Volume up/down, Mute, Notification Center, Control Center, back/forward swipes.
-- 🖥️ **Realistic iPhone frame** with fit-to-window, zoom, rotate and **full-screen touch mode**.
+- 🏠 **Hardware buttons & gestures**: Home (hold for Siri), App Switcher, Volume up/down, and toggles for Notification Center and Control Center.
+- 🖥️ **Realistic iPhone frame** with proportional corner resizing and automatic display orientation.
 - 🔁 **One-click restart** if the stream ever freezes.
 - 🪟 **Single portable `Pane.exe`**: no Python, no installer, no account.
 - 🔒 **Local mirroring**: video and input stay on USB/your local network. Updates check this GitHub fork; initial developer-image setup may download Apple resources.

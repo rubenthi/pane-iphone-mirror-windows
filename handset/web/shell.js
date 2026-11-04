@@ -56,8 +56,9 @@
     if (event.origin !== location.origin || event.source !== document.querySelector('#screen-view').contentWindow || !['pane-display','pane-stream-status'].includes(event.data?.source)) return;
     if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':event.data.text;arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
     const { width, height } = event.data;
+    if (![width, height].every(value => Number.isInteger(value) && value > 0 && value <= 16384)) return;
     const next = width / height;
-    if (!Number.isFinite(next) || next < .35 || next > 2.5 || Math.abs(next - aspect) < .005) return;
+    if (!Number.isFinite(next) || next < .35 || next > 2.5 || Math.abs(next - aspect) < .000001) return;
     aspect = next;
     layout().catch(() => {});
   });
