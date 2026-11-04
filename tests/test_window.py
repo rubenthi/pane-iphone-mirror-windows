@@ -19,6 +19,13 @@ class WindowLayoutTests(unittest.TestCase):
                 self.assertLessEqual(layout['height'], 720)
                 self.assertAlmostEqual((layout['phone_width']-SCREEN_CHROME)/(layout['height']-SCREEN_CHROME), aspect, delta=.01)
 
+    def test_fractional_drag_height_keeps_the_live_video_aspect(self):
+        for aspect in (1290/2796, 1800/1920, 1920/1800, 2532/1170):
+            for height in (590.38, 590.5, 591.4, 760):
+                layout = dimensions(aspect, preferred_height=height)
+                self.assertLessEqual(abs((layout['phone_width']-SCREEN_CHROME) -
+                                         (layout['height']-SCREEN_CHROME)*aspect), .5)
+
     def test_bad_dimensions_do_not_reach_native_api(self):
         for aspect in (None, True, [], float('nan'), float('inf'), -.1, 99):
             with self.subTest(aspect=aspect), self.assertRaises(ValueError):

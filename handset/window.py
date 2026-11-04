@@ -22,6 +22,9 @@ def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_heig
         raise ValueError('Invalid window layout.')
     extra = TAB
     height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - SCREEN_CHROME) / aspect + SCREEN_CHROME))
+    # Derive width from the integer height Windows actually receives. Using
+    # a fractional drag height here distorts wider displays after rounding.
+    height = round(height)
     width = round((height - SCREEN_CHROME) * aspect) + SCREEN_CHROME
     rail_scale = min(1, max(.15, (height-132)/292))
     rail_top = max(124, (height-288*rail_scale)/2)
