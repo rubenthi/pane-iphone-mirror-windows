@@ -39,7 +39,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(await page.locator('#connection-drawer').isVisible(),false);
     async function checkRegion(menu = false) {
       const state = await page.evaluate(()=>getJson('/api/window'));
-      assert.deepEqual(state.region_test, {kind:3, phone:true, corner:false, above_rail:false, below_rail:false, rail:true, menu, exact_handle:true, managed_region:true});
+      assert.deepEqual(state.region_test, {kind:3, phone:true, corner:false, above_rail:false, below_rail:false, rail:true, menu, exact_handle:true, managed_region:true}, JSON.stringify(state));
     }
     await checkRegion();
     const compact=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));

@@ -19,10 +19,11 @@ from ctypes import wintypes as W
 original_status = shell.status
 
 def checked_status():
-    state = original_status()
     if not shell.handle:
-        return state
+        return original_status()
     def inspect():
+        # Read geometry and its native region in the same UI-thread turn.
+        state = original_status()
         scale = (shell.u.GetDpiForWindow(shell.handle) or 96) / 96
         region = shell.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
         shell.g.PtInRegion.argtypes = [W.HRGN, ctypes.c_int, ctypes.c_int]
@@ -32,16 +33,16 @@ def checked_status():
             pw, h, top = state['phone_width'], state['height'], state['rail_top']
             def inside(x, y):
                 return bool(shell.g.PtInRegion(region, round(x*scale), round(y*scale)))
-            return {'kind': kind, 'phone': inside(pw/2, h/2),
+            state['region_test'] = {'kind': kind, 'phone': inside(pw/2, h/2),
                     'corner': inside(0, 0), 'above_rail': inside(pw+30, 2),
                     'below_rail': inside(pw+30, h-2), 'rail': inside(pw+30, top+50),
                     'menu': inside(pw+30, top-103),
                     'exact_handle': shell.handle == shell._form.Handle.ToInt64(),
                     'managed_region': shell._form.Region is not None}
+            return state
         finally:
             shell.g.DeleteObject(region)
-    state['region_test'] = shell._on_ui(inspect)
-    return state
+    return shell._on_ui(inspect)
 
 shell.status = checked_status
 app.main()
