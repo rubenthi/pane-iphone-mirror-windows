@@ -13,3 +13,6 @@ test-results/
 ios/*.xcodeproj/
 ios/package/
 ios/*.ipa
+
+signer/target/
+signer/pane-signer*

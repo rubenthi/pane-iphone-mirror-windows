@@ -76,9 +76,10 @@ class ServerSecurityTests(unittest.TestCase):
                 self.assertEqual(status, 404)
 
     def test_companion_actions_require_auth_and_reject_bad_identifiers(self):
-        for path in ('/api/setup/start', '/api/uploads/start', '/api/bluetooth/connect'):
+        for path in ('/api/signing/start', '/api/signing/answer', '/api/signing/cancel', '/api/setup/start', '/api/uploads/start', '/api/bluetooth/connect'):
             self.assertEqual(self.request('POST', path, body=b'{}')[0], 403)
         self.assertEqual(self.request('GET', '/api/setup')[0], 403)
+        self.assertEqual(self.request('GET', '/api/signing')[0], 403)
         self.assertEqual(self.request('GET', '/api/uploads')[0], 403)
 
 

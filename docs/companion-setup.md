@@ -4,7 +4,7 @@ Pane keeps USB/Wi-Fi screen mirroring and the iPhone's hardware volume controls.
 
 ## Clean start on the laptop
 
-The first launch of 2.0 clears Pane-owned state in `%LOCALAPPDATA%\Pane`: its WebView/browser profiles, preferences, logs, staged files, history and app pairing state. Subsequent launches preserve the new configuration. Close Pane and run `Pane.exe --reset` to repeat the reset. If an old profile is locked, close the other Pane/browser processes before retrying; reset must finish before the new profile opens.
+The first launch of 2.0 clears Pane-owned state in `%LOCALAPPDATA%\Pane`: its WebView/browser profiles, preferences, logs, staged files, history, protected signing data and app pairing state. Subsequent launches preserve the new configuration. Close Pane and run `Pane.exe --reset` to repeat the reset. If an old profile is locked, close the other Pane/browser processes before retrying; reset must finish before the new profile opens.
 
 Downloads and other personal files are preserved. Apple Devices/iTunes trust records are shared operating-system data and are preserved. Old shared pymobiledevice3 records are not imported; new wireless records are isolated under Pane's own data directory. A cloud checkout cannot erase the user's laptop: the installed update performs this migration when launched there.
 
@@ -22,7 +22,11 @@ Reconnect explicitly after a disconnect. Phone-to-laptop transfers retry from th
 
 ## Signing and installation
 
-No App Store review is required, but Apple signing is required. Pane does not implement an Apple account login or signing service.
+No App Store review is required, but Apple signing is required. Pane includes an isideload signing helper. In step 2, choose the unsigned Pane IPA and enter your Apple Account email and password, then choose **Sign & install with Pane**. Complete the verification-code prompt and select your developer team when asked. No separate AltStore installation is needed.
+
+Passwords travel to the helper through anonymous pipes and are never saved or logged. Certificates and anisette state are saved under Pane/signing encrypted with Windows DPAPI. The helper uses Apple endpoints and the upstream anisette service at `https://ani.iloader.app`; network availability is required. Reset clears this local signing data but does not revoke certificates at Apple.
+
+Repeat Sign & install with Pane using the original unsigned IPA and same Apple Account/team to renew. This build provides manual renewal; it does not run unattended renewal in the background. Certificate-limit errors require account maintenance; Pane never automatically revokes other certificates. Sessions time out after ten minutes, verification prompts after five, and can be cancelled. Cancellation cannot undo an installation or certificate already created at Apple.
 
 **AltStore Classic on Windows:** follow [AltStore's official guide](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows), including its supported iTunes/iCloud versions. Install AltServer and use its tray menu to install AltStore on the iPhone. Authenticate directly in AltServer. Download the unsigned IPA from a successful [Pane build](https://github.com/rubenthi/pane-iphone-mirror-windows/actions/workflows/companion.yml), extract the artifact ZIP, and open the IPA in AltStore on the phone. AltStore signs and installs it. Continue with Developer Mode and USB binding in Pane. Free-account apps normally expire after seven days unless refreshed. AltStore installation is a separate, user-driven signing step, not an automated Pane signer.
 

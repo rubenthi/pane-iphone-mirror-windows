@@ -55,6 +55,28 @@ const fs = require('node:fs');
     await page.locator('.altstore-guide > summary').click();
     assert.match(await page.locator('.altstore-guide').innerText(), /Apple Account/);
     await page.screenshot({path:'test-results/setup.png'});
+    let signingView={phase:'idle',available:true,note:'Ready'};
+    await page.route('**/api/signing',route=>route.fulfill({json:signingView}));
+    const signRequests=[];
+    await page.route('**/api/signing/*',route=>{
+      signRequests.push({path:new URL(route.request().url()).pathname,...route.request().postDataJSON()});
+      signingView={phase:'prompt',available:true,note:'Enter code',prompt:{id:'prompt-one',kind:'verification',choices:[]}};
+      return route.fulfill({json:signingView});
+    });
+    await page.locator('#signing-email').fill('test@example.com');
+    await page.locator('#signing-password').fill('test-only-password');
+    await page.locator('#signing-ipa').setInputFiles({name:'Pane.ipa',mimeType:'application/octet-stream',buffer:Buffer.from('test unsigned ipa')});
+    await page.waitForFunction(()=>!document.querySelector('#signing-start').disabled);
+    await page.locator('#signing-start').click();
+    await page.locator('#signing-prompt').waitFor({state:'visible'});
+    assert.equal(signRequests[0].password,'test-only-password');
+    assert.equal(signRequests[0].udid,'test-phone');
+    assert.equal(await page.locator('#signing-password').inputValue(),'');
+    await page.locator('#signing-code').fill('123456');
+    await page.locator('#signing-answer').click();
+    await page.waitForTimeout(50);
+    assert.equal(signRequests[1].promptId,'prompt-one');
+    assert.equal(signRequests[1].value,'123456');
     assert.deepEqual(errors,[]);
     console.log('PASS: clean preferences, retained volume buttons, setup request, AltStore guidance, Uploads tab, real staging/cancellation, no browser errors.');
   } finally { if(browser)await browser.close(); child.kill(); }

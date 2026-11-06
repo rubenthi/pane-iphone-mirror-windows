@@ -47,7 +47,7 @@ The Connection sidebar now walks through USB trust, revealing Developer Mode, in
 
 See the [complete setup and signing guide](docs/companion-setup.md). GitHub Actions produces the [unsigned companion IPA](../../actions/workflows/companion.yml) for AltStore signing and the [Windows executable](../../actions/workflows/desktop-check.yml). A source update on main is not itself an installed laptop update. Automatic updates consume published release assets after checksum verification.
 
-The companion requires Apple signing (normally a free Apple Account through AltStore Classic, or a development-signed IPA exported from Xcode). Pane installs an already signed IPA over USB; it does not sign apps or collect Apple credentials. Free-account apps generally need refreshing every seven days. File sharing requires iOS 17+ and a Windows BLE adapter. The pinned screen-streaming library requires **iOS 27+**.
+The companion requires Apple signing, supported directly in Pane with a free or paid Apple Account. Pane can sign and install its companion using your Apple Account through its bundled isideload helper. Passwords are not saved; certificates and authentication-support data are encrypted with Windows DPAPI. An unsigned Pane IPA is required. Free-account apps generally need refreshing every seven days. File sharing requires iOS 17+ and a Windows BLE adapter. The pinned screen-streaming library requires **iOS 27+**.
 
 ## Tested devices and iOS versions
 

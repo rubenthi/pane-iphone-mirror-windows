@@ -16,7 +16,7 @@ from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
 from handset import updater
 from handset.window import shell
-from handset import setup
+from handset import setup, signing
 from handset.bluetooth import bluetooth
 from handset.transfers import store
 from handset.state import prepare_state, isolate_device_state
@@ -86,6 +86,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/window':
             self._json(shell.status())
             return
+        if path == '/api/signing':
+            self._json(signing.status())
+            return
         if path == '/api/setup':
             self._json(setup.status())
             return
@@ -130,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "Invalid device id."}, status=400)
             return
         udid = payload.get("udid") if isinstance(payload.get("udid"), str) else None
-        if path.startswith('/api/setup/') or path.startswith('/api/uploads/') or path.startswith('/api/bluetooth/'):
+        if path.startswith('/api/signing/') or path.startswith('/api/setup/') or path.startswith('/api/uploads/') or path.startswith('/api/bluetooth/'):
             try:
                 self._json(self._companion_action(path, payload, udid))
             except (ValueError, OSError, MuxError) as error:
@@ -155,6 +158,18 @@ class Handler(BaseHTTPRequestHandler):
         self._json(start_screen(udid, transport))
 
     def _companion_action(self, path, payload, udid):
+        if path == '/api/signing/answer':
+            return signing.answer(payload.get('promptId'), payload.get('value'))
+        if path == '/api/signing/cancel':
+            return signing.cancel()
+        if path == '/api/signing/start':
+            setup.require_usb(udid)
+            item = store().finish(payload.get('id'), 'ipa')
+            try:
+                return signing.start(udid, item['path'], payload.get('email'), payload.get('password'))
+            except Exception:
+                item['path'].unlink(missing_ok=True)
+                raise
         if path.startswith('/api/setup/'):
             action = path.rsplit('/', 1)[-1]
             if action == 'install':

@@ -9,7 +9,7 @@ import shutil
 DATA_DIR = Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Pane')))
 SCHEMA = 2
 # Never erase arbitrary PANE_DATA_DIR contents or shared Apple trust records.
-OWNED = ('window', 'webview', 'device', 'staging', 'outbox', 'settings.json',
+OWNED = ('signing', 'window', 'webview', 'device', 'staging', 'outbox', 'settings.json',
          'binding.json', 'setup.json', 'transfers.json', 'pane.log', 'state-version.json')
 
 

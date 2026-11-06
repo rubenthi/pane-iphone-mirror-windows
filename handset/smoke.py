@@ -25,6 +25,10 @@ def run(output):
         assert hasattr(userspace_tunnel.UserspaceRsdTunnel, '_aopen_locked')
         assert hasattr(bonjour, '_bind_ipv4') and hasattr(bonjour, '_send_query_all')
         assert Path(__file__).with_name('install_update.ps1').is_file()
+        import subprocess
+        from handset.signing import helper_path
+        helper = subprocess.run([str(helper_path()), '--version'], capture_output=True, text=True, timeout=15, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        assert helper.returncode == 0 and 'pane-signer 2.1.0' in helper.stdout, 'Bundled signer did not start'
         server = SingleServer(('127.0.0.1', 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
