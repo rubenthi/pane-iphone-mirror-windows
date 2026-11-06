@@ -36,14 +36,18 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 - 🏠 **Hardware buttons & gestures**: Home, App Switcher, Lock/Power, Siri, Volume up/down, Mute, Notification Center, Control Center, back/forward swipes.
 - 🖥️ **Realistic iPhone frame** with fit-to-window, zoom, rotate and **full-screen touch mode**.
 - 🔁 **One-click restart** if the stream ever freezes.
-- 🪟 **Single portable `Pane.exe`**: no Python, no installer, no account.
+- 🪟 **Single portable `Pane.exe`**: no Python installation required.
 - 🔒 **Local mirroring**: video and input stay on USB/your local network. Updates check this GitHub fork; initial developer-image setup may download Apple resources.
 
-## This fork's release and updater
+## Pane 2.0: clean setup and file sharing
 
-Version 1.2.1 adds a native, phone-shaped floating window and an expandable connection sidebar. Open its arrow, then the iOS 27 setup guide for prerequisites, USB/Wi-Fi instructions, and the optional AltStore Classic fallback for a missing Developer Mode setting. The outline follows the live display aspect ratio; before video starts it uses a standard portrait shape. It is not an exact physical bezel/camera-cutout replica of every model. Automatic updates check only this fork, verify executable size and SHA-256, and apply after closing Pane. An existing executable is retained as `Pane.exe.backup-*`; timeout or verification failure leaves it unchanged. Download `install.ps1` from the release and run it with PowerShell to install under `%LOCALAPPDATA%\Programs\Pane` and create a desktop shortcut.
+Pane 2.0 resets its old application preferences, profiles, logs and saved app connections once when the update first launches. Personal files and shared Apple trust records are preserved. The iPhone volume controls remain; startup no longer lowers the volume and no sound is streamed to the PC.
 
-The pinned screen-streaming library requires **iOS 27+**. The older iOS 17+ claim described tunnel support, not verified display streaming. Physical USB/Wi-Fi mirroring and input must be tested with a compatible phone; automated tests use local stand-ins.
+The Connection sidebar now walks through USB trust, revealing Developer Mode, installing a signed **Pane** companion, the iPhone restart/confirmation, and USB/Wi-Fi/Bluetooth binding. The second tab, **Uploads**, sends files both ways over Bluetooth Low Energy. Incoming files are verified and saved to the laptop's Downloads folder without overwriting existing files. Keep the iPhone companion open during transfers.
+
+See the [complete setup and signing guide](docs/companion-setup.md). GitHub Actions produces the [unsigned companion IPA](../../actions/workflows/companion.yml) for AltStore signing and the [Windows executable](../../actions/workflows/desktop-check.yml). A source update on main is not itself an installed laptop update. Automatic updates consume published release assets after checksum verification.
+
+The companion requires Apple signing (normally a free Apple Account through AltStore Classic, or a development-signed IPA exported from Xcode). Pane installs an already signed IPA over USB; it does not sign apps or collect Apple credentials. Free-account apps generally need refreshing every seven days. File sharing requires iOS 17+ and a Windows BLE adapter. The pinned screen-streaming library requires **iOS 27+**.
 
 ## Tested devices and iOS versions
 
@@ -53,12 +57,13 @@ This repository is public and licensed under GPL-3.0: anyone can view or fork it
 
 ## Quick start
 
-1. **Download** `Pane.exe` from the [latest release](../../releases/latest).
-2. Install Apple's USB driver by installing **[Apple Devices](https://apps.microsoft.com/detail/9np83lwlpz9k)** (or iTunes) from the Microsoft Store.
-3. Plug the iPhone into the PC, unlock it and tap **Trust This Computer**.
-4. Turn on **Developer Mode** on the iPhone: *Settings → Privacy & Security → Developer Mode → On* (the iPhone restarts).
-   If the option is missing, do not assume Pane can enable it; follow Apple's Developer Mode setup guidance.
-5. Run **Pane.exe**, open the sidebar arrow, choose **Cable**, and click **Start mirroring**. The built-in guide and [AltStore fallback instructions](docs/ios27-setup.md) are available if setup is incomplete.
+1. Install the new Windows build, close any running older Pane process, and launch it. Pane clears its old state once.
+2. Install **Apple Devices** for the USB driver, connect the iPhone, unlock it and tap **Trust This Computer**.
+3. Open **Connection → iPhone setup** and choose **Initiate setup** to request the Developer Mode switch.
+4. Install Pane using a signed IPA or the AltStore path in the guide. Enable Developer Mode on the iPhone, restart the iPhone and confirm **Turn On**.
+5. Reconnect USB. Choose **Check Developer Mode & app**, then **Bind USB & Wi-Fi**.
+6. In Pane, tap **Activate USB link** and allow Bluetooth. In Pane choose **Connect Bluetooth**.
+7. Use **Uploads** for files and **Start mirroring** for the phone screen. See [setup details and limitations](docs/companion-setup.md).
 
 ### Go wireless (Wi-Fi)
 
@@ -104,7 +109,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # -> dist\Pane.ex
 
 ## How it works
 
-Pane uses [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) to open a secure RemoteXPC / RSD tunnel to the iPhone (over USB, or over Wi-Fi via Bonjour remote pairing), starts the iOS screen-capture service, and streams the HEVC video to a local web UI that decodes it with WebCodecs. Touches, buttons and keystrokes are sent back as HID events. Everything runs locally on `127.0.0.1`.
+Pane uses [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) to open a secure RemoteXPC / RSD tunnel to the iPhone (over USB, or over Wi-Fi via Bonjour remote pairing), starts the iOS screen-capture service, and streams the HEVC video to a local web UI that decodes it with WebCodecs. Touches, buttons and keystrokes are sent back as HID events. The desktop UI binds to `127.0.0.1`. The companion exchanges files through encrypted BLE GATT, with a pairing secret provisioned over trusted USB.
 
 ```
 iPhone ──USB / Wi-Fi tunnel──▶ Pane server (Python) ──localhost──▶ App window (WebCodecs + HID input)
@@ -125,7 +130,7 @@ Yes. After a one-time USB pairing, Pane mirrors and controls the iPhone over Wi-
 No. Pane uses Apple's built-in developer services. You only need Developer Mode turned on.
 
 **Do I need a Mac or Xcode?**
-No. Everything runs on Windows.
+The desktop app runs on Windows. AltStore Classic can sign/install the companion from Windows; building and signing the Swift companion yourself requires a Mac with Xcode.
 
 **Why does it need Developer Mode?**
 iOS only exposes screen streaming and input injection through its developer services, which require Developer Mode. You can turn it off again at any time.
@@ -134,7 +139,7 @@ iOS only exposes screen streaming and input injection through its developer serv
 The executable isn't code-signed yet, so Windows shows a warning for new downloads. Click *More info → Run anyway*, or build it yourself from source.
 
 **Is my data sent anywhere?**
-No. The video and input stay between your iPhone and your PC.
+Video, input and transferred files stay between your iPhone and PC. Initial setup/signing and update downloads contact their respective providers.
 
 ## Keywords
 

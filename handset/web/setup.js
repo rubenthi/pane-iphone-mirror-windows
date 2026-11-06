@@ -9,8 +9,6 @@
       item.tabIndex = active ? 0 : -1;
       document.getElementById(item.getAttribute('aria-controls')).hidden = !active;
     }
-    $('.drawer-heading h2').textContent = tab.id === 'uploads-tab' ? 'Your files, shared.' : 'Your iPhone, connected.';
-    $('.drawer-heading .eyebrow').textContent = tab.id === 'uploads-tab' ? 'PANE / UPLOADS' : 'PANE / CONNECTION';
   }
   for (const [index, tab] of tabs.entries()) {
     tab.addEventListener('click', () => selectTab(tab));
@@ -31,7 +29,16 @@
   }
   function renderSetup(state) {
     setupState = state;
-    $('#setup-progress').textContent = state.error || state.note;
+    $('#setup-progress').textContent = state.error || (transferState.bluetooth?.phase === 'connected'
+      ? 'Connected. Use Uploads for files, or Start mirroring for the screen.' : state.note);
+    $('#setup-progress').dataset.tone = state.phase === 'error' ? 'error' : state.phase;
+    const done = {connect: state.usbReady, install: state.installed, developer: state.developerEnabled,
+      bind: state.wifiBound, bluetooth: transferState.bluetooth?.phase === 'connected'};
+    for (const step of document.querySelectorAll('[data-step]')) {
+      step.dataset.done = String(!!done[step.dataset.step]);
+      if (step.dataset.step === state.step) step.setAttribute('aria-current', 'step');
+      else step.removeAttribute('aria-current');
+    }
     for (const button of document.querySelectorAll('[data-setup]')) {
       button.disabled = setupBusy || staging || state.phase === 'working' || !usbConnected || !selectedUdid;
     }
@@ -103,32 +110,61 @@
         try { await postJson('/api/uploads/finish', {id}); }
         catch (error) { await postJson('/api/uploads/cancel', {id}).catch(() => {}); throw error; }
       }
-      $('#upload-progress').textContent = `${files.length} file(s) queued. Keep Pane Files open and Bluetooth connected.`;
+      $('#upload-progress').textContent = `${files.length} file(s) queued. Keep Pane open and Bluetooth connected.`;
     } catch (error) { $('#upload-progress').textContent = error.message; }
     finally { $('#send-files').disabled = false; event.target.value = ''; }
   });
   function renderTransfers(state) {
     transferState = state;
     $('#bluetooth-status').textContent = state.bluetooth.note;
-    $('#downloads-location').textContent = `Saved to ${state.destination}`;
+    const phase = state.bluetooth.phase;
+    const badge = $('#bluetooth-badge');
+    badge.textContent = {connected: 'Connected', connecting: 'Connecting', error: 'Needs attention'}[phase] || 'Not connected';
+    badge.dataset.state = phase;
+    for (const button of document.querySelectorAll('[data-bluetooth="disconnect"]')) button.hidden = !['connecting', 'connected'].includes(phase);
+    $('#downloads-location').textContent = 'Downloads';
+    $('#downloads-location').title = state.destination;
+    const active = state.transfers.filter(t => ['queued', 'sending', 'receiving'].includes(t.state)).length;
+    $('#transfer-count').hidden = active === 0; $('#transfer-count').textContent = active;
+    $('#transfer-count').setAttribute('aria-label', `${active} pending transfers`);
+    $('#transfer-summary').textContent = active ? `${active} pending` : 'No active transfers';
+    $('#history-count').textContent = state.transfers.length ? String(state.transfers.length) : '';
     const list = $('#transfer-list');
+    // Polling must not rebuild an unchanged list and steal focus or selection.
+    const serialized = JSON.stringify(state.transfers);
+    if (list.dataset.snapshot === serialized) return;
+    list.dataset.snapshot = serialized;
     const focused = document.activeElement?.dataset.cancel;
     list.replaceChildren();
     if (!state.transfers.length) {
-      const empty = document.createElement('li'); empty.className = 'fine'; empty.textContent = 'No transfers yet.'; list.append(empty);
+      const empty = document.createElement('li'); empty.className = 'transfer-empty';
+      const title = document.createElement('strong'); title.textContent = 'Nothing here yet';
+      const detail = document.createElement('p'); detail.textContent = 'Send a file from either device. Its progress and status will appear here.';
+      empty.append(window.paneIcon('folder'), title, detail); list.append(empty);
     }
     for (const transfer of state.transfers) {
-      const item = document.createElement('li'); item.className = 'transfer';
-      const title = document.createElement('strong'); title.textContent = transfer.savedAs || transfer.name;
-      const detail = document.createElement('p');
-      detail.textContent = `${transfer.direction === 'to-phone' ? 'To iPhone' : 'To Downloads'} · ${transfer.state} · ${bytes(transfer.size)}`;
-      item.append(title, detail);
+      const item = document.createElement('li'); item.className = 'transfer'; item.dataset.state = transfer.state;
+      const top = document.createElement('div'); top.className = 'transfer-top';
+      const kind = /\.(jpg|jpeg|png|heic|gif|webp)$/i.test(transfer.name) ? 'image' : 'file';
+      const icon = window.paneIcon(kind); icon.classList.add('file-icon');
+      const content = document.createElement('div'); content.className = 'transfer-content';
+      const title = document.createElement('strong'); title.textContent = transfer.savedAs || transfer.name; title.title = title.textContent;
+      const detail = document.createElement('p'); detail.className = 'transfer-meta';
+      detail.textContent = `${transfer.direction === 'to-phone' ? 'To iPhone' : 'To Downloads'} · ${bytes(transfer.size)}`;
+      content.append(title, detail); top.append(icon, content);
+      const status = document.createElement('span'); status.className = 'transfer-state';
+      status.textContent = {complete:'Done', failed:'Failed', cancelled:'Cancelled', queued:'Queued', sending:'Sending', receiving:'Receiving'}[transfer.state] || transfer.state;
+      top.append(status); item.append(top);
       if (['sending', 'receiving'].includes(transfer.state)) {
-        const progress = document.createElement('progress'); progress.max = transfer.size || 1; progress.value = transfer.done; progress.setAttribute('aria-label', `${transfer.name} progress`); item.append(progress);
+        const progress = document.createElement('progress'); progress.max = transfer.size || 1; progress.value = transfer.done; progress.setAttribute('aria-label', `${transfer.name} progress`);
+        const counts = document.createElement('p'); counts.className = 'transfer-numbers';
+        counts.textContent = `${bytes(transfer.done)} of ${bytes(transfer.size)} · ${transfer.size ? Math.floor(transfer.done / transfer.size * 100) : 0}%`;
+        item.append(progress, counts);
       }
       if (transfer.error) { const error = document.createElement('p'); error.className = 'warn'; error.textContent = transfer.error; item.append(error); }
       if (transfer.state === 'queued') {
-        const cancel = document.createElement('button'); cancel.className = 'text-button'; cancel.textContent = 'Cancel'; cancel.dataset.cancel = transfer.id;
+        const cancel = document.createElement('button'); cancel.className = 'transfer-cancel'; cancel.textContent = 'Cancel'; cancel.dataset.cancel = transfer.id;
+        cancel.title = `Cancel ${transfer.name}`;
         cancel.addEventListener('click', () => postJson('/api/uploads/cancel', {id: transfer.id}).catch(error => {$('#upload-progress').textContent = error.message;}));
         item.append(cancel);
       }

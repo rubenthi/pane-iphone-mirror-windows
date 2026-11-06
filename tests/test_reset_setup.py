@@ -79,5 +79,5 @@ class SetupTests(unittest.TestCase):
             amfi.reveal_developer_mode_option_in_ui.assert_awaited_once()
             amfi.enable_developer_mode.assert_not_called()
             amfi.enable_developer_mode_post_restart.assert_not_called()
-            self.assertEqual(setup.status()['step'], 'developer')
+            self.assertEqual(setup.status()['step'], 'install')
         lockdown.close.assert_awaited_once()

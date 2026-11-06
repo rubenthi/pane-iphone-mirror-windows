@@ -1,4 +1,4 @@
-"""Encrypted BLE GATT file transfer to the USB-bound Pane Files companion."""
+"""Encrypted BLE GATT file transfer to the USB-bound Pane companion."""
 from __future__ import annotations
 
 import asyncio
@@ -80,7 +80,7 @@ class Bluetooth:
         with self.lock:
             if self.worker and self.worker.is_alive():
                 return dict(self.state)
-            self.state.update(phase='connecting', error=None, note='Keep Pane Files open. Accept the Windows/iPhone Bluetooth pairing prompt if shown.')
+            self.state.update(phase='connecting', error=None, note='Keep Pane open. Accept the Windows/iPhone Bluetooth pairing prompt if shown.')
             self.worker = threading.Thread(target=self._run, args=(binding,), daemon=True, name='pane-files')
             self.worker.start()
         return self.status()
@@ -107,14 +107,14 @@ class Bluetooth:
             lambda device, ad: ad.local_name == binding['peerName'] and SERVICE_UUID in [s.lower() for s in ad.service_uuids],
             timeout=20, service_uuids=[SERVICE_UUID])
         if peer is None:
-            raise ValueError('Bound iPhone not found. Open Pane Files, activate the USB link, allow Bluetooth, and keep it in the foreground.')
+            raise ValueError('Bound iPhone not found. Open Pane, activate the USB link, allow Bluetooth, and keep it in the foreground.')
         async with BleakClient(peer, pair=True, timeout=120) as client:
             rpc = Rpc(client)
             await client.start_notify(RESPONSE_UUID, rpc.notified)
             result = await rpc.call('hello', token=binding['token'])
             if result.get('version') != 1:
                 raise ValueError('The companion uses an unsupported protocol version.')
-            self._set(phase='connected', note='Bluetooth connected. Keep Pane Files open during transfers.', error=None)
+            self._set(phase='connected', note='Bluetooth connected. Keep Pane open during transfers.', error=None)
             while client.is_connected:
                 outgoing = store().next_outgoing()
                 if outgoing:

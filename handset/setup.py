@@ -26,6 +26,7 @@ def status():
     binding = read_json(DATA_DIR / 'binding.json', {})
     result['boundUdid'] = binding.get('udid')
     result['peerName'] = binding.get('peerName')
+    result['wifiBound'] = bool(binding.get('udid'))
     return result
 
 
@@ -72,10 +73,10 @@ def inspect_ipa(path):
         infos = [i for i in archive.infolist() if i.filename.startswith('Payload/')
                  and i.filename.count('/') == 2 and i.filename.endswith('.app/Info.plist')]
         if len(infos) != 1 or infos[0].file_size > 1024 * 1024:
-            raise ValueError('Select the Pane Files companion IPA.')
+            raise ValueError('Select the Pane companion IPA.')
         info = plistlib.loads(archive.read(infos[0]))
         if info.get('PaneProtocolVersion') != 1 or info.get('CFBundleExecutable') != 'PaneFiles':
-            raise ValueError('This IPA is not the Pane Files companion.')
+            raise ValueError('This IPA is not the Pane companion.')
         root = infos[0].filename.rsplit('/', 1)[0]
         if root + '/embedded.mobileprovision' not in archive.namelist() or root + '/_CodeSignature/CodeResources' not in archive.namelist():
             raise ValueError('This IPA is unsigned. Sign/install it with AltStore Classic, or export a development-signed IPA for this iPhone in Xcode.')
@@ -87,9 +88,9 @@ async def _companion(lockdown):
     async with InstallationProxyService(lockdown) as installer:
         apps = await installer.browse(options={'ApplicationType': 'User'})
     matches = [app for app in apps if app.get('CFBundleExecutable') == 'PaneFiles'
-               and app.get('CFBundleDisplayName') == 'Pane Files']
+               and app.get('CFBundleDisplayName') == 'Pane']
     if len(matches) != 1:
-        raise ValueError('Install one copy of Pane Files, then check again. If using AltStore, finish signing and installation there first.')
+        raise ValueError('Install one copy of Pane, then check again. If using AltStore, finish signing and installation there first.')
     return matches[0]['CFBundleIdentifier']
 
 
@@ -101,24 +102,26 @@ async def _perform(action, udid, package):
 
     lockdown = await create_using_usbmux(serial=udid, connection_type='USB')
     try:
+        _set(usbReady=True)
         if action == 'start':
             await AmfiService(lockdown).reveal_developer_mode_option_in_ui()
-            _set(phase='waiting', step='developer', note='Open iPhone Settings → Privacy & Security → Developer Mode. Enable it, restart the iPhone, and confirm Turn On. Reconnect USB, then check again.')
+            _set(phase='waiting', step='install', revealed=True, note='Developer Mode is available. Install the Pane companion, then enable Developer Mode in iPhone Settings → Privacy & Security. Restart the iPhone and confirm Turn On.')
             return
         if action == 'install':
             if package is None:
-                raise ValueError('Choose a signed Pane Files IPA first.')
+                raise ValueError('Choose a signed Pane IPA first.')
             inspect_ipa(package)
             async with InstallationProxyService(lockdown) as installer:
-                await installer.install_from_local(package, handler=lambda progress: _set(note=f'Installing Pane Files: {progress}%'))
-            _set(phase='waiting', step='developer', note='Pane Files installed. Enable Developer Mode and trust your developer profile on the iPhone if prompted. Restart and confirm, then check again.')
+                await installer.install_from_local(package, handler=lambda progress: _set(note=f'Installing Pane: {progress}%'))
+            _set(phase='waiting', step='developer', installed=True, note='Pane installed. Enable Developer Mode and trust your developer profile on the iPhone if prompted. Restart and confirm, then check again.')
             return
         enabled = await lockdown.get_developer_mode_status()
         if not enabled:
             raise ValueError('Developer Mode is not enabled yet. Switch it on, restart the iPhone and confirm Turn On.')
         bundle = await _companion(lockdown)
+        _set(installed=True, developerEnabled=True)
         if action == 'check':
-            _set(phase='ready', step='bind', note='Developer Mode and Pane Files are ready. Bind USB and Wi-Fi next.')
+            _set(phase='ready', step='bind', note='Developer Mode and Pane are ready. Bind USB and Wi-Fi next.')
             return
         # Wi-Fi pairing must succeed before saving a completed binding.
         wifi = await asyncio.to_thread(pair_for_wifi, udid)
@@ -133,6 +136,6 @@ async def _perform(action, udid, package):
         finally:
             await afc.close()
         write_json(DATA_DIR / 'binding.json', binding)
-        _set(phase='waiting', step='bluetooth', note='USB and Wi-Fi paired. Open Pane Files on the iPhone, tap Activate USB link, allow Bluetooth, then connect Bluetooth here.')
+        _set(phase='waiting', step='bluetooth', note='USB and Wi-Fi paired. Open Pane on the iPhone, tap Activate USB link, allow Bluetooth, then connect Bluetooth here.')
     finally:
         await lockdown.close()

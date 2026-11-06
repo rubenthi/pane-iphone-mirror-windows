@@ -1,7 +1,7 @@
 name: Validate and build desktop reset
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   pull_request:
 permissions:
   contents: read

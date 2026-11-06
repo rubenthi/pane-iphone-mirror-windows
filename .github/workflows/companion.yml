@@ -1,7 +1,7 @@
-name: Build Pane Files companion
+name: Build Pane companion
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
     paths: ['ios/**', '.github/workflows/companion.yml']
   pull_request:
     paths: ['ios/**', '.github/workflows/companion.yml']
@@ -10,7 +10,7 @@ permissions:
   contents: read
 jobs:
   ios:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -28,8 +28,8 @@ jobs:
           mkdir -p package/Payload
           cp -R build/Build/Products/Release-iphoneos/PaneFiles.app package/Payload/
           cd package
-          zip -r ../PaneFiles-unsigned.ipa Payload
+          zip -r ../Pane-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: PaneFiles-unsigned
-          path: ios/PaneFiles-unsigned.ipa
+          name: Pane-unsigned
+          path: ios/Pane-unsigned.ipa

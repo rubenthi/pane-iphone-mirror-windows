@@ -38,6 +38,10 @@ private struct TransferError: LocalizedError {
 final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     @Published var status = "Activate the USB link to pair."
     @Published var activity = ""
+    @Published var isConnected = false
+    @Published var isPaired = false
+    @Published var sendProgress: [String: Double] = [:]
+    @Published var receiveProgress: Double?
     @Published var outgoing: [SharedFile] = []
     @Published var received: [URL] = []
     private var pairing: Pairing?
@@ -63,6 +67,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             }
             if let data = try? Data(contentsOf: support.appendingPathComponent("pairing.json")) {
                 pairing = try JSONDecoder().decode(Pairing.self, from: data)
+                isPaired = true
             }
             refreshReceived()
         } catch { activity = error.localizedDescription }
@@ -81,6 +86,8 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             try data.write(to: support.appendingPathComponent("pairing.json"), options: [.atomic, .completeFileProtection])
             try fileManager.removeItem(at: source)
             pairing = newPairing
+            isPaired = true
+            isConnected = false
             authorized = nil
             buffers.removeAll(); notifications.removeAll()
             discardIncoming()
@@ -115,7 +122,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             try? fileManager.removeItem(at: destination)
             throw error
         }
-        activity = "Queued \(file.name). Keep Pane Files open."
+        activity = "Queued \(file.name). Keep Pane open."
     }
 
     func removeOutgoing(at offsets: IndexSet) {
@@ -159,9 +166,9 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     }
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
-        authorized = nil; buffers.removeAll(); notifications.removeAll(); discardIncoming()
+        authorized = nil; isConnected = false; buffers.removeAll(); notifications.removeAll(); discardIncoming()
         if peripheral.state == .poweredOn { advertise() }
-        else { status = "Bluetooth unavailable. Enable it and allow Pane Files in Settings." }
+        else { status = "Bluetooth unavailable. Enable it and allow Pane in Settings." }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
@@ -177,7 +184,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
         buffers.removeValue(forKey: central.identifier)
         notifications.removeAll { $0.1.identifier == central.identifier }
-        if authorized == central.identifier { authorized = nil; discardIncoming(); status = "Laptop disconnected. Reconnect from Pane." }
+        if authorized == central.identifier { authorized = nil; isConnected = false; discardIncoming(); status = "Laptop disconnected. Reconnect from Pane." }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
@@ -247,6 +254,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             }
             if let authorized, authorized != central.identifier { throw TransferError(message: "Another laptop is connected.") }
             authorized = central.identifier
+            isConnected = true
             status = "Connected to your laptop over Bluetooth."
             return ["version": 1]
         }
@@ -264,12 +272,14 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             defer { try? handle.close() }
             try handle.seek(toOffset: UInt64(offset))
             let data = try handle.read(upToCount: length) ?? Data()
+            sendProgress[file.id] = file.size == 0 ? 1 : Double(offset + data.count) / Double(file.size)
             activity = "Sending \(file.name): \(file.size == 0 ? 100 : (offset + data.count) * 100 / file.size)%"
             return ["data": data.base64EncodedString()]
         case "received":
             guard let id = body["id"] as? String else { throw TransferError(message: "Missing file ID.") }
             if let index = outgoing.firstIndex(where: { $0.id == id }) {
                 let file = outgoing.remove(at: index)
+                sendProgress.removeValue(forKey: file.id)
                 try saveQueue()
                 try? fileManager.removeItem(at: sentFolder.appendingPathComponent(file.id))
                 activity = "Saved \(file.name) to laptop Downloads."
@@ -286,6 +296,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             let file = SharedFile(id: id, name: name, size: size, sha256: hash.lowercased())
             let target = support.appendingPathComponent("incoming.part")
             try Data().write(to: target)
+            receiveProgress = 0
             incoming = Incoming(file: file, url: target, handle: try FileHandle(forWritingTo: target), offset: 0)
             return ["ok": true]
         case "write":
@@ -299,6 +310,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             current.hash.update(data: data)
             current.offset += data.count
             incoming = current
+            receiveProgress = current.file.size == 0 ? 1 : Double(current.offset) / Double(current.file.size)
             activity = "Receiving \(current.file.name): \(current.file.size == 0 ? 100 : current.offset * 100 / current.file.size)%"
             return ["offset": current.offset]
         case "finish":
@@ -311,6 +323,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             let destination = availableName(current.file.name)
             try fileManager.moveItem(at: current.url, to: destination)
             incoming = nil
+            receiveProgress = nil
             refreshReceived()
             activity = "Received \(destination.lastPathComponent)."
             return ["ok": true]
@@ -322,6 +335,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     private func discardIncoming() {
         if let incoming { try? incoming.handle.close(); try? fileManager.removeItem(at: incoming.url) }
         incoming = nil
+        receiveProgress = nil
     }
 
     private static func safeName(_ name: String) -> String {

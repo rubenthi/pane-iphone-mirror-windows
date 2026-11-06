@@ -111,7 +111,7 @@ def run_native_window():
     from handset.window import shell
     webview.settings['ALLOW_FILE_URLS'] = False
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
-    window = webview.create_window('Pane — iPhone', URL, width=388, height=760,
+    window = webview.create_window('Pane', URL, width=388, height=760,
                                    frameless=True, easy_drag=False, resizable=False,
                                    background_color='#090c0d', text_select=True)
     def shown():
