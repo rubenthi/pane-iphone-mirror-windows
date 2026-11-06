@@ -41,6 +41,8 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 ## Pane 2.1: integrated signing, clean setup and file sharing
 
+See the [update history](CHANGELOG.md) for what each version adds, how automatic updates work, and behavior changes.
+
 Pane 2.0 resets its old application preferences, profiles, logs and saved app connections once when the update first launches. Personal files and shared Apple trust records are preserved. The iPhone volume controls remain; startup no longer lowers the volume and no sound is streamed to the PC.
 
 The Connection sidebar now walks through USB trust, revealing Developer Mode, installing a signed **Pane** companion, the iPhone restart/confirmation, and USB/Wi-Fi/Bluetooth binding. The second tab, **Uploads**, sends files both ways over Bluetooth Low Energy. Incoming files are verified and saved to the laptop's Downloads folder without overwriting existing files. Keep the iPhone companion open during transfers.
