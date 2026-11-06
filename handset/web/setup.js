@@ -131,11 +131,11 @@
   $('#signing-cancel').onclick=async()=>renderSigning(await postJson('/api/signing/cancel',{}));
   $('#signing-form').addEventListener('submit', async event => {
     event.preventDefault();
-    const file=$('#signing-ipa').files[0]; if(!file)return;
+    const file=$('#signing-ipa').files[0];
     signingStaging=true; renderSigning(signingState);
     let id;
     try {
-      id=await stage(file,'ipa',$('#signing-note'));
+      if(file)id=await stage(file,'ipa',$('#signing-note'));
       const payload={id,udid:selectedUdid,email:$('#signing-email').value,password:$('#signing-password').value};
       $('#signing-password').value='';
       try { renderSigning(await postJson('/api/signing/start',payload)); }

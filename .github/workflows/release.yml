@@ -9,12 +9,19 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  companion:
+    uses: ./.github/workflows/companion.yml
   release:
+    needs: companion
     runs-on: windows-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Pane-unsigned
+          path: ios
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:

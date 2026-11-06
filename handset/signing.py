@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import queue
 import secrets
+import shutil
+import uuid
 import subprocess
 import sys
 import threading
@@ -23,9 +25,22 @@ def helper_path():
     root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))
     return root / 'signer' / ('pane-signer.exe' if os.name == 'nt' else 'pane-signer')
 
+def bundled_package():
+    root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))
+    return root / 'ios' / 'Pane-unsigned.ipa'
+
+def stage_bundled():
+    source = bundled_package()
+    if not source.is_file():
+        raise ValueError('The bundled companion is missing. Choose the unsigned Pane IPA or install a complete Windows build.')
+    destination = DATA_DIR / 'staging' / (uuid.uuid4().hex + '.part')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, destination)
+    return destination
+
 def status():
     with _LOCK:
-        return {**_STATE, 'available': helper_path().is_file() and os.name == 'nt'}
+        return {**_STATE, 'available': helper_path().is_file() and os.name == 'nt', 'bundled': bundled_package().is_file()}
 
 def _set(**values):
     with _LOCK:

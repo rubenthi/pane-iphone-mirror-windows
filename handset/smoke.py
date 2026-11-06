@@ -26,7 +26,9 @@ def run(output):
         assert hasattr(bonjour, '_bind_ipv4') and hasattr(bonjour, '_send_query_all')
         assert Path(__file__).with_name('install_update.ps1').is_file()
         import subprocess
-        from handset.signing import helper_path
+        from handset.signing import helper_path, bundled_package
+        from handset.setup import inspect_ipa
+        inspect_ipa(bundled_package(), require_signed=False)
         helper = subprocess.run([str(helper_path()), '--version'], capture_output=True, text=True, timeout=15, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         assert helper.returncode == 0 and 'pane-signer 2.1.0' in helper.stdout, 'Bundled signer did not start'
         server = SingleServer(('127.0.0.1', 0), Handler)

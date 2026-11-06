@@ -1,6 +1,6 @@
 # Pane signing helper
 
-Built from the pinned isideload source revision in Cargo.toml, with Cargo.lock checked in. `cargo build --release --locked --manifest-path signer/Cargo.toml` builds the worker. Windows packaging bundles it automatically. No separate iloader or AltStore application is needed.
+Built from the pinned isideload source revision in Cargo.toml, with Cargo.lock checked in. `cargo build --release --locked --manifest-path signer/Cargo.toml` builds the worker. Windows packaging bundles it and the unsigned iPhone companion automatically. The desktop workflow first builds the companion on an Intel macOS runner. No separate iloader or AltStore application is needed.
 
 The host supplies one JSON request through stdin (email/password, selected UDID, validated Pane IPA path). The helper emits JSON-line status, verification/team prompts, encrypted-storage requests and a terminal completion/error. Credentials never appear in command-line arguments. No tracing subscriber is installed and stderr is discarded by the host. Upstream errors are replaced with a generic recovery message to avoid leaking authentication responses.
 

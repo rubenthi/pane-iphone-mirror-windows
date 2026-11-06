@@ -5,6 +5,7 @@ on:
     paths: ['ios/**', '.github/workflows/companion.yml']
   pull_request:
     paths: ['ios/**', '.github/workflows/companion.yml']
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
         working-directory: ios
         run: |
           xcodebuild -project PaneFiles.xcodeproj -scheme PaneFiles -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
-      - name: Package unsigned IPA for AltStore signing
+      - name: Package unsigned IPA for Pane signing
         working-directory: ios
         run: |
           mkdir -p package/Payload

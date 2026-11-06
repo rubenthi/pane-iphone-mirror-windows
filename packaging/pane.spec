@@ -13,6 +13,7 @@ sys.path.insert(0, str(SHIMS))
 os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SHIMS), os.environ.get("PYTHONPATH")]))
 
 datas = [(str(ROOT / "handset" / "web"), "handset/web"), (str(ROOT / "handset" / "install_update.ps1"), "handset")]
+datas += [(str(ROOT / "ios" / "Pane-unsigned.ipa"), "ios")]
 binaries = [(str(ROOT / "signer" / "pane-signer.exe"), "signer")]
 datas += [(str(ROOT / "signer" / "ISIDELOAD-LICENSE"), "signer")]
 hiddenimports = ["lzfse", "lzss", "handset.server", "handset.screen", "handset.wifi", "webview.platforms.winforms", "webview.platforms.edgechromium"]

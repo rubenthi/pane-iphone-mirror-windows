@@ -1,3 +1,3 @@
 Pane 2.1 adds Apple Account signing and USB installation inside Pane through a bundled isideload helper. Setup supports verification codes, team selection, cancellation and manual renewal with the original unsigned companion IPA. Certificates and authentication-support state use Windows DPAPI; passwords are not stored. No separate AltStore installation is needed for this path.
 
-A built unsigned companion IPA is still required. Live Apple authentication, installation and renewal require physical-device validation. Free-account apps need periodic renewal. Volume controls and Bluetooth file sharing remain available.
+The Windows package includes the unsigned companion IPA. Live Apple authentication, installation and renewal require physical-device validation. Free-account apps need periodic renewal. Volume controls and Bluetooth file sharing remain available.

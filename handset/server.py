@@ -164,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
             return signing.cancel()
         if path == '/api/signing/start':
             setup.require_usb(udid)
-            item = store().finish(payload.get('id'), 'ipa')
+            item = store().finish(payload.get('id'), 'ipa') if payload.get('id') else {'path': signing.stage_bundled()}
             try:
                 return signing.start(udid, item['path'], payload.get('email'), payload.get('password'))
             except Exception:
