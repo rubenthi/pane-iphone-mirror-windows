@@ -69,6 +69,18 @@ class ServerSecurityTests(unittest.TestCase):
         })
         self.assertEqual(status, 413)
 
+    def test_audio_routes_are_not_exposed(self):
+        for path in ('/mirror/audio.bin', '/mirror/audio', '/mirror/%61udio.bin'):
+            for method in ('GET', 'POST'):
+                status, _, _ = self.request(method, path, {'X-Pane-Token': ACCESS_TOKEN})
+                self.assertEqual(status, 404)
+
+    def test_companion_actions_require_auth_and_reject_bad_identifiers(self):
+        for path in ('/api/setup/start', '/api/uploads/start', '/api/bluetooth/connect'):
+            self.assertEqual(self.request('POST', path, body=b'{}')[0], 403)
+        self.assertEqual(self.request('GET', '/api/setup')[0], 403)
+        self.assertEqual(self.request('GET', '/api/uploads')[0], 403)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -49,6 +49,12 @@ const screenGeneration = window.createPaneGeneration();
 window.paneControl = window.createPaneControlQueue((path, payload) => postJson(`${MIRROR_API}${path}`, payload));
 let selectedUdid = null;
 let screenTimer = 0;
+// The 2.0 reset also clears old preferences in an external-browser fallback.
+if (localStorage.getItem('pane-state-schema') !== '2') {
+  localStorage.clear();
+  sessionStorage.clear();
+  localStorage.setItem('pane-state-schema', '2');
+}
 let transport = localStorage.getItem("handset-transport") === "wifi" ? "wifi" : "usb";
 let wifiPaired = [];
 let usbConnected = false;

@@ -31,6 +31,7 @@ for package in (
     "construct",
     "ifaddr",
     "webview",
+    "bleak",
 ):
     package_datas, package_binaries, package_hidden = collect_all(package)
     datas += package_datas

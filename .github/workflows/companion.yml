@@ -1,0 +1,35 @@
+name: Build Pane Files companion
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['ios/**', '.github/workflows/companion.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/companion.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Compile companion for iPhone
+        working-directory: ios
+        run: |
+          xcodebuild -project PaneFiles.xcodeproj -scheme PaneFiles -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Package unsigned IPA for AltStore signing
+        working-directory: ios
+        run: |
+          mkdir -p package/Payload
+          cp -R build/Build/Products/Release-iphoneos/PaneFiles.app package/Payload/
+          cd package
+          zip -r ../PaneFiles-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PaneFiles-unsigned
+          path: ios/PaneFiles-unsigned.ipa

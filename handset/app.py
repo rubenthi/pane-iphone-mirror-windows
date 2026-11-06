@@ -17,10 +17,11 @@ from pathlib import Path
 from handset.server import HOST, PORT, Handler, SingleServer
 from handset import updater
 from handset.screen import stop_screen
+from handset.state import DATA_DIR, prepare_state, isolate_device_state
+from handset.bluetooth import bluetooth
 
 PORT = int(os.environ.get("PANE_PORT", PORT))
 URL = f"http://{HOST}:{PORT}/"
-DATA_DIR = Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Pane")))
 
 BROWSERS = (
     Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe",
@@ -69,7 +70,6 @@ def _open_window() -> subprocess.Popen | None:
 
 
 def main() -> None:
-    _setup_logging()
     if _already_running():
         try:
             with urllib.request.urlopen(URL + 'api/auth', timeout=3) as response:
@@ -79,6 +79,10 @@ def main() -> None:
         except Exception:
             _open_window()
         return
+
+    prepare_state(force='--reset' in sys.argv)
+    isolate_device_state()
+    _setup_logging()
 
     server = SingleServer((HOST, PORT), Handler)
     threading.Thread(target=server.serve_forever, name="pane-server", daemon=True).start()
@@ -97,6 +101,7 @@ def main() -> None:
     server.shutdown()
     server.server_close()
     stop_screen()
+    bluetooth.disconnect()
     updater.apply_on_exit()
     os._exit(0)
 
