@@ -35,8 +35,36 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       const state = await fetch('/api/window',{headers:{'X-Pane-Token':auth.token}}).then(r=>r.json());
       return state.native && innerWidth === state.width && innerHeight === state.height;
     });
+    await page.evaluate(()=>load());
     await page.getByText('No iPhone detected.',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.locator('#connection-drawer').isVisible(),false);
+    async function checkRegion(menu) {
+      const state = await page.evaluate(()=>getJson('/api/window'));
+      menu ??= state.menu_open;
+      assert.deepEqual(state.region_test, {kind:3, phone:true, corner:false, above_rail:false, below_rail:false, rail:true, menu, exact_handle:true, managed_region:true}, JSON.stringify(state));
+    }
+    await checkRegion();
+    async function checkDesktopPixels(){
+      await page.waitForFunction(async()=>{
+        const s=await getJson('/api/window'),p=s.pixels,b=s.backdrop_color;
+        return p.corner===b && p.above===b && p.below===b && p.phone!==b;
+      },null,{timeout:10000}).catch(async e=>{console.log('Desktop clipping failure:',await page.evaluate(()=>getJson('/api/window')));throw e;});
+    }
+    await checkDesktopPixels();
+    const token=(await (await fetch('http://127.0.0.1:18776/api/auth')).json()).token;
+    const windowCommand=action=>fetch('http://127.0.0.1:18776/api/window', {
+      method:'POST', headers:{'X-Pane-Token':token,'Content-Type':'application/json'}, body:JSON.stringify({action})
+    }).then(r=>r.json());
+    await windowCommand('minimize');
+    await sleep(650);
+    const minimized=await (await fetch('http://127.0.0.1:18776/api/window', {headers:{'X-Pane-Token':token}})).json();
+    assert.equal(minimized.minimized,true);
+    await windowCommand('focus');
+    await page.waitForFunction(async()=>{
+      const s=await getJson('/api/window');
+      return !s.minimized && s.web_offset.every(v=>v===0);
+    });
+    await checkDesktopPixels();
     const compact=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
     const position=await page.evaluate(()=>({x:screenX,y:screenY}));
     await page.locator('#drag-handle').dispatchEvent('pointerdown',{button:0,pointerId:1,screenX:400,screenY:100});
@@ -44,9 +72,16 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.locator('#drag-handle').dispatchEvent('pointerup',{pointerId:1});
     await page.waitForFunction(p=>screenX===p.x+50&&screenY===p.y+30,position);
     await page.screenshot({path:path.join(output,'pane-compact.png')});
-    await page.getByRole('button',{name:'Open connection sidebar',exact:true}).click();
-    await page.waitForFunction(w=>innerWidth===w+356,compact.width);
+    await page.getByRole('button',{name:'Open connection panel',exact:true}).click();
+    await page.locator('#connection-drawer').waitFor({state:'visible'});
+    await page.waitForFunction(w=>innerWidth===w,compact.width);
     assert.equal(await page.evaluate(()=>innerHeight),compact.height);
+    assert.equal(await page.locator('[data-resize-corner]').count(),4);
+    const overlay=await page.locator('#connection-drawer').boundingBox();
+    const phone=await page.locator('#phone-shell').boundingBox();
+    assert.ok(overlay.x>=phone.x && overlay.x+overlay.width<=phone.x+phone.width);
+    await checkRegion();
+
     await page.getByRole('button',{name:/Open setup/}).click();
     await page.locator('#run-guide').waitFor({state:'visible'});
     const developer = page.locator('#run-guide > details').filter({has:page.locator('summary', {hasText:'Install Pane'})});
@@ -67,11 +102,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     // A same-origin message from the mirror iframe represents a decoded display size.
     const mirror = page.frames().find(frame=>frame.parentFrame()===page.mainFrame());
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:932,height:430},parent.location.origin));
-    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-6)/(parseFloat(css.getPropertyValue('--phone-height'))-6)>2;});
+    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-14)/(parseFloat(css.getPropertyValue('--phone-height'))-14)>2;});
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:390,height:844},parent.location.origin));
     await page.waitForFunction(w=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--phone-width'))===w-60,compact.width);
     await page.screenshot({path:path.join(output,'pane-expanded.png')});
-    await page.getByRole('button',{name:'Close connection sidebar',exact:true}).click();
+    await page.getByRole('button',{name:'Close connection panel',exact:true}).click();
+    await page.locator('#connection-drawer').waitFor({state:'hidden'});
     await page.waitForFunction(w=>innerWidth===w,compact.width);
     await page.locator('.handle-cluster').hover();
     await page.getByRole('button',{name:'Maximize window',exact:true}).waitFor({state:'visible'});
@@ -79,8 +115,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.getByRole('button',{name:'Maximize window',exact:true}).click();
     await page.getByRole('button',{name:'Restore window',exact:true}).click();
     await page.waitForFunction(h=>innerHeight===h,compact.height);
-    const grip=await page.locator('#resize-window').boundingBox();
-    await page.mouse.move(grip.x+20,grip.y+15);await page.mouse.down();await page.mouse.move(grip.x+20,grip.y-65,{steps:6});await page.mouse.up();
+    await page.waitForFunction(h=>document.querySelector('.workspace').getBoundingClientRect().height===h,compact.height);
+    const grip=await page.locator('[data-resize-corner=se]').boundingBox();
+    await page.mouse.move(grip.x+8,grip.y+8);await page.mouse.down();await page.mouse.move(grip.x+8,grip.y-145,{steps:6});await page.mouse.up();
     await page.waitForFunction(h=>innerHeight<h,compact.height);
     await page.evaluate(async()=>renderScreen({phase:'idle'}));
     assert.deepEqual(errors,[]);
@@ -89,7 +126,8 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.route('**/api/screen', route=>route.fulfill({json:{phase:'running',udid:'test',transport:'usb'}}));
     await page.route('**/mirror/**', route=>route.fulfill({status:503,body:'Synthetic frame test'}));
     await page.evaluate(()=>renderScreen({phase:'running',udid:'test',transport:'usb'}));
-    const picture=await page.waitForEvent('framenavigated', {predicate:f=>f.url().endsWith('/mirror.html')}).catch(()=>page.frames().find(f=>f.url().endsWith('/mirror.html')));
+    const picture=page.frames().find(f=>f.parentFrame()===page.mainFrame());
+    await picture.waitForURL('**/mirror.html');
     await picture.waitForFunction(()=>typeof drawFrame==='function');
     const geometry=await picture.evaluate(()=>{
       const source=document.createElement('canvas');source.width=1170;source.height=2532;
@@ -101,17 +139,23 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.ok(Math.abs(geometry.width/geometry.height-1170/2532)<.002);
     assert.ok(geometry.top>=-1 && geometry.bottom<=geometry.viewportHeight+1);
     assert.equal(geometry.center.x,32768);assert.equal(geometry.center.y,32768);
-    await page.evaluate(()=>{window.testTouches=[];window.paneControl=async(path,payload)=>window.testTouches.push({path,...payload});});
+    await page.evaluate(()=>{window.testTouches=[];window.originalPaneControl=window.paneControl;window.paneControl=async(path,payload)=>window.testTouches.push({path,...payload});});
     await picture.evaluate(()=>{const r=canvas.getBoundingClientRect();canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:100,clientX:r.left+r.width/2,clientY:r.top+r.height/2,bubbles:true,cancelable:true}));});
     await page.waitForFunction(()=>window.testTouches.some(t=>t.type==='release'));
     const touches=await page.evaluate(()=>window.testTouches);
     assert.equal(touches[0].type,'contact');assert.equal(touches.at(-1).type,'release');assert.ok(touches.at(-1).y<touches[0].y);
     assert.equal(await page.locator('#phone-shell .phone-toolbar').count(),0);
     assert.equal(await page.locator('#phone-shell .phone-status').count(),0);
+    await page.evaluate(()=>{window.paneControl=window.originalPaneControl;});
+    await require('./remote-controls.cjs')(page);
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
     fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
+  } catch(error) {
+    console.log('Native preview diagnostics:',logs);
+    if(page) console.log(await page.evaluate(()=>({status:document.querySelector('#status-note')?.textContent,devices:document.querySelector('#devices')?.textContent,setup:document.querySelector('#onboarding-note')?.textContent})).catch(()=>({})));
+    throw error;
   } finally {
     if(page) await page.evaluate(async()=>{const auth=await fetch('/api/auth').then(r=>r.json());await fetch('/api/window',{method:'POST',headers:{'X-Pane-Token':auth.token,'Content-Type':'application/json'},body:JSON.stringify({action:'close'})});}).catch(()=>{});
     if(browser) await browser.close();

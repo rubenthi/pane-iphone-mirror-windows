@@ -141,6 +141,12 @@ struct ContentView: View {
                     }
                 }
             }
+            .task {
+                while !Task.isCancelled {
+                    companion.activatePendingUSB()
+                    try? await Task.sleep(for: .seconds(2))
+                }
+            }
             .listStyle(.insetGrouped)
             .navigationTitle("Pane")
             .navigationBarTitleDisplayMode(.inline)

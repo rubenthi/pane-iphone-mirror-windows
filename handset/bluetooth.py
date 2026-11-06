@@ -7,7 +7,7 @@ import json
 import threading
 
 from handset.setup import COMMAND_UUID, RESPONSE_UUID
-from handset.state import DATA_DIR, read_json
+from handset.state import DATA_DIR, read_json, write_json
 from handset.transfers import store, digest_file
 
 WIRE_CHUNK = 4096
@@ -117,6 +117,8 @@ class Bluetooth:
             result = await rpc.call('hello', token=binding['token'])
             if result.get('version') != 1:
                 raise ValueError('The companion uses an unsupported protocol version.')
+            binding['onboardingComplete'] = True
+            write_json(DATA_DIR / 'binding.json', binding)
             self._set(phase='connected', note='Bluetooth connected. Keep Pane open during transfers.', error=None)
             while client.is_connected:
                 outgoing = store().next_outgoing()

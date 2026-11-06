@@ -1,4 +1,4 @@
-"""Pane-owned state, reset once for the 2.0 clean-start migration."""
+"""Pane-owned state. Updates preserve data; resets require an explicit request."""
 from __future__ import annotations
 
 import json
@@ -28,12 +28,15 @@ def read_json(path: Path, default):
 
 
 def prepare_state(root: Path = DATA_DIR, *, force: bool = False) -> bool:
-    """Run before logging/WebView starts. Fail closed if an old profile is locked."""
+    """Preserve all state at startup. Only an explicit force=True request resets it."""
     if root.is_symlink() or (hasattr(root, 'is_junction') and root.is_junction()):
         raise ValueError('Pane data directory must not be a link.')
     root.mkdir(parents=True, exist_ok=True)
     marker = read_json(root / 'state-version.json', {})
-    if not force and isinstance(marker, dict) and marker.get('schema') == SCHEMA:
+    if not force:
+        # Missing/old markers are migrations, never permission to erase user data.
+        if not isinstance(marker, dict) or marker.get('schema') != SCHEMA:
+            write_json(root / 'state-version.json', {'schema': SCHEMA, 'legacyPairingPending': True})
         return False
     for name in OWNED:
         item = root / name
@@ -50,11 +53,22 @@ def prepare_state(root: Path = DATA_DIR, *, force: bool = False) -> bool:
 
 
 def isolate_device_state() -> None:
-    # The pinned device library has no environment/configuration hook for this.
-    # Set its home before any library services are imported. Shared records from
-    # older Pane releases are never imported into this clean application state.
+    # Preserve pre-2.x wireless records when moving to Pane's private store.
+    # Explicit resets and existing 2.x migrations never re-import shared records.
     try:
         from pymobiledevice3 import common
+        marker = read_json(DATA_DIR / 'state-version.json', {})
+        if marker.get('legacyPairingPending'):
+            legacy = common._HOMEFOLDER
+            destination = DATA_DIR / 'device'
+            destination.mkdir(parents=True, exist_ok=True)
+            if legacy != destination:
+                for source in legacy.glob('remote_*.plist'):
+                    target = destination / source.name
+                    if source.is_file() and not source.is_symlink() and not target.exists():
+                        shutil.copy2(source, target)
+            marker.pop('legacyPairingPending', None)
+            write_json(DATA_DIR / 'state-version.json', marker)
         common._HOMEFOLDER = DATA_DIR / 'device'
     except ImportError:
         pass

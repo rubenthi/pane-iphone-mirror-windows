@@ -2,6 +2,20 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.2.0 — Restored floating window and first-run setup
+
+- Restores 1.7.4's native WinForms/WebView region clipping, phone outline, joined control rail and upward hover menu. The Connection/Uploads panel overlays the phone without expanding the window; all four corners resize proportionally.
+- Restores Connect/Disconnect, Home-hold Siri, queued gestures and keyboard handling, bounded video packet decoding, display frame pacing and 15/30/60 FPS targets with measured frame-rate telemetry.
+- Automatically opens a full setup guide only when no phone pairing is saved. Guides USB trust and Developer Mode reveal, verifies the user's iPhone restart/confirmation, signs and installs the companion with Pane, then binds USB/Wi-Fi and connects Bluetooth. Progress survives app restarts; Bluetooth errors allow an explicit retry.
+- The iPhone companion imports a newly provisioned USB link while open. Bluetooth confirmation completes onboarding and opens the regular interface.
+- **Updates preserve settings and saved phones.** Removes automatic state clearing and browser preference clearing. Preserves older wireless pairings on direct pre-2.x upgrades. Only an explicit `Pane.exe --reset` erases Pane-owned state; it does not restore old shared pairings.
+- Retains 2.1.1's integrated isideload signer, bundled companion, Uploads transfers in both directions, Downloads destination, volume/mute controls and automatic updater.
+- Published through the existing stable update feed. Verified downloads install when Pane closes; reopen Pane to run the update.
+
+Validation covers state preservation, legacy pairing migration, setup sequencing/retries, transfers, stream framing, and real Windows HWND clipping/desktop pixels. Live Apple-account authentication, USB installation and physical Bluetooth transfers still require device acceptance testing.
+
+[Setup guide](docs/companion-setup.md) · [2.2.0 release](https://github.com/rubenthi/pane-iphone-mirror-windows/releases/tag/v2.2.0)
+
 ## 2.1.1 — Automatic updates and integrated iPhone setup
 
 This release includes the changes developed on main as Pane 2.0 and 2.1; those development versions were not separately published to the automatic-update feed.
@@ -33,7 +47,7 @@ This release includes the changes developed on main as Pane 2.0 and 2.1; those d
 
 - Both apps display **Pane**. Compact tabs, consistent outline icons, quieter separators, readable transfer states and measured progress refine the desktop interface. The iPhone app uses native grouped sections and sharing controls. [Design references and details](docs/design-details.md).
 - iPhone volume and mute controls remain. Automatic startup volume reduction is removed, and audio streaming is disabled. Bluetooth is used for file sharing.
-- First launch of Pane 2.x resets old Pane-owned preferences, browser profiles, logs and saved application state. `Pane.exe --reset` repeats the reset, including protected local signing data.
+- Historical behavior (removed in 2.2.0): first launch of Pane 2.0–2.1.1 resets old Pane-owned preferences, browser profiles, logs and saved application state. `Pane.exe --reset` repeats the reset, including protected local signing data.
 - Personal Downloads and shared Apple system trust records are preserved. Reset does not revoke certificates held by Apple.
 
 ### Validation and remaining device checks

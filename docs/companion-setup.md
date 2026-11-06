@@ -1,30 +1,34 @@
-# Pane 2.0 setup and file sharing
+# Pane setup and file sharing
 
 Pane keeps USB/Wi-Fi screen mirroring and the iPhone's hardware volume controls. It does not capture or play sound, and it no longer lowers the phone's volume at startup.
 
-## Clean start on the laptop
+## Settings and upgrades
 
-The first launch of 2.0 clears Pane-owned state in `%LOCALAPPDATA%\Pane`: its WebView/browser profiles, preferences, logs, staged files, history, protected signing data and app pairing state. Subsequent launches preserve the new configuration. Close Pane and run `Pane.exe --reset` to repeat the reset. If an old profile is locked, close the other Pane/browser processes before retrying; reset must finish before the new profile opens.
+Pane 2.2 and future updates preserve application settings, browser profiles, signing data and saved phone pairings under `%LOCALAPPDATA%\Pane`. Missing, old or damaged migration markers never authorize deleting user state. Upgrades directly from pre-2.x versions copy existing wireless pairing records into Pane's private store without overwriting newer records or changing shared Apple trust records.
 
-Downloads and other personal files are preserved. Apple Devices/iTunes trust records are shared operating-system data and are preserved. Old shared pymobiledevice3 records are not imported; new wireless records are isolated under Pane's own data directory. A cloud checkout cannot erase the user's laptop: the installed update performs this migration when launched there.
+Only an explicit `Pane.exe --reset` clears Pane-owned state. Close Pane before requesting a reset. Downloads and other personal files are preserved. An explicit reset does not re-import old shared pairings. Data already erased by an earlier release cannot be recovered by this update.
 
 ## Guided setup
 
-1. Install Apple's USB driver and connect a data-capable cable. Unlock the iPhone and tap **Trust This Computer**. Select the phone in Pane.
-2. Open **Connection → iPhone setup → Initiate setup**. Pane uses the trusted USB AMFI service to request that iOS reveal Developer Mode. It does not enable it or confirm the phone's prompts automatically. Device restrictions can cause this request to fail.
-3. Install **Pane** using one of the signing paths below. The **Choose signed IPA & install** button stages a signed companion and pushes it using Apple's installation service. iOS validates its signature and device eligibility. Unsigned artifacts are rejected with signing instructions.
-4. On the iPhone, open **Settings → Privacy & Security → Developer Mode**. Enable it, restart the **iPhone**, unlock it and confirm **Turn On**. Trust your own developer profile in **General → VPN & Device Management** if prompted. Reconnect USB and choose **Check Developer Mode & app** in Pane.
-5. Choose **Bind USB & Wi-Fi**. Pane verifies the installed companion, pairs wireless mirroring over USB and writes a random pairing secret into the companion's shared Documents container.
-6. Open Pane and tap **Activate USB link**. The app consumes that file into its protected application storage. Permit Bluetooth and choose **Connect Bluetooth** in Pane. Accept system pairing prompts on both devices. The secret and encrypted GATT characteristics restrict file access to the USB-bound laptop.
-7. Keep Pane in the foreground during transfers. You can now unplug USB and use Wi-Fi for mirroring and Bluetooth for file sharing. Wi-Fi mirroring and BLE transfer are separate connections; this version does not transfer files over Wi-Fi.
+The full guide opens automatically when no phone is saved. An existing pairing skips it even if the phone is unplugged or offline. A new, unfinished setup resumes until Bluetooth confirms the bound companion.
+
+1. Connect an unlocked iPhone using a data-capable USB cable. Tap **Trust This Computer**. Install Apple's USB driver if needed.
+2. Press **Connect**. Pane requests that the trusted USB AMFI service reveal Developer Mode; device restrictions can reject this request.
+3. On iPhone, enable **Settings → Privacy & Security → Developer Mode**, restart the **iPhone**, unlock it and confirm **Turn On**. Reconnect USB and press **I've enabled it — check**. Pane verifies the setting before continuing.
+4. Use **Sign & install with Pane** with your Apple Account. Complete Apple verification and team selection when prompted. The bundled isideload helper signs and installs the companion over USB.
+5. Pane verifies the companion and automatically binds Wi-Fi mirroring over USB, then writes a random pairing secret into the app's Documents container.
+6. Open Pane on the iPhone. Trust your developer profile in **General → VPN & Device Management** if prompted. Permit Bluetooth and accept system pairing prompts. The companion automatically imports its USB binding while open; **Activate USB link** remains available as a manual fallback.
+7. Once Bluetooth confirms the bound app, the setup guide closes and the main interface opens. Keep Pane in the foreground for transfers. USB can then be unplugged for Wi-Fi mirroring and Bluetooth file sharing. These are separate connections; files are not transferred over Wi-Fi.
+
+Connection's setup panel remains available for maintenance, signed-IPA installation, optional AltStore signing and manual retries.
 
 Reconnect explicitly after a disconnect. Phone-to-laptop transfers retry from the beginning; a completed transfer whose acknowledgement was lost is not downloaded again while it remains in the bounded history. Interrupted laptop-to-phone transfers are marked failed; select the file again. Queued desktop files are cleared on app restart and their history explains that they must be reselected. Transfer limits are 2 GiB per file and eight queued outbound files. BLE is slow for large videos.
 
 ## Signing and installation
 
-No App Store review is required, but Apple signing is required. Pane includes an isideload signing helper. The complete Windows build includes the unsigned companion IPA. In step 2, enter your Apple Account email and password, then choose **Sign & install with Pane**. Complete the verification-code prompt and select your developer team when asked. No separate AltStore installation is needed.
+No App Store review is required, but Apple signing is required. Pane includes an isideload signing helper. The complete Windows build includes the unsigned companion IPA. At the Install step, enter your Apple Account email and password, then choose **Sign & install with Pane**. Complete the verification-code prompt and select your developer team when asked. No separate AltStore installation is needed.
 
-Passwords travel to the helper through anonymous pipes and are never saved or logged. Certificates and anisette state are saved under Pane/signing encrypted with Windows DPAPI. The helper uses Apple endpoints and the upstream anisette service at `https://ani.iloader.app`; network availability is required. Reset clears this local signing data but does not revoke certificates at Apple.
+Passwords travel to the helper through anonymous pipes and are never saved or logged. Certificates and anisette state are saved under Pane/signing encrypted with Windows DPAPI. The helper uses Apple endpoints and the upstream anisette service at `https://ani.iloader.app`; network availability is required. An explicitly requested reset clears this local signing data but does not revoke certificates at Apple.
 
 Repeat Sign & install with Pane using the included companion (or original unsigned IPA) and same Apple Account/team to renew. This build provides manual renewal; it does not run unattended renewal in the background. Certificate-limit errors require account maintenance; Pane never automatically revokes other certificates. Sessions time out after ten minutes, verification prompts after five, and can be cancelled. Cancellation cannot undo an installation or certificate already created at Apple.
 

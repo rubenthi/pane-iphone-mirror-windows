@@ -10,21 +10,32 @@ from ctypes import wintypes as W
 import math
 import os
 import threading
-import time
 
 DRAWER = 416
 TAB = 60
 DEFAULT_ASPECT = 390 / 844
+SCREEN_CHROME = 14  # CSS: symmetric 7px bezel on all four sides
+
+
+def _native_pointer(handle):
+    # pythonnet otherwise selects IntPtr(Int32), which rejects GDI handles
+    # with bit 31 set. Preserve the full native pointer width explicitly.
+    from System import Int64, IntPtr
+    return IntPtr(Int64(ctypes.c_ssize_t(handle).value))
 
 
 def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
-    extra = DRAWER if expanded else TAB
-    height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - 6) / aspect + 6))
-    width = round((height - 6) * aspect) + 6
-    rail_scale = min(1, max(.15, (height-112)/288))
-    rail_top = max(52, (height-288*rail_scale)/2)
+    extra = TAB
+    height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - SCREEN_CHROME) / aspect + SCREEN_CHROME))
+    # Derive width from the integer height Windows actually receives. Using
+    # a fractional drag height here distorts wider displays after rounding.
+    height = round(height)
+    width = round((height - SCREEN_CHROME) * aspect) + SCREEN_CHROME
+    # Reserve 158px for the three menu buttons and grip plus an 8px top gutter.
+    rail_scale = min(1, max(.15, (height-174)/292))
+    rail_top = max(166, (height-288*rail_scale)/2)
     return {'phone_width': width, 'height': round(height), 'width': width + extra, 'expanded': expanded,
             'rail_scale': rail_scale, 'rail_top': rail_top}
 
@@ -32,6 +43,7 @@ def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_heig
 class FloatingWindow:
     def __init__(self):
         self.handle = None
+        self._form = None
         self.expanded = False
         self.aspect = DEFAULT_ASPECT
         self.pinned = False
@@ -46,14 +58,17 @@ class FloatingWindow:
         self.g = ctypes.WinDLL('gdi32', use_last_error=True)
         self.callback = ctypes.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)
         signatures = {
-            'EnumWindows': ([self.callback, W.LPARAM], W.BOOL),
+            'EnumChildWindows': ([W.HWND, self.callback, W.LPARAM], W.BOOL),
+            'SetWindowRgn': ([W.HWND, W.HRGN, W.BOOL], ctypes.c_int),
             'GetWindowThreadProcessId': ([W.HWND, ctypes.POINTER(W.DWORD)], W.DWORD),
+            'IsIconic': ([W.HWND], W.BOOL),
+            'ClientToScreen': ([W.HWND, ctypes.POINTER(W.POINT)], W.BOOL),
             'IsWindowVisible': ([W.HWND], W.BOOL),
             'IsWindow': ([W.HWND], W.BOOL),
             'GetWindowLongPtrW': ([W.HWND, ctypes.c_int], ctypes.c_ssize_t),
             'SetWindowLongPtrW': ([W.HWND, ctypes.c_int, ctypes.c_ssize_t], ctypes.c_ssize_t),
             'SetWindowPos': ([W.HWND, W.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, W.UINT], W.BOOL),
-            'SetWindowRgn': ([W.HWND, W.HRGN, W.BOOL], ctypes.c_int),
+            'GetWindowRgn': ([W.HWND, W.HRGN], ctypes.c_int),
             'GetWindowRect': ([W.HWND, ctypes.POINTER(W.RECT)], W.BOOL),
             'GetDpiForWindow': ([W.HWND], W.UINT),
             'ShowWindow': ([W.HWND, ctypes.c_int], W.BOOL),
@@ -70,44 +85,76 @@ class FloatingWindow:
         self.g.CreateRoundRectRgn.restype = W.HRGN
         self.g.CombineRgn.argtypes = [W.HRGN, W.HRGN, W.HRGN, ctypes.c_int]
         self.g.CombineRgn.restype = ctypes.c_int
+        self.g.EqualRgn.argtypes = [W.HRGN, W.HRGN]
+        self.g.EqualRgn.restype = W.BOOL
+        self.g.OffsetRgn.argtypes = [W.HRGN, ctypes.c_int, ctypes.c_int]
+        self.g.OffsetRgn.restype = ctypes.c_int
         self.g.DeleteObject.argtypes = [W.HANDLE]
         self.g.DeleteObject.restype = W.BOOL
 
-    def attach(self, process_id, timeout=15):
-        if os.name != 'nt':
+    def _on_ui(self, callback):
+        # WinForms owns the HWND and Region. Change both on its UI thread so
+        # framework layout/handle recreation cannot discard an unmanaged region.
+        from System import Action
+        result, errors = [], []
+        def run():
+            try:
+                self.handle = self._form.Handle.ToInt64()
+                result.append(callback())
+            except Exception as error:
+                errors.append(error)
+        if self._form.InvokeRequired:
+            self._form.Invoke(Action(run))
+        else:
+            run()
+        if errors:
+            raise errors[0]
+        return result[0]
+
+    def attach(self, window):
+        if os.name != 'nt' or window.native is None:
             return False
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            matches = []
-            @self.callback
-            def visit(hwnd, _):
-                pid = W.DWORD()
-                self.u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                if pid.value == process_id and self.u.IsWindowVisible(hwnd):
-                    matches.append(hwnd)
-                return True
-            self.u.EnumWindows(visit, 0)
-            if matches:
-                self.handle = matches[0]
-                style = self.u.GetWindowLongPtrW(self.handle, -16)
-                self.u.SetWindowLongPtrW(self.handle, -16, style & ~0x00CF0000)  # caption, sizing frame, min/max/system menu
-                # Remove the separate DWM frame/shadow: the region below is
-                # the actual hit-test boundary of the phone and control rail.
-                dwm = ctypes.WinDLL('dwmapi')
-                dwm.DwmSetWindowAttribute.argtypes = [W.HWND, W.DWORD, ctypes.c_void_p, W.DWORD]
-                for attribute, value in ((2, 1), (33, 1), (34, 0xFFFFFFFE)):
-                    setting = W.DWORD(value)
-                    dwm.DwmSetWindowAttribute(self.handle, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
-                self.layout(False, DEFAULT_ASPECT)
-                return True
-            time.sleep(.1)
-        return False
+        self._form = window.native
+        def configure():
+            pid = W.DWORD()
+            self.u.GetWindowThreadProcessId(self.handle, ctypes.byref(pid))
+            if pid.value != os.getpid():
+                raise ValueError('The Pane window must belong to this process.')
+            # Disable DWM's rectangular frame/shadow on the actual WebView form.
+            dwm = ctypes.WinDLL('dwmapi')
+            dwm.DwmSetWindowAttribute.argtypes = [W.HWND, W.DWORD, ctypes.c_void_p, W.DWORD]
+            for attribute, value in ((2, 1), (33, 1), (34, 0xFFFFFFFE), (38, 1)):
+                setting = W.DWORD(value)
+                dwm.DwmSetWindowAttribute(self.handle, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
+            # pywebview enables Mica in dark mode. DWM paints that backdrop
+            # even outside an otherwise correctly hit-tested window region.
+            def disable_backdrop(*_):
+                none = W.DWORD(1)  # DWMSBT_NONE
+                dwm.DwmSetWindowAttribute(self.handle, 38, ctypes.byref(none), ctypes.sizeof(none))
+            self._form.Activated += disable_backdrop
+            from System.Drawing import Color
+            from System.Windows.Forms import Timer
+            self._form.webview.DefaultBackgroundColor = Color.Transparent
+            self.layout(False, DEFAULT_ASPECT)
+            # WebView2 can recreate its child renderer after navigation, DPI or
+            # GPU changes. Clip its native hosts as well as the WinForms parent.
+            self._shape_timer = Timer()
+            self._shape_timer.Interval = 400
+            self._shape_timer.Tick += lambda *_: self._repair_regions()
+            self._shape_timer.Start()
+            self._form.FormClosed += lambda *_: self._shape_timer.Stop()
+            return True
+        return self._on_ui(configure)
 
     def status(self):
         return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
 
     def layout(self, expanded, aspect):
+        if self._form is not None and self._form.InvokeRequired:
+            return self._on_ui(lambda: self.layout(expanded, aspect))
         with self._lock:
+            if self.handle and self.u.IsIconic(self.handle):
+                return self.status()
             geometry = dimensions(aspect, expanded, preferred_height=self.preferred_height)
             if self.handle:
                 scale = (self.u.GetDpiForWindow(self.handle) or 96) / 96
@@ -128,34 +175,101 @@ class FloatingWindow:
                     return self.g.CreateRoundRectRgn(*(round(v*scale) for v in (left, top, right, bottom, radius*2, radius*2)))
                 pw, h = geometry['phone_width'], geometry['height']
                 region = rounded(0, 0, pw, h, 44)
-                parts = [rounded(pw+8, 12, pw+52, 46, 13)]
-                parts.append(rounded(pw+8, h-42, pw+52, h-8, 13))
-                if self.menu_open:
-                    parts.append(rounded(pw+8, 46, pw+52, 158, 13))
                 rail_top, rail_scale = geometry['rail_top'], geometry['rail_scale']
-                for index in range(7):
-                    top = rail_top + (index*40 + (4 if index >= 2 else 0) + (8 if index > 2 else 0))*rail_scale
-                    parts.append(rounded(pw+8, top, pw+8+44*rail_scale, top+(40 if index==2 else 36)*rail_scale, 12*rail_scale))
-                if expanded:
-                    parts.append(rounded(pw+72, 0, geometry['width'], h, 24))
+                parts = [rounded(pw-16, rail_top-50, pw+60, rail_top+292*rail_scale, 28)]
+                if self.menu_open:
+                    parts.append(rounded(pw+8, rail_top-158, pw+52, rail_top-44, 11))
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)
-                if not self.u.SetWindowRgn(self.handle, region, True):
+                from System.Drawing import Region
+                try:
+                    managed = Region.FromHrgn(_native_pointer(region))
+                    previous = self._form.Region
+                    self._form.Region = managed
+                    previous_web = self._form.webview.Region
+                    self._form.webview.Region = managed.Clone()
+                    if previous_web is not None:
+                        previous_web.Dispose()
+                    if previous is not None:
+                        previous.Dispose()
+                finally:
                     self.g.DeleteObject(region)
-                    raise OSError('Unable to shape the Pane window.')
             self.aspect, self.expanded, self._geometry = aspect, expanded, geometry
+            if self.handle: self._repair_regions()
             return self.status()
 
+    def _repair_regions(self):
+        """Restore clipping on the HWNDs actually used by WebView2 composition."""
+        if self._form.IsDisposed or self._form.Region is None:
+            return
+        self.handle = self._form.Handle.ToInt64()
+        if self.u.IsIconic(self.handle):
+            return
+        # The WebView is DockStyle.Fill. During minimize Windows parks the
+        # form offscreen. On restore its child can retain that parking offset
+        # even though WinForms still reports the correct managed bounds.
+        view = self._form.webview.Handle.ToInt64()
+        origin, bounds = W.POINT(), W.RECT()
+        if self.u.ClientToScreen(self.handle, ctypes.byref(origin)) and self.u.GetWindowRect(view, ctypes.byref(bounds)):
+            if bounds.left != origin.x or bounds.top != origin.y:
+                self.u.SetWindowPos(view, 0, 0, 0, 0, 0, 0x0015)  # move only
+        from System.Drawing import Graphics
+        graphics = Graphics.FromHwnd(self._form.Handle)
+        try:
+            expected = self._form.Region.GetHrgn(graphics).ToInt64()
+        finally:
+            graphics.Dispose()
+        parent = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(parent))
+        def apply(hwnd, dx=0, dy=0):
+            desired = self.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
+            actual = self.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
+            try:
+                self.g.CombineRgn(desired, expected, expected, 5)  # RGN_COPY
+                self.g.OffsetRgn(desired, -dx, -dy)
+                matches = self.u.GetWindowRgn(hwnd, actual) and self.g.EqualRgn(desired, actual)
+                if not matches:
+                    if not self.u.SetWindowRgn(hwnd, desired, True):
+                        raise OSError('Windows could not apply the Pane outline.')
+                    desired = None  # Windows owns it after success.
+            finally:
+                if desired: self.g.DeleteObject(desired)
+                self.g.DeleteObject(actual)
+        try:
+            apply(self.handle)
+            @self.callback
+            def child(hwnd, _):
+                rect = W.RECT(); self.u.GetWindowRect(hwnd, ctypes.byref(rect))
+                # Only full-surface browser hosts, never small controls/popups.
+                if abs((rect.right-rect.left)-(parent.right-parent.left)) <= 2 and abs((rect.bottom-rect.top)-(parent.bottom-parent.top)) <= 2:
+                    apply(hwnd, rect.left-parent.left, rect.top-parent.top)
+                return True
+            self.u.EnumChildWindows(self.handle, child, 0)
+        finally:
+            self.g.DeleteObject(expected)
+
     def command(self, payload):
+        if self._form is not None and self._form.InvokeRequired:
+            return self._on_ui(lambda: self.command(payload))
         action = payload.get('action')
         if action == 'resize':
             height = payload.get('height')
             if type(height) not in (float, int) or not math.isfinite(height) or not 360 <= height <= 10000:
                 raise ValueError('Invalid window height.')
+            corner = payload.get('corner', 'se')
+            if corner not in ('nw', 'ne', 'sw', 'se'):
+                raise ValueError('Invalid resize corner.')
+            before = W.RECT()
+            if self.handle: self.u.GetWindowRect(self.handle, ctypes.byref(before))
             self.preferred_height = height
             self.maximized = False
-            return self.layout(self.expanded, self.aspect)
+            result = self.layout(self.expanded, self.aspect)
+            if self.handle:
+                after = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(after))
+                x = before.right - (after.right-after.left) if 'w' in corner else after.left
+                y = before.bottom - (after.bottom-after.top) if 'n' in corner else after.top
+                self.u.SetWindowPos(self.handle, 0, x, y, 0, 0, 0x0015)
+            return result
         if action == 'maximize':
             self.maximized = not self.maximized
             self.preferred_height = 10000 if self.maximized else 760

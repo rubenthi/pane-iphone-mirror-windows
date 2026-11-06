@@ -1,3 +1,7 @@
-Pane 2.1.1 enables automatic release publication for version bumps on main. The desktop checks for updates at launch and every six hours while open, retrying after fifteen minutes when offline. Verified updates install automatically when Pane closes; the previous executable is retained as a backup. Open Pane again to use the new version.
+Pane 2.2.0 restores the distinctive 1.7.4 phone-shaped native window, joined rail, hover menu, four-corner resizing and Connection/Uploads panel layered over the screen. Connect/Disconnect, Home-hold Siri and frame-rate controls return.
 
-Includes integrated Apple Account signing, USB installation, the bundled iPhone companion, manual signing renewal, and Bluetooth file sharing. Volume controls remain. Live account/device acceptance remains unverified. First launch of Pane 2.x clears old Pane-owned application state; personal Downloads and shared Apple trust records are preserved.
+New installations immediately open a full setup guide: connect USB, request Developer Mode, enable it and restart the iPhone, sign/install with Pane, then automatically bind USB/Wi-Fi and connect Bluetooth. The guide finishes only after companion connection is confirmed. Existing paired phones skip it, including while offline.
+
+Updates preserve saved settings, phone pairings, browser profiles and signing data. Only an explicit Pane.exe --reset clears local state. Existing 2.1.1 signing, file sharing, Downloads destination and volume controls remain.
+
+This release uses the stable automatic update feed. Pane checks at launch and periodically while open, installs the verified download when it closes, and uses the new build when reopened. Live Apple authentication and physical iPhone installation/Bluetooth transfers remain device acceptance checks.

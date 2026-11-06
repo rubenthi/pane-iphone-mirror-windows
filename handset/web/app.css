@@ -154,3 +154,30 @@ body.browser-mode { overflow: auto; background: #0c0d10 }body.browser-mode .work
 #signing-form label {display:grid;gap:6px;margin:12px 0;font-size:12px;}
 #signing-form input,#signing-code {min-width:0;width:100%;box-sizing:border-box;padding:10px;border:1px solid #3b3e46;border-radius:7px;background:#202228;color:#eee;}
 #signing-choices {display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;}
+
+/* 1.7.4 native outline: one phone surface and a joined rail, panel overlays video. */
+:root,body,body.browser-mode {background:transparent}
+.workspace,body.drawer-open .workspace {width:calc(var(--phone-width) + 60px)}
+.phone {border:0;box-shadow:inset 0 0 0 2px #9eafbf,inset 0 0 0 4px #293340,inset 0 0 0 7px #05080d;border-radius:44px;background:#020405}
+.phone-screen {inset:7px;border-radius:37px;padding:0;margin:0}
+#screen-view {position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;display:block}
+.window-rail {left:calc(var(--phone-width) + 8px);z-index:10}
+.window-rail:before {content:'';position:absolute;left:-8px;right:-8px;top:calc(var(--rail-top,240px) - 50px);height:calc(50px + 292px * var(--rail-scale,1));border:1px solid #52617080;border-left:0;border-radius:0 28px 28px 0;background:linear-gradient(100deg,#0d141d,#1d2733 80%,#151e29);z-index:-1}
+.handle-cluster {top:calc(var(--rail-top,240px) - 44px);height:34px}
+.handle-cluster>.rail-grip {background:transparent;border:0;box-shadow:none;height:34px;border-radius:10px}
+.rail-button {border:0;border-bottom:1px solid #b9ccdf24;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none}
+.window-menu {position:absolute;top:auto;bottom:100%;left:0;padding:0 0 4px;gap:4px;flex-direction:column-reverse}
+.window-menu button {height:34px;flex-shrink:0}
+.drawer {left:7px;top:7px;width:calc(var(--phone-width) - 14px);height:calc(var(--phone-height) - 14px);border-radius:36px;z-index:8;background:#161a23f5;backdrop-filter:blur(28px)}
+.resize-corner {position:absolute;width:32px;height:32px;z-index:40;background:transparent;touch-action:none}
+.corner-nw {left:8px;top:8px;cursor:nwse-resize}.corner-ne {left:calc(var(--phone-width) - 40px);top:8px;cursor:nesw-resize}.corner-sw {left:8px;bottom:8px;cursor:nesw-resize}.corner-se {left:calc(var(--phone-width) - 40px);bottom:8px;cursor:nwse-resize}
+#fps-target {width:100%;padding:8px;background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+
+.onboarding {position:absolute;inset:7px auto 7px 7px;width:calc(var(--phone-width) - 14px);border-radius:36px;z-index:30;background:linear-gradient(145deg,#1d2433,#10151e 65%);display:flex;flex-direction:column;overflow:hidden}
+.onboarding>header {display:flex;align-items:center;gap:10px;padding:28px 24px 16px;flex:none}.onboarding>header strong {font-size:18px}.onboarding>header .fine {margin:0 0 0 auto}
+.onboarding-steps {display:flex;list-style:none;gap:8px;margin:0;padding:0 24px 20px;font-size:10px;color:var(--muted)}.onboarding-steps li {flex:1;border-top:2px solid #ffffff16;padding-top:7px}.onboarding-steps li[aria-current=step] {color:var(--accent);border-color:var(--accent)}.onboarding-steps li[data-done=true] {border-color:var(--success)}
+.onboarding-scroll {overflow:auto;min-height:0;padding:8px 24px 24px;scrollbar-width:thin;scrollbar-color:#626d83 transparent}.onboarding h1 {font-size:28px;line-height:1.15;letter-spacing:-.8px;margin:10px 0 16px}.onboarding p {margin:12px 0;color:#bac3d4;font-size:12px;line-height:1.65}.onboarding p.eyebrow {font-size:10px;color:var(--accent)}
+.onboarding label {display:block;font-size:12px;margin:16px 0 6px}.onboarding select {width:100%;padding:12px;border-radius:9px;background:#232b3b;color:var(--ink);border:1px solid #ffffff22}.onboarding>footer {margin:0;padding:12px 24px 20px;font-size:10px;color:var(--quiet);flex:none}.setup-illustration {display:flex;align-items:center;justify-content:center;gap:20px;height:92px;border:1px solid var(--line);border-radius:18px;margin:24px 0;color:var(--accent)}.setup-illustration .pane-icon {width:32px;height:32px}.setup-instructions {padding-left:20px;color:#c8d0df;font-size:13px;line-height:1.7}.setup-instructions li {margin:16px 0}.setup-feedback {min-height:24px}.onboarding .primary {margin-top:20px}.onboarding #signing-note {overflow-wrap:anywhere}.onboarding #signing-form button {width:100%;background:var(--accent);color:#16203a;padding:12px;border-radius:10px;font-weight:600}
+body.onboarding-open #drawer-toggle {visibility:hidden}
+
+.usage-guide {margin:18px 0;color:var(--muted);font-size:12px;line-height:1.65}.usage-guide summary {cursor:pointer;font-weight:600;color:var(--ink)}.usage-guide ul {padding-left:18px}.usage-guide li {margin:10px 0}

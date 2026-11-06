@@ -8,11 +8,11 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 from handset.state import prepare_state, write_json
 from handset.setup import inspect_ipa, _perform
-from handset import setup
+from handset import setup, state
 
 
 class ResetTests(unittest.TestCase):
-    def test_first_launch_erases_profiles_state_and_pairings_once_preserving_downloads(self):
+    def test_upgrades_preserve_state_and_only_explicit_reset_erases(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'Pane'
             for name in ('window', 'webview', 'device', 'staging', 'outbox'):
@@ -22,8 +22,12 @@ class ResetTests(unittest.TestCase):
                 (root / name).write_text('private')
             downloads = Path(directory) / 'Downloads'; downloads.mkdir()
             (downloads / 'personal').write_text('keep')
-            self.assertTrue(prepare_state(root))
-            self.assertEqual([p.name for p in root.iterdir()], ['state-version.json'])
+            self.assertFalse(prepare_state(root))
+            self.assertEqual((root / 'binding.json').read_text(), 'private')
+            self.assertEqual((root / 'webview' / 'old').read_text(), 'private')
+            write_json(root / 'state-version.json', {'schema': 1})
+            self.assertFalse(prepare_state(root))
+            self.assertEqual((root / 'binding.json').read_text(), 'private')
             (root / 'binding.json').write_text('new')
             self.assertFalse(prepare_state(root))
             self.assertEqual((root / 'binding.json').read_text(), 'new')
@@ -38,11 +42,36 @@ class ResetTests(unittest.TestCase):
             outside = Path(directory) / 'outside'; outside.mkdir(); (outside / 'keep').touch()
             try: (root / 'window').symlink_to(outside, target_is_directory=True)
             except OSError: self.skipTest('Symlink privilege unavailable')
-            prepare_state(root)
+            prepare_state(root, force=True)
             self.assertTrue((outside / 'keep').exists())
+
+    def test_legacy_pairings_are_copied_without_overwriting_and_reset_does_not_restore_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'Pane'; legacy=Path(directory)/'legacy'; legacy.mkdir()
+            (legacy/'remote_phone.plist').write_bytes(b'paired')
+            (legacy/'remote_new.plist').write_bytes(b'older')
+            (root/'device').mkdir(parents=True)
+            (root/'device'/'remote_new.plist').write_bytes(b'current')
+            common=MagicMock(_HOMEFOLDER=legacy)
+            with patch.object(state,'DATA_DIR',root), patch.dict('sys.modules',{'pymobiledevice3':MagicMock(common=common)}):
+                prepare_state(root)
+                state.isolate_device_state()
+                self.assertEqual((root/'device'/'remote_phone.plist').read_bytes(),b'paired')
+                self.assertEqual((root/'device'/'remote_new.plist').read_bytes(),b'current')
+                self.assertTrue((legacy/'remote_phone.plist').exists())
+                prepare_state(root,force=True)
+                common._HOMEFOLDER=legacy
+                state.isolate_device_state()
+                self.assertFalse((root/'device'/'remote_phone.plist').exists())
 
 
 class SetupTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = patch.object(setup, 'DATA_DIR', Path(self.tmp.name))
+        patcher.start(); self.addCleanup(patcher.stop)
+
     def test_installer_rejects_unsigned_and_unrelated_ipa(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'app.ipa'
@@ -79,5 +108,34 @@ class SetupTests(unittest.TestCase):
             amfi.reveal_developer_mode_option_in_ui.assert_awaited_once()
             amfi.enable_developer_mode.assert_not_called()
             amfi.enable_developer_mode_post_restart.assert_not_called()
+            self.assertEqual(setup.status()['step'], 'developer')
+        lockdown.close.assert_awaited_once()
+
+
+    def test_saved_pairings_skip_onboarding_even_when_phone_is_offline(self):
+        with patch.object(setup, 'wifi_paired_udids', return_value=[]):
+            self.assertTrue(setup.status()['onboardingRequired'])
+            write_json(setup.DATA_DIR / 'binding.json', {'udid': 'saved-phone'})
+            self.assertFalse(setup.status()['onboardingRequired'])
+            write_json(setup.DATA_DIR / 'binding.json', {'udid': 'new-phone', 'onboardingComplete': False})
+            self.assertTrue(setup.status()['onboardingRequired'])
+        (setup.DATA_DIR / 'binding.json').unlink()
+        with patch.object(setup, 'wifi_paired_udids', return_value=['legacy-phone']):
+            self.assertFalse(setup.status()['onboardingRequired'])
+
+    def test_developer_check_does_not_require_companion_already_installed(self):
+        lockdown = MagicMock()
+        lockdown.close = AsyncMock()
+        lockdown.get_developer_mode_status = AsyncMock(return_value=True)
+        modules = {
+            'pymobiledevice3.lockdown': MagicMock(create_using_usbmux=AsyncMock(return_value=lockdown)),
+            'pymobiledevice3.services.amfi': MagicMock(),
+            'pymobiledevice3.services.house_arrest': MagicMock(),
+            'pymobiledevice3.services.installation_proxy': MagicMock(),
+        }
+        with patch.dict('sys.modules', modules), patch.dict(setup._STATE), patch.object(setup, '_companion', new_callable=AsyncMock) as companion:
+            asyncio.run(_perform('developer', 'phone', None))
+            companion.assert_not_awaited()
+            self.assertTrue(setup.status()['developerEnabled'])
             self.assertEqual(setup.status()['step'], 'install')
         lockdown.close.assert_awaited_once()

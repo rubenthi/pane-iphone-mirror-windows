@@ -11,12 +11,15 @@ import zipfile
 
 from handset.mux import list_devices
 from handset.state import DATA_DIR, read_json, write_json
-from handset.wifi import pair_for_wifi
+from handset.wifi import pair_for_wifi, wifi_paired_udids
 
 COMMAND_UUID = '8a5d1001-7b44-4b1b-9bb6-a42e447a0001'
 RESPONSE_UUID = '8a5d1002-7b44-4b1b-9bb6-a42e447a0001'
 _LOCK = threading.RLock()
 _STATE = {'phase': 'idle', 'step': 'connect', 'note': 'Connect and unlock your iPhone, then tap Trust.'}
+_saved = read_json(DATA_DIR / 'setup.json', {})
+if isinstance(_saved, dict):
+    _STATE.update({k: v for k, v in _saved.items() if k in {'step', 'udid', 'usbReady', 'revealed', 'developerEnabled', 'installed'}})
 
 
 def status():
@@ -26,12 +29,14 @@ def status():
     result['boundUdid'] = binding.get('udid')
     result['peerName'] = binding.get('peerName')
     result['wifiBound'] = bool(binding.get('udid'))
+    result['onboardingRequired'] = (binding.get('onboardingComplete', True) is False) if binding.get('udid') else not bool(wifi_paired_udids())
     return result
 
 
 def _set(**values):
     with _LOCK:
         _STATE.update(values)
+        write_json(DATA_DIR / 'setup.json', {k: v for k, v in _STATE.items() if k in {'step', 'udid', 'usbReady', 'revealed', 'developerEnabled', 'installed'}})
 
 
 def require_usb(udid):
@@ -40,7 +45,7 @@ def require_usb(udid):
 
 
 def start(action, udid, package=None):
-    if action not in {'start', 'check', 'install', 'bind'}:
+    if action not in {'start', 'developer', 'check', 'install', 'bind'}:
         raise ValueError('Unknown setup action.')
     require_usb(udid)
     from handset.signing import status as signing_status
@@ -53,6 +58,9 @@ def start(action, udid, package=None):
     with _LOCK:
         if _STATE['phase'] == 'working':
             raise ValueError('A setup step is already running.')
+        if _STATE.get('udid') != udid:
+            for key in ('usbReady', 'revealed', 'developerEnabled', 'installed'):
+                _STATE.pop(key, None)
         _STATE.update(phase='working', step=action, udid=udid, error=None,
                       note='Working with your iPhone. Keep it unlocked and connected.')
         threading.Thread(target=_run, args=(action, udid, package), daemon=True, name='pane-setup').start()
@@ -107,7 +115,7 @@ async def _perform(action, udid, package):
         _set(usbReady=True)
         if action == 'start':
             await AmfiService(lockdown).reveal_developer_mode_option_in_ui()
-            _set(phase='waiting', step='install', revealed=True, note='Developer Mode is available. Install the Pane companion, then enable Developer Mode in iPhone Settings → Privacy & Security. Restart the iPhone and confirm Turn On.')
+            _set(phase='waiting', step='developer', revealed=True, note='Enable Developer Mode in iPhone Settings → Privacy & Security, restart the iPhone and confirm Turn On. Reconnect USB to continue.')
             return
         if action == 'install':
             if package is None:
@@ -120,6 +128,9 @@ async def _perform(action, udid, package):
         enabled = await lockdown.get_developer_mode_status()
         if not enabled:
             raise ValueError('Developer Mode is not enabled yet. Switch it on, restart the iPhone and confirm Turn On.')
+        if action == 'developer':
+            _set(phase='ready', step='install', developerEnabled=True, note='Developer Mode is enabled. Sign and install Pane next.')
+            return
         bundle = await _companion(lockdown)
         _set(installed=True, developerEnabled=True)
         if action == 'check':
@@ -129,7 +140,7 @@ async def _perform(action, udid, package):
         wifi = await asyncio.to_thread(pair_for_wifi, udid)
         if not wifi.get('ok'):
             raise ValueError(wifi.get('error') or 'Wi-Fi pairing was not confirmed. Reconnect and retry.')
-        binding = {'version': 1, 'udid': udid, 'bundle': bundle, 'token': secrets.token_hex(32),
+        binding = {'version': 1, 'onboardingComplete': False, 'udid': udid, 'bundle': bundle, 'token': secrets.token_hex(32),
                    'peerName': 'Pane-' + uuid.uuid4().hex[:4], 'service': str(uuid.uuid4())}
         afc = await HouseArrestService.create(lockdown, bundle, documents_only=True)
         try:
@@ -138,6 +149,6 @@ async def _perform(action, udid, package):
         finally:
             await afc.close()
         write_json(DATA_DIR / 'binding.json', binding)
-        _set(phase='waiting', step='bluetooth', note='USB and Wi-Fi paired. Open Pane on the iPhone, tap Activate USB link, allow Bluetooth, then connect Bluetooth here.')
+        _set(phase='waiting', step='bluetooth', note='USB and Wi-Fi paired. Open Pane on the iPhone, allow Bluetooth and leave the app open. Pane imports the USB link automatically.')
     finally:
         await lockdown.close()

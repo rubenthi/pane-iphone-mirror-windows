@@ -112,10 +112,12 @@ def run_native_window():
     webview.settings['ALLOW_FILE_URLS'] = False
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
     window = webview.create_window('Pane', URL, width=388, height=760,
-                                   frameless=True, easy_drag=False, resizable=False,
+                                   frameless=True, easy_drag=False, resizable=False, shadow=False, transparent=True,
                                    background_color='#090c0d', text_select=True)
     def shown():
-        if not shell.attach(os.getpid()):
+        if shell.handle:
+            return
+        if not shell.attach(window):
             logging.error('Could not attach the native window region.')
     window.events.shown += shown
     webview.start(gui='edgechromium', private_mode=False, storage_path=str(DATA_DIR / 'webview'))
