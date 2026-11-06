@@ -125,7 +125,8 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.route('**/api/screen', route=>route.fulfill({json:{phase:'running',udid:'test',transport:'usb'}}));
     await page.route('**/mirror/**', route=>route.fulfill({status:503,body:'Synthetic frame test'}));
     await page.evaluate(()=>renderScreen({phase:'running',udid:'test',transport:'usb'}));
-    const picture=await page.waitForEvent('framenavigated', {predicate:f=>f.url().endsWith('/mirror.html')}).catch(()=>page.frames().find(f=>f.url().endsWith('/mirror.html')));
+    const picture=page.frames().find(f=>f.parentFrame()===page.mainFrame());
+    await picture.waitForURL('**/mirror.html');
     await picture.waitForFunction(()=>typeof drawFrame==='function');
     const geometry=await picture.evaluate(()=>{
       const source=document.createElement('canvas');source.width=1170;source.height=2532;
