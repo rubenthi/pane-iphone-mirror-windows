@@ -124,6 +124,18 @@ class TransferTests(unittest.TestCase):
 
 
 class RpcTests(unittest.IsolatedAsyncioTestCase):
+    async def test_discovery_finds_bound_service_when_ios_omits_its_name(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock
+        service = '12345678-1234-1234-1234-123456789abc'
+        scanner = MagicMock(find_device_by_filter=AsyncMock(return_value=None))
+        with patch.dict('sys.modules', {'bleak': SimpleNamespace(BleakScanner=scanner, BleakClient=MagicMock())}):
+            with self.assertRaisesRegex(ValueError, 'not found'):
+                await Bluetooth()._session({'service': service, 'peerName': 'Pane-test', 'token': 'a'*64})
+        predicate = scanner.find_device_by_filter.call_args.args[0]
+        self.assertTrue(predicate(None, SimpleNamespace(local_name=None, service_uuids=[service.upper()])))
+        self.assertFalse(predicate(None, SimpleNamespace(local_name='Pane-test', service_uuids=[])))
+
     async def test_fragmented_notifications_wrong_request_and_backpressure(self):
         class Client:
             mtu_size = 23

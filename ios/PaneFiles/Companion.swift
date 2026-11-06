@@ -3,7 +3,6 @@ import CoreBluetooth
 import CryptoKit
 import Combine
 
-private let serviceID = CBUUID(string: "8a5d1000-7b44-4b1b-9bb6-a42e447a0001")
 private let commandID = CBUUID(string: "8a5d1001-7b44-4b1b-9bb6-a42e447a0001")
 private let responseID = CBUUID(string: "8a5d1002-7b44-4b1b-9bb6-a42e447a0001")
 private let fileLimit = 2 * 1024 * 1024 * 1024
@@ -13,6 +12,7 @@ struct Pairing: Codable {
     let version: Int
     let token: String
     let peerName: String
+    let service: String
 }
 
 struct SharedFile: Codable, Identifiable {
@@ -80,6 +80,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             let data = try Data(contentsOf: source)
             let newPairing = try JSONDecoder().decode(Pairing.self, from: data)
             guard newPairing.version == 1, newPairing.token.count == 64,
+                  UUID(uuidString: newPairing.service) != nil,
                   newPairing.peerName.hasPrefix("Pane-"), newPairing.peerName.count <= 20 else {
                 throw TransferError(message: "Invalid USB pairing. Bind again from your laptop.")
             }
@@ -158,7 +159,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
         guard let pairing else { status = "Activate the USB link to pair."; return }
         let command = CBMutableCharacteristic(type: commandID, properties: [.write], value: nil, permissions: [.writeEncryptionRequired])
         let replies = CBMutableCharacteristic(type: responseID, properties: [.notify, .notifyEncryptionRequired], value: nil, permissions: [.readEncryptionRequired])
-        let service = CBMutableService(type: serviceID, primary: true)
+        let service = CBMutableService(type: CBUUID(string: pairing.service), primary: true)
         service.characteristics = [command, replies]
         response = replies
         manager.add(service)
@@ -174,7 +175,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
         if let error { status = error.localizedDescription; return }
         guard let pairing else { return }
-        peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [serviceID], CBAdvertisementDataLocalNameKey: pairing.peerName])
+        peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [CBUUID(string: pairing.service)], CBAdvertisementDataLocalNameKey: pairing.peerName])
     }
 
     func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {

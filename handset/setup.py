@@ -13,7 +13,6 @@ from handset.mux import list_devices
 from handset.state import DATA_DIR, read_json, write_json
 from handset.wifi import pair_for_wifi
 
-SERVICE_UUID = '8a5d1000-7b44-4b1b-9bb6-a42e447a0001'
 COMMAND_UUID = '8a5d1001-7b44-4b1b-9bb6-a42e447a0001'
 RESPONSE_UUID = '8a5d1002-7b44-4b1b-9bb6-a42e447a0001'
 _LOCK = threading.RLock()
@@ -128,7 +127,7 @@ async def _perform(action, udid, package):
         if not wifi.get('ok'):
             raise ValueError(wifi.get('error') or 'Wi-Fi pairing was not confirmed. Reconnect and retry.')
         binding = {'version': 1, 'udid': udid, 'bundle': bundle, 'token': secrets.token_hex(32),
-                   'peerName': 'Pane-' + uuid.uuid4().hex[:8], 'service': SERVICE_UUID}
+                   'peerName': 'Pane-' + uuid.uuid4().hex[:4], 'service': str(uuid.uuid4())}
         afc = await HouseArrestService.create(lockdown, bundle, documents_only=True)
         try:
             prefix = '/Documents' if await afc.isdir('/Documents') else ''

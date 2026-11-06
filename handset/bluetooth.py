@@ -6,7 +6,7 @@ import base64
 import json
 import threading
 
-from handset.setup import COMMAND_UUID, RESPONSE_UUID, SERVICE_UUID
+from handset.setup import COMMAND_UUID, RESPONSE_UUID
 from handset.state import DATA_DIR, read_json
 from handset.transfers import store, digest_file
 
@@ -103,9 +103,12 @@ class Bluetooth:
     async def _session(self, binding):
         from bleak import BleakClient, BleakScanner
         self.loop, self.task = asyncio.get_running_loop(), asyncio.current_task()
+        # iOS can truncate/omit the local name in advertising. A per-binding
+        # service UUID identifies the USB-bound app without name matching.
+        service = binding['service'].lower()
         peer = await BleakScanner.find_device_by_filter(
-            lambda device, ad: ad.local_name == binding['peerName'] and SERVICE_UUID in [s.lower() for s in ad.service_uuids],
-            timeout=20, service_uuids=[SERVICE_UUID])
+            lambda device, ad: service in [s.lower() for s in ad.service_uuids],
+            timeout=20, service_uuids=[service])
         if peer is None:
             raise ValueError('Bound iPhone not found. Open Pane, activate the USB link, allow Bluetooth, and keep it in the foreground.')
         async with BleakClient(peer, pair=True, timeout=120) as client:
