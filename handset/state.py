@@ -1,0 +1,80 @@
+"""Pane-owned state, reset once for the 2.0 clean-start migration."""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import shutil
+
+DATA_DIR = Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Pane')))
+SCHEMA = 2
+# Never erase arbitrary PANE_DATA_DIR contents or shared Apple trust records.
+OWNED = ('window', 'webview', 'device', 'staging', 'outbox', 'settings.json',
+         'binding.json', 'setup.json', 'transfers.json', 'pane.log', 'state-version.json')
+
+
+def write_json(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(value), encoding='utf-8')
+    temporary.replace(path)
+
+
+def read_json(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return default
+
+
+def prepare_state(root: Path = DATA_DIR, *, force: bool = False) -> bool:
+    """Run before logging/WebView starts. Fail closed if an old profile is locked."""
+    if root.is_symlink() or (hasattr(root, 'is_junction') and root.is_junction()):
+        raise ValueError('Pane data directory must not be a link.')
+    root.mkdir(parents=True, exist_ok=True)
+    marker = read_json(root / 'state-version.json', {})
+    if not force and isinstance(marker, dict) and marker.get('schema') == SCHEMA:
+        return False
+    for name in OWNED:
+        item = root / name
+        if item.is_symlink():
+            item.unlink()
+        elif hasattr(item, 'is_junction') and item.is_junction():
+            item.rmdir()
+        elif item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink(missing_ok=True)
+    write_json(root / 'state-version.json', {'schema': SCHEMA})
+    return True
+
+
+def isolate_device_state() -> None:
+    # The pinned device library has no environment/configuration hook for this.
+    # Set its home before any library services are imported. Shared records from
+    # older Pane releases are never imported into this clean application state.
+    try:
+        from pymobiledevice3 import common
+        common._HOMEFOLDER = DATA_DIR / 'device'
+    except ImportError:
+        pass
+
+
+def downloads_folder() -> Path:
+    if os.name == 'nt':
+        import ctypes
+        import uuid
+        from ctypes import wintypes
+        # FOLDERID_Downloads: honors a relocated Windows Downloads directory.
+        folder_id = (ctypes.c_byte * 16).from_buffer_copy(uuid.UUID('374de290-123f-4565-9164-39c4925e467b').bytes_le)
+        result = ctypes.c_wchar_p()
+        shell = ctypes.windll.shell32.SHGetKnownFolderPath
+        shell.argtypes = [ctypes.c_void_p, wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_wchar_p)]
+        shell.restype = ctypes.c_long
+        if shell(ctypes.byref(folder_id), 0, None, ctypes.byref(result)) != 0:
+            raise OSError('Windows could not locate your Downloads folder.')
+        try:
+            return Path(result.value)
+        finally:
+            ctypes.windll.ole32.CoTaskMemFree(ctypes.cast(result, ctypes.c_void_p))
+    return Path.home() / 'Downloads'

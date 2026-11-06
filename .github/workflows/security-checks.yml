@@ -22,4 +22,12 @@ jobs:
         run: |
           node --check handset/web/app.js
           node --check handset/web/mirror.js
+          node --check handset/web/setup.js
+          node --check handset/web/icons.js
           node --test tests/ui.test.cjs
+      - name: Install browser test tools
+        run: npm ci --ignore-scripts
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Exercise setup and Uploads UI
+        run: npm run test:setup

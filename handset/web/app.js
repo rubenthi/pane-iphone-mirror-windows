@@ -49,6 +49,12 @@ const screenGeneration = window.createPaneGeneration();
 window.paneControl = window.createPaneControlQueue((path, payload) => postJson(`${MIRROR_API}${path}`, payload));
 let selectedUdid = null;
 let screenTimer = 0;
+// The 2.0 reset also clears old preferences in an external-browser fallback.
+if (localStorage.getItem('pane-state-schema') !== '2') {
+  localStorage.clear();
+  sessionStorage.clear();
+  localStorage.setItem('pane-state-schema', '2');
+}
 let transport = localStorage.getItem("handset-transport") === "wifi" ? "wifi" : "usb";
 let wifiPaired = [];
 let usbConnected = false;
@@ -61,7 +67,7 @@ setTransport(transport, false);
 
 function setTransport(value, reload = true) {
   transport = value === "wifi" ? "wifi" : "usb";
-  document.querySelector('#connection-title').textContent = transport === 'wifi' ? 'A little more freedom' : 'Start with a cable';
+  document.querySelector('#connection-title').textContent = transport === 'wifi' ? 'Wireless connection' : 'Connect over USB';
   document.querySelector('#connection-description').textContent = transport === 'wifi' ? 'Pair once over USB. Then go wireless.' : 'A direct connection. A simple first step.';
   localStorage.setItem("handset-transport", transport);
   document.querySelectorAll("[data-transport]").forEach((btn) => {
@@ -80,8 +86,8 @@ function renderWifi() {
   wifiPair.disabled = !usbConnected;
   wifiPair.title = usbConnected ? "One-time setup over the cable" : "Plug in the cable once to set up Wi‑Fi";
   const setupNeeded = transport === 'wifi' ? !ready : !usbConnected;
-  document.querySelector('#setup-title').textContent = setupNeeded ? "Let's get you connected." : 'Need a hand?';
-  document.querySelector('#setup-card .eyebrow').textContent = setupNeeded ? 'SETUP NEEDED' : 'HELP & SETUP';
+  document.querySelector('#setup-title').textContent = setupNeeded ? "Set up your iPhone" : 'Connection setup';
+  document.querySelector('#setup-card .eyebrow').textContent = setupNeeded ? 'SETUP NEEDED' : 'SETUP';
 }
 
 async function setUpWifi() {

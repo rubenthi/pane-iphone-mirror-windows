@@ -16,6 +16,10 @@ from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
 from handset import updater
 from handset.window import shell
+from handset import setup
+from handset.bluetooth import bluetooth
+from handset.transfers import store
+from handset.state import prepare_state, isolate_device_state
 
 ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
@@ -82,6 +86,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/window':
             self._json(shell.status())
             return
+        if path == '/api/setup':
+            self._json(setup.status())
+            return
+        if path == '/api/uploads':
+            self._json({**store().status(), 'bluetooth': bluetooth.status()})
+            return
         if path.startswith("/api/devices/"):
             udid = unquote(path.removeprefix("/api/devices/")).strip("/")
             if not udid or "/" in udid:
@@ -120,6 +130,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "Invalid device id."}, status=400)
             return
         udid = payload.get("udid") if isinstance(payload.get("udid"), str) else None
+        if path.startswith('/api/setup/') or path.startswith('/api/uploads/') or path.startswith('/api/bluetooth/'):
+            try:
+                self._json(self._companion_action(path, payload, udid))
+            except (ValueError, OSError, MuxError) as error:
+                self._json({'error': str(error)}, status=400)
+            return
         if path == "/api/screen/restart":
             self._json(restart_screen(udid))
             return
@@ -137,6 +153,33 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "Invalid transport."}, status=400)
             return
         self._json(start_screen(udid, transport))
+
+    def _companion_action(self, path, payload, udid):
+        if path.startswith('/api/setup/'):
+            action = path.rsplit('/', 1)[-1]
+            if action == 'install':
+                setup.require_usb(udid)
+                item = store().finish(payload.get('id'), 'ipa')
+                try:
+                    return setup.start(action, udid, item['path'])
+                except Exception:
+                    item['path'].unlink(missing_ok=True)
+                    raise
+            return setup.start(action, udid)
+        if path == '/api/bluetooth/connect':
+            return bluetooth.connect()
+        if path == '/api/bluetooth/disconnect':
+            return bluetooth.disconnect()
+        if path == '/api/uploads/start':
+            return store().begin(payload.get('name'), payload.get('size'), payload.get('kind', 'file'))
+        if path == '/api/uploads/chunk':
+            return store().append(payload.get('id'), payload.get('offset'), payload.get('data'))
+        if path == '/api/uploads/finish':
+            item = store().finish(payload.get('id'), 'file')
+            return {'ok': True, 'id': item['id']}
+        if path == '/api/uploads/cancel':
+            return store().cancel(payload.get('id'))
+        raise ValueError('Unknown action.')
 
     def log_message(self, fmt: str, *args) -> None:
         return
@@ -203,6 +246,11 @@ class Handler(BaseHTTPRequestHandler):
     def _proxy_mirror(self, method: str, length: int) -> None:
         target = self._mirror_upstream_path()
         upstream_path = target.split("?", 1)[0]
+        allowed = {'GET': {'/codec', '/stream.bin', '/stats'},
+                   'POST': {'/touch', '/key', '/button', '/restart', '/pli'}}
+        if upstream_path not in allowed.get(method, set()):
+            self._json({'error': 'Unknown screen action.'}, status=404)
+            return
         is_live_stream = method == "GET" and upstream_path.endswith(".bin")
         if is_live_stream:
             self._proxy_mirror_stream(method, target)
@@ -275,6 +323,8 @@ def upstream_authorization():
 
 
 def main() -> None:
+    prepare_state()
+    isolate_device_state()
     server = SingleServer((HOST, PORT), Handler)
     print(f"Handset listening on http://{HOST}:{PORT}", flush=True)
     server.serve_forever()

@@ -14,6 +14,7 @@ av==19.0.2
 backports.zstd==1.8.0
 bottle==0.13.4
 bpylist2==4.1.1
+bleak==2.0.0
 bytestruct==0.2.0
 certifi==2026.10.23
 cffi==2.1.1

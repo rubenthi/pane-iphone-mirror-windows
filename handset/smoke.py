@@ -15,6 +15,12 @@ def run(output):
         from handset.server import Handler, SingleServer
         from handset.version import VERSION
         import webview
+        from bleak import BleakClient, BleakScanner
+        from pymobiledevice3.services.amfi import AmfiService
+        from pymobiledevice3.services.house_arrest import HouseArrestService
+        from pymobiledevice3.services.installation_proxy import InstallationProxyService
+        assert hasattr(AmfiService, 'reveal_developer_mode_option_in_ui')
+        assert hasattr(InstallationProxyService, 'install_from_local')
         assert hasattr(ScreenStreamServer, '_ensure_fresh_stream')
         assert hasattr(userspace_tunnel.UserspaceRsdTunnel, '_aopen_locked')
         assert hasattr(bonjour, '_bind_ipv4') and hasattr(bonjour, '_send_query_all')

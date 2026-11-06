@@ -10,3 +10,6 @@ venv/
 .idea/
 node_modules/
 test-results/
+ios/*.xcodeproj/
+ios/package/
+ios/*.ipa

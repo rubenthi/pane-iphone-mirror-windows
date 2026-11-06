@@ -12,6 +12,24 @@ import test_server_security
 
 
 class ApiReliabilityTests(test_server_security.ServerSecurityTests):
+    def test_volume_control_remains_available(self):
+        received = []
+        class Upstream(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.append((self.path, self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+            def log_message(self, *args): pass
+        upstream = ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+        thread = threading.Thread(target=upstream.serve_forever); thread.start()
+        try:
+            with patch('handset.server.STREAM_PORT', upstream.server_port):
+                body = b'{"name":"volume-up","state":"press"}'
+                status, _, _ = self.request('POST', '/mirror/button', {'X-Pane-Token':ACCESS_TOKEN}, body)
+                self.assertEqual(status, 200)
+                self.assertEqual(received, [('/button', body)])
+        finally:
+            upstream.shutdown(); upstream.server_close(); thread.join()
+
     def test_invalid_requests_never_start_device(self):
         with patch('handset.server.start_screen') as start:
             for body in (b'{', b'\xff', b'[]', b'null', b'{"transport": []}', b'{"udid": 3}'):
