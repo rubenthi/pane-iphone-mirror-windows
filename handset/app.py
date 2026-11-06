@@ -86,7 +86,7 @@ def main() -> None:
 
     server = SingleServer((HOST, PORT), Handler)
     threading.Thread(target=server.serve_forever, name="pane-server", daemon=True).start()
-    threading.Thread(target=updater.check, name="pane-update", daemon=True).start()
+    threading.Thread(target=updater.monitor, name="pane-update", daemon=True).start()
     logging.info("Pane listening on %s", URL)
 
     try:
