@@ -48,6 +48,19 @@ def validate_manifest(data):
     return tuple(map(int, version.split('.'))) > tuple(map(int, VERSION.split('.')))
 
 
+def monitor(stop=None):
+    """Check at launch and keep retrying while Pane is open."""
+    stop = stop or threading.Event()
+    while not stop.is_set():
+        check()
+        phase = status()['phase']
+        if phase in {'ready', 'source'}:
+            return
+        # Recover from offline startup without requiring a restart.
+        if stop.wait(15 * 60 if phase == 'error' else 6 * 60 * 60):
+            return
+
+
 def check():
     global _STAGED
     if not getattr(sys, 'frozen', False) or os.name != 'nt':
