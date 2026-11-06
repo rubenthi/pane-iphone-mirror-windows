@@ -35,6 +35,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       const state = await fetch('/api/window',{headers:{'X-Pane-Token':auth.token}}).then(r=>r.json());
       return state.native && innerWidth === state.width && innerHeight === state.height;
     });
+    await page.evaluate(()=>load());
     await page.getByText('No iPhone detected.',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.locator('#connection-drawer').isVisible(),false);
     async function checkRegion(menu) {
@@ -151,6 +152,10 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
+  } catch(error) {
+    console.log('Native preview diagnostics:',logs);
+    if(page) console.log(await page.evaluate(()=>({status:document.querySelector('#status-note')?.textContent,devices:document.querySelector('#devices')?.textContent,setup:document.querySelector('#onboarding-note')?.textContent})).catch(()=>({})));
+    throw error;
   } finally {
     if(page) await page.evaluate(async()=>{const auth=await fetch('/api/auth').then(r=>r.json());await fetch('/api/window',{method:'POST',headers:{'X-Pane-Token':auth.token,'Content-Type':'application/json'},body:JSON.stringify({action:'close'})});}).catch(()=>{});
     if(browser) await browser.close();
