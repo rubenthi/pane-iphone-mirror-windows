@@ -39,13 +39,13 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 - 🪟 **Single portable `Pane.exe`**: no Python installation required.
 - 🔒 **Local mirroring**: video and input stay on USB/your local network. Updates check this GitHub fork; initial developer-image setup may download Apple resources.
 
-## Pane 2.1: integrated signing, clean setup and file sharing
+## Pane 2.2: floating interface, guided setup and preserved settings
 
 See the [update history](CHANGELOG.md) for what each version adds, how automatic updates work, and behavior changes.
 
-Pane 2.0 resets its old application preferences, profiles, logs and saved app connections once when the update first launches. Personal files and shared Apple trust records are preserved. The iPhone volume controls remain; startup no longer lowers the volume and no sound is streamed to the PC.
+Updates preserve existing preferences, browser profiles, signing data and saved phone pairings. A reset happens only when explicitly requested with `Pane.exe --reset`. The iPhone volume controls remain; startup no longer lowers the volume and no sound is streamed to the PC.
 
-The Connection sidebar now walks through USB trust, revealing Developer Mode, installing a signed **Pane** companion, the iPhone restart/confirmation, and USB/Wi-Fi/Bluetooth binding. The second tab, **Uploads**, sends files both ways over Bluetooth Low Energy. Incoming files are verified and saved to the laptop's Downloads folder without overwriting existing files. Keep the iPhone companion open during transfers.
+The custom native phone-shaped window and joined control rail from 1.7.4 are restored. The Connection panel overlays the phone screen without widening the window. A full setup guide opens automatically only when no saved phone pairing exists: USB trust, Developer Mode reveal and iPhone confirmation, installation of **Pane**, then USB/Wi-Fi/Bluetooth binding. The second tab, **Uploads**, sends files both ways over Bluetooth Low Energy. Incoming files are verified and saved to the laptop's Downloads folder without overwriting existing files. Keep the iPhone companion open during transfers.
 
 See the [complete setup and signing guide](docs/companion-setup.md). GitHub Actions produces the [unsigned companion IPA](../../actions/workflows/companion.yml) for AltStore signing and the [Windows executable](../../actions/workflows/desktop-check.yml). A source update on main is not itself an installed laptop update. Automatic updates check published releases at launch and every six hours while Pane stays open, retry after fifteen minutes on failure, and install the verified executable when Pane closes. Open Pane again to use the new version. Version bumps merged into main trigger a tested release publication; ordinary source-only commits do not publish a new version.
 
@@ -59,13 +59,13 @@ This repository is public and licensed under GPL-3.0: anyone can view or fork it
 
 ## Quick start
 
-1. Install the new Windows build, close any running older Pane process, and launch it. Pane clears its old state once.
-2. Install **Apple Devices** for the USB driver, connect the iPhone, unlock it and tap **Trust This Computer**.
-3. Open **Connection → iPhone setup** and choose **Initiate setup** to request the Developer Mode switch.
-4. Choose **Sign & install with Pane**, enter your Apple Account and complete verification. Enable Developer Mode on the iPhone, restart the iPhone and confirm **Turn On**.
-5. Reconnect USB. Choose **Check Developer Mode & app**, then **Bind USB & Wi-Fi**.
-6. In Pane, tap **Activate USB link** and allow Bluetooth. In Pane choose **Connect Bluetooth**.
-7. Use **Uploads** for files and **Start mirroring** for the phone screen. See [setup details and limitations](docs/companion-setup.md).
+1. Launch the Windows build. Existing settings and paired phones are preserved; new installations open the full setup guide.
+2. Install **Apple Devices** for its USB driver, plug in the unlocked iPhone and tap **Trust This Computer**.
+3. Press **Connect** in the guide. Pane requests the Developer Mode switch.
+4. On the iPhone, enable **Settings → Privacy & Security → Developer Mode**, restart the iPhone and confirm **Turn On**. Reconnect USB, then press **I've enabled it — check**.
+5. Choose **Sign & install with Pane**, enter your Apple Account and complete verification.
+6. Pane binds USB and Wi-Fi automatically after installation. Open Pane on the iPhone, trust your developer profile if prompted, allow Bluetooth and accept pairing prompts. Keep the app open.
+7. Once Bluetooth confirms the connection, the guide closes and Pane opens the normal interface. Use **Uploads** for files and **Connect** for mirroring. See [setup details and limitations](docs/companion-setup.md).
 
 ### Go wireless (Wi-Fi)
 
@@ -132,7 +132,7 @@ Yes. After a one-time USB pairing, Pane mirrors and controls the iPhone over Wi-
 No. Pane uses Apple's built-in developer services. You only need Developer Mode turned on.
 
 **Do I need a Mac or Xcode?**
-The desktop app runs on Windows. AltStore Classic can sign/install the companion from Windows; building and signing the Swift companion yourself requires a Mac with Xcode.
+Pane signs and installs the bundled companion directly on Windows using its isideload helper. No separate AltStore or local Xcode installation is needed. Building the Swift companion from source uses the macOS CI build or a Mac with Xcode.
 
 **Why does it need Developer Mode?**
 iOS only exposes screen streaming and input injection through its developer services, which require Developer Mode. You can turn it off again at any time.
@@ -155,6 +155,6 @@ Not affiliated with or endorsed by Apple Inc. iPhone, iOS and AirPlay are tradem
 See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published checksums and the verified 1.1.1 → 1.2.1 updater transition.
 
 
-### Floating controls in 1.3.0
+### Floating controls
 
-Drag the three-line handle above the side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag the bottom-right resize grip to resize the phone proportionally. Volume buttons sit above the connection arrow; Home, app switcher, Notifications and Control Center sit below. Hover each button for its tooltip. Connection and error messages are in the sidebar, never over the phone. Scroll the mouse wheel or trackpad over the mirrored picture to swipe; the sidebar scrolls independently. Audio is not included.
+Drag the handle above the joined side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag any of the four phone corners to resize proportionally. The connection arrow opens a panel over the screen; the window stays the same width. Hold Home to invoke Siri. Select a 15/30/60 FPS display target and view measured received/displayed frame rates in Connection. Volume and mute controls remain; audio streaming is not included.

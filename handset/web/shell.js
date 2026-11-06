@@ -1,6 +1,10 @@
 (() => {
   const arrow = document.querySelector('#drawer-toggle');
   const drawer = document.querySelector('#connection-drawer');
+  const fpsSelect = document.querySelector('#fps-target');
+  const saved = localStorage.getItem('pane-display-fps');
+  if (['15','30','60'].includes(saved)) fpsSelect.value = saved;
+  fpsSelect.addEventListener('change', () => localStorage.setItem('pane-display-fps', fpsSelect.value));
   let expanded = false;
   let aspect = 390 / 844;
   let native = false;
@@ -16,8 +20,9 @@
     document.body.classList.toggle('browser-mode', !native);
     for (const id of ['pin-window','minimize-window','maximize-window','close-window']) document.querySelector('#'+id).hidden = !native;
     drawer.hidden = !expanded;
+    if (expanded) keyboard.releaseAll();
     arrow.setAttribute('aria-expanded', String(expanded));
-    arrow.setAttribute('aria-label', expanded ? 'Close connection sidebar' : 'Open connection sidebar');
+    arrow.setAttribute('aria-label', expanded ? 'Close connection panel' : 'Open connection panel');
     arrow.title=arrow.getAttribute('aria-label');
     document.querySelector('#maximize-window').setAttribute('aria-label',state.maximized?'Restore window':'Maximize window');
     document.querySelector('#pin-window').setAttribute('aria-pressed', String(state.pinned));
@@ -52,11 +57,17 @@
     document.querySelector(`#${action}-window`).addEventListener('click', () => command(action).then(render).catch(() => {}));
   }
   window.addEventListener('message', event => {
-    if (event.origin !== location.origin || event.source !== document.querySelector('#screen-view').contentWindow || !['pane-display','pane-stream-status'].includes(event.data?.source)) return;
+    if (event.origin !== location.origin || event.source !== document.querySelector('#screen-view').contentWindow || !['pane-display','pane-stream-status','pane-video-stats'].includes(event.data?.source)) return;
+    if(event.data.source==='pane-video-stats'){
+      const s=event.data;
+      if([s.width,s.height,s.received,s.presented].every(Number.isFinite)) document.querySelector('#video-performance').textContent=`${s.width} × ${s.height} · received ${s.received.toFixed(1)} FPS · displayed ${s.presented.toFixed(1)} FPS · target ${fpsSelect.value}`;
+      return;
+    }
     if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':event.data.text;arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
     const { width, height } = event.data;
+    if (![width, height].every(value => Number.isInteger(value) && value > 0 && value <= 16384)) return;
     const next = width / height;
-    if (!Number.isFinite(next) || next < .35 || next > 2.5 || Math.abs(next - aspect) < .005) return;
+    if (!Number.isFinite(next) || next < .35 || next > 2.5 || Math.abs(next - aspect) < .000001) return;
     aspect = next;
     layout().catch(() => {});
   });
@@ -67,12 +78,25 @@
   cluster.addEventListener('pointerleave',()=>{menuTimer=setTimeout(()=>{cluster.classList.remove('menu-open');command('window-menu',{open:false}).catch(()=>{});},250);});
   cluster.addEventListener('focusin',()=>{cluster.classList.add('menu-open');command('window-menu',{open:true}).catch(()=>{});});
   let resizing=null, resizeBusy=false, wantedHeight=null;
-  const resizeGrip=document.querySelector('#resize-window');
-  resizeGrip.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();resizing={y:event.screenY,height:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--phone-height'))};resizeGrip.setPointerCapture(event.pointerId);});
-  async function flushResize(){resizeBusy=true;try{while(wantedHeight!==null){const height=wantedHeight;wantedHeight=null;render(await command('resize',{height}));}}finally{resizeBusy=false;}}
-  resizeGrip.addEventListener('pointermove',event=>{if(!resizing)return;wantedHeight=Math.max(360,Math.min(10000,resizing.height+event.screenY-resizing.y));if(!resizeBusy)flushResize().catch(()=>{});});
-  const endResize=()=>{resizing=null;};
-  resizeGrip.addEventListener('pointerup',endResize);resizeGrip.addEventListener('pointercancel',endResize);resizeGrip.addEventListener('lostpointercapture',endResize);
+  async function flushResize(){resizeBusy=true;try{while(wantedHeight!==null){const height=wantedHeight;wantedHeight=null;render(await command('resize',height));}}finally{resizeBusy=false;}}
+  document.querySelectorAll('[data-resize-corner]').forEach(corner=>{
+    corner.addEventListener('pointerdown',event=>{
+      if(event.button!==0)return;
+      event.preventDefault();
+      resizing={x:event.screenX,y:event.screenY,height:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--phone-height')),corner:corner.dataset.resizeCorner};
+      corner.setPointerCapture(event.pointerId);
+    });
+    corner.addEventListener('pointermove',event=>{
+      if(!resizing)return;
+      const dy=(event.screenY-resizing.y)*(resizing.corner.includes('n')?-1:1);
+      const dx=(event.screenX-resizing.x)*(resizing.corner.includes('w')?-1:1)/aspect;
+      wantedHeight={corner:resizing.corner,height:Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)))};
+      if(!resizeBusy)flushResize().catch(()=>{});
+    });
+    const end=()=>{resizing=null;};
+    corner.addEventListener('pointerup',end);corner.addEventListener('pointercancel',end);corner.addEventListener('lostpointercapture',end);
+  });
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&expanded)layout(false).catch(()=>{});});
 
   async function initialize() {
     // The browser can load before the launcher has attached the native shell.

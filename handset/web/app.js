@@ -49,15 +49,11 @@ const screenGeneration = window.createPaneGeneration();
 window.paneControl = window.createPaneControlQueue((path, payload) => postJson(`${MIRROR_API}${path}`, payload));
 let selectedUdid = null;
 let screenTimer = 0;
-// The 2.0 reset also clears old preferences in an external-browser fallback.
-if (localStorage.getItem('pane-state-schema') !== '2') {
-  localStorage.clear();
-  sessionStorage.clear();
-  localStorage.setItem('pane-state-schema', '2');
-}
 let transport = localStorage.getItem("handset-transport") === "wifi" ? "wifi" : "usb";
 let wifiPaired = [];
 let usbConnected = false;
+let connectionPhase = "idle";
+let connectionBusy = false;
 
 document.querySelectorAll("[data-transport]").forEach((btn) => {
   btn.addEventListener("click", () => setTransport(btn.dataset.transport));
@@ -86,8 +82,8 @@ function renderWifi() {
   wifiPair.disabled = !usbConnected;
   wifiPair.title = usbConnected ? "One-time setup over the cable" : "Plug in the cable once to set up Wi‑Fi";
   const setupNeeded = transport === 'wifi' ? !ready : !usbConnected;
-  document.querySelector('#setup-title').textContent = setupNeeded ? "Set up your iPhone" : 'Connection setup';
-  document.querySelector('#setup-card .eyebrow').textContent = setupNeeded ? 'SETUP NEEDED' : 'SETUP';
+  document.querySelector('#setup-title').textContent = setupNeeded ? "Let's get you connected." : 'Need a hand?';
+  document.querySelector('#setup-card .eyebrow').textContent = setupNeeded ? 'SETUP NEEDED' : 'HELP & SETUP';
 }
 
 async function setUpWifi() {
@@ -295,6 +291,7 @@ function renderDetail(device) {
 
 function renderScreen(screen) {
   if (!screen) return;
+  connectionPhase = screen.phase;
   if (screen.update) document.querySelector("#update-note").textContent = `Pane ${screen.update.version} · ${screen.update.note || screen.update.phase}`;
   const mirroring = screen.phase === "running";
   document.querySelectorAll(".rail-navigation button:not(#drawer-toggle)").forEach(button=>button.disabled=!mirroring);
@@ -307,9 +304,8 @@ function renderScreen(screen) {
     kbToggle.hidden = false;
     screenNote.textContent = screen.error || screen.note || "Mirroring — typing on your keyboard goes to the iPhone.";
     screenNote.className = "";
-    showScreen.textContent = "Mirroring…";
-    showScreen.disabled = selectedStream;
-    if (!selectedStream) showScreen.textContent = "Switch mirroring";
+    showScreen.textContent = "Disconnect";
+    showScreen.disabled = connectionBusy;
     if (screenView.getAttribute("src") !== MIRROR_PAGE) screenView.src = MIRROR_PAGE;
     screenView.hidden = false;
     return;
@@ -317,19 +313,19 @@ function renderScreen(screen) {
 
   workspace.classList.remove("is-live");
   phoneShell.classList.remove("live");
-  remotePanel.hidden = true;
+  remotePanel.hidden = false;
   restartScreen.hidden = true;
   kbToggle.hidden = true;
   screenView.hidden = true;
-  screenView.src = "about:blank";
-  showScreen.textContent = "Start mirroring";
+  if (screenView.getAttribute("src") !== "about:blank") screenView.src = "about:blank";
+  showScreen.textContent = "Connect";
   showScreen.disabled = false;
 
   if (screen.phase === "starting") {
     screenNote.textContent = screen.note || "Starting stream… keep the iPhone unlocked.";
     screenNote.className = "";
-    showScreen.disabled = true;
-    showScreen.textContent = "Connecting…";
+    showScreen.disabled = connectionBusy;
+    showScreen.textContent = "Disconnect";
     return;
   }
   if (screen.error) {
@@ -342,19 +338,26 @@ function renderScreen(screen) {
 }
 
 async function showPhone() {
+  if (connectionBusy) return;
+  const disconnect = ["running", "starting"].includes(connectionPhase);
+  connectionBusy = true;
   screenGeneration.next();
+  loadGeneration.next();
   window.clearTimeout(screenTimer);
   showScreen.disabled = true;
-  showScreen.textContent = "Connecting…";
+  showScreen.textContent = disconnect ? "Disconnecting…" : "Connecting…";
   try {
-    renderScreen(await postJson("/api/screen", { udid: selectedUdid, transport }));
-    watchScreen();
-    load();
+    if (disconnect) await keyboard.releaseAll();
+    const result = await postJson(disconnect ? "/api/screen/stop" : "/api/screen", disconnect ? {} : { udid: selectedUdid, transport });
+    connectionBusy = false;
+    renderScreen(result);
   } catch (error) {
     screenNote.textContent = error.message;
     screenNote.className = "warn";
-    showScreen.textContent = "Start mirroring";
+  } finally {
+    connectionBusy = false;
     showScreen.disabled = false;
+    showScreen.textContent = ["running", "starting"].includes(connectionPhase) ? "Disconnect" : "Connect";
     watchScreen();
   }
 }
@@ -400,6 +403,12 @@ async function postJson(url, payload) {
     headers: { "Content-Type": "application/json", "X-Pane-Token": await paneToken() },
     body: JSON.stringify(payload),
   });
+  // CoreDevice acknowledges HID commands with plain text ("ok").
+  if (url.startsWith(MIRROR_API + "/")) {
+    const message = await response.text();
+    if (!response.ok) throw new Error(message || `Phone control failed (${response.status})`);
+    return message;
+  }
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
   return body;
@@ -413,7 +422,7 @@ function mirrorMessage(cmd, extra = {}) {
 function reloadMirrorIframe() {
   if (screenView.hidden) return;
   const stamp = `t=${Date.now()}`;
-  screenView.src = "about:blank";
+  if (screenView.getAttribute("src") !== "about:blank") screenView.src = "about:blank";
   requestAnimationFrame(() => {
     screenView.src = `${MIRROR_PAGE}?${stamp}`;
   });
@@ -473,35 +482,46 @@ const GESTURES = {
 
 // A swipe-up injected over USB is too slow for iOS to treat as the Home
 // gesture, so Home and the app switcher use the Home button instead.
+let gestureChain = Promise.resolve();
+function queueGesture(name) {
+  gestureChain = gestureChain.then(async () => {
+    if (workspace.classList.contains("is-live")) await gesture(name);
+  }).catch(error => {
+    screenNote.textContent = error.message;
+    screenNote.className = "warn";
+  });
+  return gestureChain;
+}
+
 async function pressHome(times) {
   for (let i = 0; i < times; i++) {
     if (i) await sleep(120);
-    await mirrorPost("/button", { name: "home", state: "press" });
+    await window.paneControl("/button", { name: "home", state: "press" });
   }
 }
 
 async function gesture(name) {
+  if (name === "siri") {
+    return window.paneControl("/button", { name: "siri", state: "press" });
+  }
   if (name === "home") return pressHome(1);
   if (name === "switcher") return pressHome(2);
   const g = GESTURES[name];
   if (!g) return;
   const [x0, y0] = g.from;
   const [x1, y1] = g.to;
-  await mirrorPost("/touch", { type: "contact", x: x0, y: y0 });
-  for (let i = 1; i <= g.steps; i++) {
-    await sleep(g.dt);
-    const t = i / g.steps;
-    await mirrorPost("/touch", {
-      type: "contact",
-      x: Math.round(x0 + (x1 - x0) * t),
-      y: Math.round(y0 + (y1 - y0) * t),
-    });
+  try {
+    await window.paneControl("/touch", { type: "contact", x: x0, y: y0 });
+    for (let i = 1; i <= g.steps; i++) {
+      await sleep(g.dt);
+      const t = i / g.steps;
+      await window.paneControl("/touch", {
+        type: "contact", x: Math.round(x0 + (x1 - x0) * t), y: Math.round(y0 + (y1 - y0) * t),
+      });
+    }
+  } finally {
+    await window.paneControl("/touch", { type: "release", x: x1, y: y1 });
   }
-  if (g.hold) {
-    await sleep(g.hold);
-    await mirrorPost("/touch", { type: "contact", x: x1, y: y1 });
-  }
-  await mirrorPost("/touch", { type: "release", x: x1, y: y1 });
 }
 
 function toggleFullscreen() {
@@ -524,7 +544,7 @@ function setKeyboard(on) {
 
 const keyboard = window.HandsetKeys.attach({
   post: (payload) => mirrorPost("/key", payload),
-  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live"),
+  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live") && !document.body.classList.contains("drawer-open") && !document.body.classList.contains("onboarding-open"),
 });
 
 function wireRemoteControls() {
@@ -536,7 +556,35 @@ function wireRemoteControls() {
     if (btn) btn.blur();
   });
   document.querySelectorAll("[data-gesture]").forEach((btn) => {
-    btn.addEventListener("click", () => gesture(btn.dataset.gesture));
+    if (btn.dataset.gesture !== "home") {
+      btn.addEventListener("click", () => queueGesture(btn.dataset.gesture));
+      return;
+    }
+    let holdTimer, suppressClick = false;
+    const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+    btn.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || btn.disabled) return;
+      cancelHold(); suppressClick = false;
+      btn.setPointerCapture(event.pointerId);
+      holdTimer = setTimeout(() => {
+        holdTimer = null; suppressClick = true;
+        queueGesture("siri");
+      }, 600);
+    });
+    btn.addEventListener("pointerup", cancelHold);
+    btn.addEventListener("pointermove", event => {
+      if (!holdTimer) return;
+      const r = btn.getBoundingClientRect();
+      if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) {
+        cancelHold(); suppressClick = true;
+      }
+    });
+    for (const type of ["pointercancel", "lostpointercapture"]) btn.addEventListener(type, cancelHold);
+    window.addEventListener("blur", cancelHold);
+    btn.addEventListener("click", event => {
+      if (event.detail === 0 || !suppressClick) queueGesture("home");
+      suppressClick = false;
+    });
   });
   document.querySelector("#fullscreen")?.addEventListener("click", toggleFullscreen);
   document.querySelector("#fs-exit")?.addEventListener("click", toggleFullscreen);

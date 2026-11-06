@@ -169,7 +169,7 @@ def _run(process, package, initial):
         if not completed or result != 0:
             raise ValueError('Signing stopped before installation completed. Reconnect USB and retry.')
         from handset import setup
-        setup._set(phase='waiting', step='developer', installed=True, note='Pane installed. Enable Developer Mode, restart the iPhone, then check the app and bind USB & Wi-Fi.')
+        setup._set(phase='waiting', step='bind' if setup.status().get('developerEnabled') else 'developer', installed=True, note='Pane installed. Continue with USB and Wi-Fi binding.')
         _set(phase='complete', prompt=None, note='Pane installed. Complete Developer Mode and USB binding below. Use this same flow to renew before the app expires.')
     except Exception as error:
         if status()['phase'] != 'cancelled':

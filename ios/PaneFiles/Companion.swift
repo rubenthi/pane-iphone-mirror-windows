@@ -74,6 +74,10 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
         manager = CBPeripheralManager(delegate: self, queue: .main)
     }
 
+    func activatePendingUSB() {
+        if paneFileManager.fileExists(atPath: documents.appendingPathComponent("pane-pairing.json").path) { activateUSB() }
+    }
+
     func activateUSB() {
         do {
             let source = documents.appendingPathComponent("pane-pairing.json")

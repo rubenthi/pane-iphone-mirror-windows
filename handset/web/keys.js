@@ -38,9 +38,10 @@
       chain = chain.then(() => post({ usages: snapshot })).catch(() => {});
     };
     const releaseAll = () => {
-      if (!pressed.size) return;
+      if (!pressed.size) return chain;
       pressed.clear();
       flush();
+      return chain;
     };
 
     window.addEventListener(

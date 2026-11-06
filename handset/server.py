@@ -11,7 +11,7 @@ from urllib.parse import unquote, urlparse
 
 from handset.device import read_handset, snapshot
 from handset.mux import MuxError
-from handset.screen import restart_screen, screen_status, start_screen
+from handset.screen import restart_screen, screen_status, start_screen, stop_screen
 from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
 from handset import updater
@@ -138,6 +138,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self._companion_action(path, payload, udid))
             except (ValueError, OSError, MuxError) as error:
                 self._json({'error': str(error)}, status=400)
+            return
+        if path == "/api/screen/stop":
+            stop_screen()
+            self._json(screen_status())
             return
         if path == "/api/screen/restart":
             self._json(restart_screen(udid))
