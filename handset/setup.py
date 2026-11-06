@@ -43,6 +43,9 @@ def start(action, udid, package=None):
     if action not in {'start', 'check', 'install', 'bind'}:
         raise ValueError('Unknown setup action.')
     require_usb(udid)
+    from handset.signing import status as signing_status
+    if signing_status()['phase'] in {'working', 'prompt'}:
+        raise ValueError('Finish or cancel signing before another setup step.')
     if action == 'bind':
         from handset.bluetooth import bluetooth
         if bluetooth.status()['phase'] in {'connecting', 'connected'}:
@@ -67,7 +70,7 @@ def _run(action, udid, package):
             package.unlink(missing_ok=True)
 
 
-def inspect_ipa(path):
+def inspect_ipa(path, require_signed=True):
     with zipfile.ZipFile(path) as archive:
         infos = [i for i in archive.infolist() if i.filename.startswith('Payload/')
                  and i.filename.count('/') == 2 and i.filename.endswith('.app/Info.plist')]
@@ -77,7 +80,7 @@ def inspect_ipa(path):
         if info.get('PaneProtocolVersion') != 1 or info.get('CFBundleExecutable') != 'PaneFiles':
             raise ValueError('This IPA is not the Pane companion.')
         root = infos[0].filename.rsplit('/', 1)[0]
-        if root + '/embedded.mobileprovision' not in archive.namelist() or root + '/_CodeSignature/CodeResources' not in archive.namelist():
+        if require_signed and (root + '/embedded.mobileprovision' not in archive.namelist() or root + '/_CodeSignature/CodeResources' not in archive.namelist()):
             raise ValueError('This IPA is unsigned. Sign/install it with AltStore Classic, or export a development-signed IPA for this iPhone in Xcode.')
         return info['CFBundleIdentifier']
 

@@ -100,6 +100,56 @@
       if (id) await postJson('/api/uploads/cancel', {id}).catch(() => {});
     } finally { staging = false; event.target.value = ''; renderSetup(setupState); }
   });
+  let signingState = {}, signingStaging = false;
+  function renderSigning(state) {
+    signingState = state;
+    const busy = ['working', 'prompt'].includes(state.phase);
+    $('#signing-start').disabled = signingStaging || busy || !state.available || !usbConnected || !selectedUdid;
+    $('#signing-note').textContent = state.available ? state.note : 'This build does not include the Windows signing helper.';
+    $('#signing-cancel').hidden = !busy;
+    $('#signing-prompt').hidden = state.phase !== 'prompt';
+    if (state.prompt && $('#signing-prompt').dataset.id !== state.prompt.id) {
+      $('#signing-prompt').dataset.id = state.prompt.id;
+      $('#signing-code').value = '';
+      $('#signing-answer-label').hidden = state.prompt.kind === 'team';
+      $('#signing-answer').hidden = state.prompt.kind === 'team';
+      const choices = $('#signing-choices'); choices.replaceChildren();
+      const items = state.prompt.kind === 'team' ? state.prompt.choices.map(c => ({value:c.id, name:c.name || c.id}))
+        : [{value:'resend', name:'Resend code'}, {value:'devices', name:'Send to Apple devices'}, ...state.prompt.choices.map(c=>({value:`sms:${c.id}`,name:`Text ${c.name}`}))];
+      for (const item of items) {
+        const button = document.createElement('button'); button.type='button'; button.className='secondary'; button.textContent=item.name;
+        button.onclick=()=>submitSigningAnswer(item.value); choices.append(button);
+      }
+      if (state.prompt.kind !== 'team') $('#signing-code').focus();
+    }
+  }
+  async function submitSigningAnswer(value) {
+    try { renderSigning(await postJson('/api/signing/answer', {promptId:signingState.prompt?.id, value})); }
+    catch(error) { $('#signing-note').textContent=error.message; }
+  }
+  $('#signing-answer').onclick=()=>submitSigningAnswer($('#signing-code').value.trim());
+  $('#signing-cancel').onclick=async()=>renderSigning(await postJson('/api/signing/cancel',{}));
+  $('#signing-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const file=$('#signing-ipa').files[0];
+    signingStaging=true; renderSigning(signingState);
+    let id;
+    try {
+      if(file)id=await stage(file,'ipa',$('#signing-note'));
+      const payload={id,udid:selectedUdid,email:$('#signing-email').value,password:$('#signing-password').value};
+      $('#signing-password').value='';
+      try { renderSigning(await postJson('/api/signing/start',payload)); }
+      finally { payload.password=''; }
+    } catch(error) {
+      $('#signing-note').textContent=error.message;
+      if(id)await postJson('/api/uploads/cancel',{id}).catch(()=>{});
+    } finally { signingStaging=false; $('#signing-password').value=''; }
+  });
+  async function pollSigning() {
+    try { renderSigning(await getJson('/api/signing')); } catch(error) { $('#signing-note').textContent=error.message; }
+    setTimeout(pollSigning,1500);
+  }
+  pollSigning();
   $('#send-files').addEventListener('click', () => $('#outgoing-files').click());
   $('#outgoing-files').addEventListener('change', async event => {
     const files = [...event.target.files];

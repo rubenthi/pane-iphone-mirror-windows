@@ -6,7 +6,7 @@ import Combine
 private let commandID = CBUUID(string: "8a5d1001-7b44-4b1b-9bb6-a42e447a0001")
 private let responseID = CBUUID(string: "8a5d1002-7b44-4b1b-9bb6-a42e447a0001")
 private let fileLimit = 2 * 1024 * 1024 * 1024
-private let fileManager = FileManager.default
+private let paneFileManager = FileManager.default
 
 struct Pairing: Codable {
     let version: Int
@@ -51,8 +51,8 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     private var buffers: [UUID: Data] = [:]
     private var notifications: [(Data, CBCentral)] = []
     private var incoming: Incoming?
-    private let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    private let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    private let documents = paneFileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    private let support = paneFileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     private var sentFolder: URL { support.appendingPathComponent("Outbox") }
     private var inbox: URL { documents.appendingPathComponent("Received") }
     private var queueManifest: URL { support.appendingPathComponent("queue.json") }
@@ -60,10 +60,10 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     override init() {
         super.init()
         do {
-            try fileManager.createDirectory(at: sentFolder, withIntermediateDirectories: true)
-            try fileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
+            try paneFileManager.createDirectory(at: sentFolder, withIntermediateDirectories: true)
+            try paneFileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
             if let data = try? Data(contentsOf: queueManifest), let queue = try? JSONDecoder().decode([SharedFile].self, from: data) {
-                outgoing = queue.filter { fileManager.fileExists(atPath: sentFolder.appendingPathComponent($0.id).path) }
+                outgoing = queue.filter { paneFileManager.fileExists(atPath: sentFolder.appendingPathComponent($0.id).path) }
             }
             if let data = try? Data(contentsOf: support.appendingPathComponent("pairing.json")) {
                 pairing = try JSONDecoder().decode(Pairing.self, from: data)
@@ -85,7 +85,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
                 throw TransferError(message: "Invalid USB pairing. Bind again from your laptop.")
             }
             try data.write(to: support.appendingPathComponent("pairing.json"), options: [.atomic, .completeFileProtection])
-            try fileManager.removeItem(at: source)
+            try paneFileManager.removeItem(at: source)
             pairing = newPairing
             isPaired = true
             isConnected = false
@@ -109,10 +109,10 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
                 throw TransferError(message: "Choose a regular file up to 2 GB.")
             }
             do {
-                try fileManager.copyItem(at: source, to: destination)
+                try paneFileManager.copyItem(at: source, to: destination)
                 return SharedFile(id: id, name: source.lastPathComponent, size: size, sha256: try Self.hashFile(destination))
             } catch {
-                try? fileManager.removeItem(at: destination)
+                try? paneFileManager.removeItem(at: destination)
                 throw error
             }
         }.value
@@ -120,7 +120,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
         do { try saveQueue() }
         catch {
             outgoing.removeAll { $0.id == id }
-            try? fileManager.removeItem(at: destination)
+            try? paneFileManager.removeItem(at: destination)
             throw error
         }
         activity = "Queued \(file.name). Keep Pane open."
@@ -129,7 +129,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     func removeOutgoing(at offsets: IndexSet) {
         for index in offsets.sorted(by: >) {
             let item = outgoing.remove(at: index)
-            try? fileManager.removeItem(at: sentFolder.appendingPathComponent(item.id))
+            try? paneFileManager.removeItem(at: sentFolder.appendingPathComponent(item.id))
         }
         do { try saveQueue() } catch { activity = error.localizedDescription }
     }
@@ -139,9 +139,13 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     }
 
     func refreshReceived() {
-        received = ((try? fileManager.contentsOfDirectory(at: inbox, includingPropertiesForKeys: [.isRegularFileKey])) ?? [])
-            .filter { !$0.lastPathComponent.hasPrefix(".") && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
-            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        let candidates: [URL] = (try? paneFileManager.contentsOfDirectory(at: inbox, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+        let regularFiles = candidates.filter { url in
+            guard !url.lastPathComponent.hasPrefix(".") else { return false }
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+            return values?.isRegularFile == true
+        }
+        received = regularFiles.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
     private static func hashFile(_ url: URL) throws -> String {
@@ -282,7 +286,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
                 let file = outgoing.remove(at: index)
                 sendProgress.removeValue(forKey: file.id)
                 try saveQueue()
-                try? fileManager.removeItem(at: sentFolder.appendingPathComponent(file.id))
+                try? paneFileManager.removeItem(at: sentFolder.appendingPathComponent(file.id))
                 activity = "Saved \(file.name) to laptop Downloads."
             }
             return ["ok": true]
@@ -322,7 +326,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             let hash = current.hash.finalize().map { String(format: "%02x", $0) }.joined()
             guard hash == current.file.sha256 else { discardIncoming(); throw TransferError(message: "File verification failed. Send again.") }
             let destination = availableName(current.file.name)
-            try fileManager.moveItem(at: current.url, to: destination)
+            try paneFileManager.moveItem(at: current.url, to: destination)
             incoming = nil
             receiveProgress = nil
             refreshReceived()
@@ -334,7 +338,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     }
 
     private func discardIncoming() {
-        if let incoming { try? incoming.handle.close(); try? fileManager.removeItem(at: incoming.url) }
+        if let incoming { try? incoming.handle.close(); try? paneFileManager.removeItem(at: incoming.url) }
         incoming = nil
         receiveProgress = nil
     }
@@ -350,7 +354,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
         let base = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         var count = 1
-        while fileManager.fileExists(atPath: target.path) {
+        while paneFileManager.fileExists(atPath: target.path) {
             target = inbox.appendingPathComponent("\(base) (\(count))" + (ext.isEmpty ? "" : ".\(ext)"))
             count += 1
         }

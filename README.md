@@ -39,7 +39,7 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 - 🪟 **Single portable `Pane.exe`**: no Python installation required.
 - 🔒 **Local mirroring**: video and input stay on USB/your local network. Updates check this GitHub fork; initial developer-image setup may download Apple resources.
 
-## Pane 2.0: clean setup and file sharing
+## Pane 2.1: integrated signing, clean setup and file sharing
 
 Pane 2.0 resets its old application preferences, profiles, logs and saved app connections once when the update first launches. Personal files and shared Apple trust records are preserved. The iPhone volume controls remain; startup no longer lowers the volume and no sound is streamed to the PC.
 
@@ -47,7 +47,7 @@ The Connection sidebar now walks through USB trust, revealing Developer Mode, in
 
 See the [complete setup and signing guide](docs/companion-setup.md). GitHub Actions produces the [unsigned companion IPA](../../actions/workflows/companion.yml) for AltStore signing and the [Windows executable](../../actions/workflows/desktop-check.yml). A source update on main is not itself an installed laptop update. Automatic updates consume published release assets after checksum verification.
 
-The companion requires Apple signing (normally a free Apple Account through AltStore Classic, or a development-signed IPA exported from Xcode). Pane installs an already signed IPA over USB; it does not sign apps or collect Apple credentials. Free-account apps generally need refreshing every seven days. File sharing requires iOS 17+ and a Windows BLE adapter. The pinned screen-streaming library requires **iOS 27+**.
+The companion requires Apple signing, supported directly in Pane with a free or paid Apple Account. Pane can sign and install its companion using your Apple Account through its bundled isideload helper. Passwords are not saved; certificates and authentication-support data are encrypted with Windows DPAPI. Complete Windows builds include the unsigned Pane companion. Free-account apps generally need refreshing every seven days. File sharing requires iOS 17+ and a Windows BLE adapter. The pinned screen-streaming library requires **iOS 27+**.
 
 ## Tested devices and iOS versions
 
@@ -60,7 +60,7 @@ This repository is public and licensed under GPL-3.0: anyone can view or fork it
 1. Install the new Windows build, close any running older Pane process, and launch it. Pane clears its old state once.
 2. Install **Apple Devices** for the USB driver, connect the iPhone, unlock it and tap **Trust This Computer**.
 3. Open **Connection → iPhone setup** and choose **Initiate setup** to request the Developer Mode switch.
-4. Install Pane using a signed IPA or the AltStore path in the guide. Enable Developer Mode on the iPhone, restart the iPhone and confirm **Turn On**.
+4. Choose **Sign & install with Pane**, enter your Apple Account and complete verification. Enable Developer Mode on the iPhone, restart the iPhone and confirm **Turn On**.
 5. Reconnect USB. Choose **Check Developer Mode & app**, then **Bind USB & Wi-Fi**.
 6. In Pane, tap **Activate USB link** and allow Bluetooth. In Pane choose **Connect Bluetooth**.
 7. Use **Uploads** for files and **Start mirroring** for the phone screen. See [setup details and limitations](docs/companion-setup.md).
