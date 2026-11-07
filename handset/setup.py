@@ -123,7 +123,10 @@ async def _perform(action, udid, package):
             inspect_ipa(package)
             async with InstallationProxyService(lockdown) as installer:
                 await installer.install_from_local(package, handler=lambda progress: _set(note=f'Installing Pane: {progress}%'))
-            _set(phase='waiting', step='developer', installed=True, note='Pane installed. Enable Developer Mode and trust your developer profile on the iPhone if prompted. Restart and confirm, then check again.')
+            from handset.companion_update import invalidate
+            invalidate(udid)
+            already_bound = status().get('boundUdid') == udid
+            _set(phase='waiting', step='bluetooth' if already_bound else 'developer', installed=True, note='Pane updated. Open it on your iPhone; your existing pairing is preserved.' if already_bound else 'Pane installed. Enable Developer Mode and trust your developer profile on the iPhone if prompted. Restart and confirm, then check again.')
             return
         enabled = await lockdown.get_developer_mode_status()
         if not enabled:

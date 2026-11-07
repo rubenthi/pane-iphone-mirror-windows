@@ -26,6 +26,7 @@ jobs:
           node --check handset/web/icons.js
           node --check handset/web/experience.js
           node --check handset/web/selects.js
+          node --check handset/web/companion-update.js
           node --check handset/web/onboarding.js
           node --check handset/web/shell.js
           node --test tests/ui.test.cjs
@@ -37,6 +38,8 @@ jobs:
         run: npm run test:setup
       - name: Exercise compact menus and preferences
         run: npm run test:experience
+      - name: Exercise mobile-update startup popup
+        run: npm run test:companion-update
       - name: Exercise custom controls, visual states and zoom
         run: npm run test:visual
   native-tests:

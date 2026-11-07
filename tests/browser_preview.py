@@ -5,7 +5,8 @@ import sys
 import tempfile
 sys.path.insert(0, os.environ.get('PANE_TEST_SOURCE', str(Path(__file__).resolve().parents[1])))
 os.environ['PANE_DATA_DIR'] = tempfile.mkdtemp(prefix='Pane-browser-')
-from handset import server, transfers, setup
+from handset import server, transfers, setup, companion_update
+companion_update.list_devices = lambda: []
 try:
     from handset import notifications
 except ImportError:

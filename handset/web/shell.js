@@ -35,6 +35,7 @@
   async function layout(open = expanded) {
     render(await command('layout', { expanded: open, aspect }));
   }
+  window.paneOpenDrawer = () => layout(true);
   arrow.addEventListener('click', () => layout(!expanded).catch(() => {}));
   document.querySelector('#welcome-setup').addEventListener('click', async () => {
     await layout(true);

@@ -542,7 +542,7 @@ function setKeyboard(on) {
 
 const keyboard = window.HandsetKeys.attach({
   post: (payload) => mirrorPost("/key", payload),
-  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live") && !document.body.classList.contains("drawer-open") && !document.body.classList.contains("onboarding-open") && !document.body.classList.contains("tour-open"),
+  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live") && !document.body.classList.contains("drawer-open") && !document.body.classList.contains("onboarding-open") && !document.body.classList.contains("tour-open") && !document.querySelector("dialog[open]"),
 });
 
 function wireRemoteControls() {

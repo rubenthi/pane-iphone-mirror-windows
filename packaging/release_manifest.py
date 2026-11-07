@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from handset.version import REPOSITORY, VERSION
+from handset.companion_version import COMPANION_VERSION
 
 
 def validate_companion(path):
@@ -19,7 +20,7 @@ def validate_companion(path):
             or info.get('CFBundleExecutable') != 'PaneFiles'
             or info.get('PaneProtocolVersion') != 1):
         raise ValueError('Unexpected iPhone companion identity')
-    if info.get('CFBundleShortVersionString') != VERSION:
+    if info.get('CFBundleShortVersionString') != COMPANION_VERSION:
         raise ValueError('iPhone companion version mismatch')
     return info
 

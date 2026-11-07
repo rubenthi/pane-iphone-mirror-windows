@@ -14,7 +14,7 @@ from handset.mux import MuxError
 from handset.screen import restart_screen, screen_status, start_screen, stop_screen
 from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
-from handset import updater
+from handset import updater, companion_update
 from handset.window import shell
 from handset import setup, signing, notifications
 from handset.bluetooth import bluetooth
@@ -94,6 +94,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == '/api/signing':
             self._json(signing.status())
+            return
+        if path == '/api/companion-update':
+            self._json(companion_update.check())
             return
         if path == '/api/setup':
             self._json(setup.status())

@@ -171,3 +171,11 @@ The sidebar's **Keep notifications running** switch is off by default. If enable
 The Swift companion continues to provide foreground encrypted file transfers. System notifications use Apple's ANCS service; audio uses Windows A2DP reception. Neither feature is media capture or cross-app notification forwarding implemented inside the companion.
 
 **Performance:** the full stack has not been rewritten in Rust. The existing Rust signer, Swift companion and hardware-decoded video path are retained. Idle polling and window command traffic were reduced; a new bounded Rust worker handles optional background services. A language change alone does not demonstrate smaller storage, lower memory or faster mirroring. See [measurements and verification limits](docs/ux-efficiency-validation.md).
+
+### iPhone companion updates
+
+On opening Pane, a dismissible popup appears only when the bundled iPhone app is newer than a verified installed version. Disconnected phones use the last USB-verified version; unknown, missing or ambiguous installations never trigger a popup. Check manually in Settings > Setup & signing after connecting and unlocking the phone. Checks are read-only and use existing trust. The app-version query has a five-second timeout after USB discovery, and results are cached for 60 seconds. A failed current read clears the old version rather than claiming an update is needed.
+
+The update action opens the existing Install Pane section. It never signs in, installs, resets, or rebinds automatically. Use the same Apple Account and signing team to preserve the app identity and existing pairing. A desktop update does not install or renew the iPhone app.
+
+Release maintenance: change `handset/companion_version.py` (`COMPANION_VERSION`) and `ios/project.yml` together when releasing iPhone changes. Desktop-only releases change the desktop version without changing either mobile version, so they do not manufacture mobile-update prompts.

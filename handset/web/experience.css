@@ -1264,3 +1264,11 @@ details > summary:hover {
     transform: none;
   }
 }
+
+#companion-update-dialog { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 24px; width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; }
+#companion-update-dialog::backdrop { background: #0008; }
+#companion-update-dialog h2 { font-size: 22px; margin: 0 0 16px; }
+#companion-update-dialog p { line-height: 1.5; }
+.companion-update-settings { margin-bottom: 20px; }
+
+body:not(.browser-mode) #companion-update-dialog { width: min(380px, calc(var(--phone-width, 100vw) - 32px)); left: calc(var(--phone-width, 100vw) / 2); right: auto; margin-left: 0; margin-right: 0; transform: translateX(-50%); }

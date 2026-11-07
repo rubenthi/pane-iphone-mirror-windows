@@ -15,7 +15,7 @@ class CompanionReleaseTests(unittest.TestCase):
     def validate(self, **overrides):
         info = {'CFBundleIdentifier': 'io.github.rubenthi.PaneFiles',
                 'CFBundleExecutable': 'PaneFiles', 'PaneProtocolVersion': 1,
-                'CFBundleShortVersionString': release.VERSION, 'CFBundleVersion': '2'}
+                'CFBundleShortVersionString': release.COMPANION_VERSION, 'CFBundleVersion': '2'}
         info.update(overrides)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'Pane-unsigned.ipa'
@@ -24,7 +24,15 @@ class CompanionReleaseTests(unittest.TestCase):
             return release.validate_companion(path)
 
     def test_matching_companion_is_accepted(self):
-        self.assertEqual(self.validate()['CFBundleShortVersionString'], release.VERSION)
+        self.assertEqual(self.validate()['CFBundleShortVersionString'], release.COMPANION_VERSION)
+
+    def test_desktop_only_version_bump_does_not_change_mobile_requirement(self):
+        previous = release.VERSION
+        try:
+            release.VERSION = '99.0.0'
+            self.assertEqual(self.validate()['CFBundleShortVersionString'], release.COMPANION_VERSION)
+        finally:
+            release.VERSION = previous
 
     def test_stale_companion_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'version mismatch'):

@@ -75,3 +75,10 @@ The release candidate was prepared in a clean worktree on Zephyrus_G14, leaving 
 Release review found that an opted-in background helper could outlive a future executable upgrade. The worker now receives the desired content-addressed helper in session state, exits cooperatively when superseded, and lets its replacement wait for the lock without changing saved preferences or killing unrelated processes. Same-version workers are reused. New Python and Windows Rust lifecycle tests cover this behavior; CI must pass against the final commit before merge. Packaged smoke testing also starts the bundled native helper with disposable, radio-disabled state.
 
 The publication workflow now repeats setup, preferences, visual and native Rust tests before publishing a version. Physical iPhone audio, notification permission, signing/install and mirroring performance checks remain unverified. The Windows update does not itself install or renew the iPhone companion.
+
+
+### Startup iPhone-update prompt
+
+The final candidate adds a separate mobile version and a read-only trusted-USB installed-version check. Startup shows a dismissible dialog only for a known older version; disconnected phones use a per-phone verified cache, while unknown/current/newer/ambiguous versions remain quiet. Manual Settings checks never reopen the startup dialog. Successful installation invalidates stale metadata without changing the pairing or allowing a cache error to report installation failure. The dialog fits both the normal and small native phone region, with keyboard/focus and dismissal regression checks.
+
+Local validation now discovers 90 Python tests (one Windows symlink-privilege skip), passes 11 JavaScript tests and the setup, preferences and mobile-update browser flows. The iOS CI artifact was independently downloaded, checksum-verified and inspected: Pane 2.3.0, build 2, expected bundle identity and protocol 1. This is build verification, not an iPhone installation. At the release-preparation check, Apple's device service reported no connected iPhone; no physical signing/install or mobile version verification was performed.

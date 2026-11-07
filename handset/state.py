@@ -11,7 +11,7 @@ SCHEMA = 2
 # Never erase arbitrary PANE_DATA_DIR contents or shared Apple trust records.
 OWNED = ('signing', 'window', 'webview', 'device', 'staging', 'outbox', 'settings.json',
          'preferences.json', 'session.json', 'companion-status.json', 'native', 'companion.lock',
-         'binding.json', 'setup.json', 'transfers.json', 'pane.log', 'state-version.json')
+         'companion-version.json', 'binding.json', 'setup.json', 'transfers.json', 'pane.log', 'state-version.json')
 
 
 def write_json(path: Path, value) -> None:

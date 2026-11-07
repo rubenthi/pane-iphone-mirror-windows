@@ -7,3 +7,5 @@ Existing preferences, saved phone pairings, browser profiles and protected signi
 Automated checks cover Python and JavaScript behavior, browser setup and preferences, 34 visual/interaction states, Rust protocol tests, Windows native-window and installer/update behavior, packaged launch and iOS compilation. Physical iPhone audio/notification permissions, signing/install, live mirroring and whole-program performance are not claimed as hardware-verified.
 
 The matching Pane-unsigned.ipa is also included as a separate release asset. It is not directly installable: use Settings > Setup & signing in Pane on Windows with the iPhone connected by USB, or another supported signing tool. Use the same Apple Account/team to preserve the installed app identity and files.
+
+At PC startup, Pane shows an iPhone-update popup only when a USB-verified installed version, or its saved result for the same phone, is older than the bundled mobile app. The mobile version is tracked separately from PC releases. Unknown phone versions do not trigger an update popup; Settings offers a manual USB version check.
