@@ -47,7 +47,7 @@ Updates preserve existing preferences, browser profiles, signing data and saved 
 
 The custom native phone-shaped window and joined control rail from 1.7.4 are restored. The Connection panel overlays the phone screen without widening the window. A full setup guide opens automatically only when no saved phone pairing exists: USB trust, Developer Mode reveal and iPhone confirmation, installation of **Pane**, then USB/Wi-Fi/Bluetooth binding. The compact sidebar has **Connection**, **Uploads** and **Settings** tabs. Settings contains signing, display controls, audio and notification choices. **Uploads** sends files both ways over Bluetooth Low Energy. Incoming files are verified and saved to the laptop's Downloads folder without overwriting existing files. Keep the iPhone companion open during transfers.
 
-See the [complete setup and signing guide](docs/companion-setup.md). GitHub Actions produces the [unsigned companion IPA](../../actions/workflows/companion.yml) for AltStore signing and the [Windows executable](../../actions/workflows/desktop-check.yml). A source update on main is not itself an installed laptop update. Automatic updates check published releases at launch and every six hours while Pane stays open, retry after fifteen minutes on failure, and install the verified executable when Pane closes. Open Pane again to use the new version. Qualifying application, build, dependency, or release-workflow changes merged into main trigger a tested release with an automatically allocated desktop patch version. Documentation-only and tests-only changes do not publish. Explicit higher major/minor versions are preserved. See [the release workflow](docs/release-workflow.md) for versioning, independent iPhone versions, review gates, recovery, and update limits.
+Developers run Pane directly from the Windows checkout. Finished Windows builds are tested locally and uploaded to GitHub Releases. Installed copies check for updates at launch and every six hours, then install a verified update when Pane closes. See the [local development and release guide](docs/release-workflow.md) and [iPhone setup guide](docs/companion-setup.md).
 
 The companion requires Apple signing, supported directly in Pane with a free or paid Apple Account. Pane can sign and install its companion using your Apple Account through its bundled isideload helper. Passwords are not saved; certificates and authentication-support data are encrypted with Windows DPAPI. Complete Windows builds include the unsigned Pane companion. Free-account apps generally need refreshing every seven days. File sharing requires iOS 17+ and a Windows BLE adapter. The pinned screen-streaming library requires **iOS 27+**.
 
@@ -93,21 +93,21 @@ This repository is public and licensed under GPL-3.0: anyone can view or fork it
 - iPhone or iPad running **iOS / iPadOS 27 or newer** with Developer Mode enabled
 - Apple Devices app or iTunes (for the USB driver)
 
-## Run from source
+## Develop on Windows
+
+After the [one-time local setup](docs/release-workflow.md), open PowerShell in the checkout and run:
 
 ```powershell
-git clone https://github.com/rubenthi/pane-iphone-mirror-windows.git
-cd pane-iphone-mirror-windows
-pip install -r requirements.txt
-python -m handset.server      # then open http://127.0.0.1:8765
+.\.venv\Scripts\python.exe -m handset.app
 ```
 
-### Build the Windows EXE
+Close and reopen Pane to try your Python or UI changes. The source launcher uses your existing Pane settings. To compile, test and package the Windows executable locally, run:
 
 ```powershell
-pip install pyinstaller pillow
-powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # -> dist\Pane.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging/check-local.ps1
 ```
+
+The result is `dist/Pane.exe`. Uploading the finished files is a separate, explicit release step.
 
 ## How it works
 
