@@ -21,6 +21,7 @@ _DESKTOP_ACTIVE = False
 _MIRRORING = False
 _CACHED_HELPER = None
 _ERROR = None
+_NEXT_START = 0.0
 DEFAULTS = dict(background_enabled=False, notifications_enabled=False, show_previews=False,
                 audio_enabled=True, audio_device_id='', notification_device_id='',
                 categories=['calls', 'messages'], tour_complete=False)
@@ -116,8 +117,17 @@ def _helper():
     return target
 
 
+def _write_session(helper=None):
+    _write(data_dir() / 'session.json', {
+        'desktop_pid': os.getpid() if _DESKTOP_ACTIVE else 0,
+        'mirroring': _MIRRORING,
+        'desktop_executable': sys.executable if getattr(sys, 'frozen', False) else '',
+        'helper_executable': str(helper or _CACHED_HELPER or ''),
+    })
+
+
 def _ensure_running(prefs=None):
-    global _PROCESS, _ERROR
+    global _PROCESS, _ERROR, _NEXT_START
     prefs = prefs or preferences()
     needed = (prefs['notifications_enabled'] and (_DESKTOP_ACTIVE or prefs['background_enabled'])) or (prefs['audio_enabled'] and _MIRRORING)
     if not needed or (_PROCESS is not None and _PROCESS.poll() is None):
@@ -125,6 +135,16 @@ def _ensure_running(prefs=None):
     try:
         helper = _helper()
         if helper:
+            # Publish the requested version before starting its replacement.
+            # The old worker closes cooperatively without changing preferences.
+            _write_session(helper)
+            state = _read(data_dir() / 'companion-status.json', {})
+            if state.get('helper_executable') == str(helper) and _alive(state.get('pid')):
+                return
+            if (_PROCESS is not None and _PROCESS.poll() != 0
+                    and time.monotonic() < _NEXT_START):
+                return
+            _NEXT_START = time.monotonic() + 45
             _PROCESS = subprocess.Popen([str(helper), '--run', str(data_dir())], stdin=subprocess.DEVNULL,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                         creationflags=subprocess.CREATE_NO_WINDOW, close_fds=True)
@@ -142,7 +162,7 @@ def session(*, desktop=None, mirroring=None):
         if mirroring is not None:
             _MIRRORING = mirroring
         try:
-            _write(data_dir() / 'session.json', {'desktop_pid': os.getpid() if _DESKTOP_ACTIVE else 0, 'mirroring': _MIRRORING, 'desktop_executable': sys.executable if getattr(sys, 'frozen', False) else ''})
+            _write_session()
             if not (data_dir() / 'preferences.json').exists():
                 _write(data_dir() / 'preferences.json', preferences())
             _ensure_running()
@@ -187,6 +207,9 @@ def status():
     state = _read(data_dir() / 'companion-status.json', {})
     if not _alive(state.get('pid')):
         state = {}
+    if _PROCESS is not None and _PROCESS.poll() not in (None, 0):
+        state = {'audio': 'Bluetooth services could not restart. Close and reopen Pane to retry.',
+                 'notifications': 'Bluetooth services could not restart. Close and reopen Pane to retry.'}
     if _ERROR:
         state = {'audio': _ERROR, 'notifications': _ERROR}
     return {'available': available, **state}

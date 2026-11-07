@@ -31,6 +31,14 @@ def run(output):
         inspect_ipa(bundled_package(), require_signed=False)
         helper = subprocess.run([str(helper_path()), '--version'], capture_output=True, text=True, timeout=15, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         assert helper.returncode == 0 and 'pane-signer 2.1.0' in helper.stdout, 'Bundled signer did not start'
+        # Empty disposable state disables radio services while verifying the native
+        # worker and its runtime dependencies are present in the release bundle.
+        import tempfile
+        from handset.notifications import _source_helper
+        assert _source_helper().is_file(), 'Bundled Bluetooth helper is missing'
+        with tempfile.TemporaryDirectory(prefix='Pane-worker-smoke-') as directory:
+            subprocess.run([str(_source_helper()), '--run', directory], capture_output=True,
+                           timeout=15, check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         server = SingleServer(('127.0.0.1', 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -45,7 +53,7 @@ def run(output):
         finally:
             server.shutdown(); server.server_close(); thread.join(5)
         verify_native_window()
-        result = {'ok': True, 'version': VERSION, 'checks': ['dependency imports', 'bundled updater', 'HTTP UI', 'WebView2 renderer', 'native window region', 'drawer sizing', 'WebCodecs API']}
+        result = {'ok': True, 'version': VERSION, 'checks': ['dependency imports', 'bundled signer and Bluetooth worker', 'bundled updater', 'HTTP UI', 'WebView2 renderer', 'native window region', 'drawer sizing', 'WebCodecs API']}
     except Exception as error:
         import traceback
         result['error'] = str(error)

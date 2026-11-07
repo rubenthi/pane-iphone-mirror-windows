@@ -66,3 +66,12 @@ The later visual refinement adds a 34-state browser review covering the three ta
 Direct `https://www.rubenthi.com/` access was denied by the cloud network proxy (403 CONNECT), and the web reader also failed. No access bypass was attempted. The user subsequently supplied verified screenshot palette samples from the published ChatGPT Site, and the Sites connector confirmed the matching portfolio. The desktop dark-teal/ivory/sage palette adapts those samples; they are not claimed to be source CSS tokens. See `docs/design-details.md` for the mapping and typography.
 
 The system developer label belongs to Apple's signing identity. App UI changes cannot hide that email/name from iOS trust screens. A different suitable identity or supported distribution route requires account/distribution work; existing credentials were preserved. No account or signing identity was changed.
+
+
+## 2.3.0 release preparation (2026-11-07)
+
+The release candidate was prepared in a clean worktree on Zephyrus_G14, leaving the older checkout and saved user state intact. Windows and iOS version metadata now identify 2.3.0. Local checks passed 73 Python tests with one existing platform/dependency skip, 11 JavaScript tests, setup and preference browser flows, all 34 visual states, native WinForms/WebView2 window checks, and the installer/update suite. The browser fixture now isolates both imported references to saved Wi-Fi pairings so the user's existing phone records do not alter test onboarding.
+
+Release review found that an opted-in background helper could outlive a future executable upgrade. The worker now receives the desired content-addressed helper in session state, exits cooperatively when superseded, and lets its replacement wait for the lock without changing saved preferences or killing unrelated processes. Same-version workers are reused. New Python and Windows Rust lifecycle tests cover this behavior; CI must pass against the final commit before merge. Packaged smoke testing also starts the bundled native helper with disposable, radio-disabled state.
+
+The publication workflow now repeats setup, preferences, visual and native Rust tests before publishing a version. Physical iPhone audio, notification permission, signing/install and mirroring performance checks remain unverified. The Windows update does not itself install or renew the iPhone companion.

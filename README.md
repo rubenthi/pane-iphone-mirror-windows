@@ -43,7 +43,7 @@ It is an alternative to paid tools such as ApowerMirror, LonelyScreen, Reflector
 
 See the [update history](CHANGELOG.md) for what each version adds, how automatic updates work, and behavior changes.
 
-Updates preserve existing preferences, browser profiles, signing data and saved phone pairings. A reset happens only when explicitly requested with `Pane.exe --reset`. The iPhone volume controls remain; startup never lowers the volume. This source branch adds optional Bluetooth audio and system notifications; radio behavior still requires the hardware checks below.
+Updates preserve existing preferences, browser profiles, signing data and saved phone pairings. A reset happens only when explicitly requested with `Pane.exe --reset`. The iPhone volume controls remain; startup never lowers the volume. Pane 2.3.0 adds optional Bluetooth audio and system notifications; radio behavior still requires the hardware checks below.
 
 The custom native phone-shaped window and joined control rail from 1.7.4 are restored. The Connection panel overlays the phone screen without widening the window. A full setup guide opens automatically only when no saved phone pairing exists: USB trust, Developer Mode reveal and iPhone confirmation, installation of **Pane**, then USB/Wi-Fi/Bluetooth binding. The compact sidebar has **Connection**, **Uploads** and **Settings** tabs. Settings contains signing, display controls, audio and notification choices. **Uploads** sends files both ways over Bluetooth Low Energy. Incoming files are verified and saved to the laptop's Downloads folder without overwriting existing files. Keep the iPhone companion open during transfers.
 
@@ -160,7 +160,7 @@ See [1.2.1 release validation](docs/release-validation-1.2.1.md) for published c
 Drag the handle above the joined side controls to move Pane. Hover it to reveal minimize, maximize/restore and close. Drag any of the four phone corners to resize proportionally. The connection arrow opens a panel over the screen; the window stays the same width. Hold Home to invoke Siri. Select a 15/30/60 FPS display target and view measured received/displayed frame rates in Settings → Display & controls. Volume and mute controls remain; optional Bluetooth audio uses a separate Windows receiver.
 
 
-### Bluetooth audio, notifications and background mode (source changes)
+### Bluetooth audio, notifications and background mode
 
 In **Settings → Bluetooth audio**, pair your iPhone with your Zephyrus in Windows, refresh devices and select it. Audio reception is on by default after selecting a phone and starts only while mirroring. On first use, select the PC in the iPhone audio output menu. Windows cannot force iOS to change its default route; availability depends on the Bluetooth adapter and Windows 10 version 2004 or newer. Calls and microphone routing are not promised.
 

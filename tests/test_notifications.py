@@ -17,7 +17,7 @@ class NotificationPreferencesTests(unittest.TestCase):
         env = patch.dict(os.environ, {'PANE_DATA_DIR': self.directory.name})
         env.start()
         self.addCleanup(env.stop)
-        for name, value in [('_PROCESS', None), ('_CACHED_HELPER', None), ('_ERROR', None), ('_DESKTOP_ACTIVE', False), ('_MIRRORING', False)]:
+        for name, value in [('_PROCESS', None), ('_NEXT_START', 0.0), ('_CACHED_HELPER', None), ('_ERROR', None), ('_DESKTOP_ACTIVE', False), ('_MIRRORING', False)]:
             mock = patch.object(n, name, value)
             mock.start()
             self.addCleanup(mock.stop)
@@ -94,3 +94,43 @@ class NotificationPreferencesTests(unittest.TestCase):
         self.assertFalse(old.exists())
         self.assertEqual((kept / 'notes.txt').read_text(), 'preserve me')
         self.assertTrue((unknown / 'PaneCompanion.exe').exists())
+
+    def test_upgrade_publishes_helper_before_launch_without_changing_preferences(self):
+        root = Path(self.directory.name)
+        n._DESKTOP_ACTIVE = True
+        n._write(root / 'preferences.json', {**n.DEFAULTS, 'notifications_enabled': True,
+                                            'background_enabled': True})
+        before = (root / 'preferences.json').read_bytes()
+        helper = root / 'native' / ('c' * 20) / 'PaneCompanion.exe'
+        process = SimpleNamespace(poll=lambda: None)
+        def launch(*args, **kwargs):
+            state = json.loads((root / 'session.json').read_text())
+            self.assertEqual(state['helper_executable'], str(helper))
+            self.assertEqual(state['desktop_pid'], os.getpid())
+            return process
+        with patch.object(n, '_helper', return_value=helper), patch.object(n.subprocess, 'Popen', side_effect=launch) as spawn:
+            n._ensure_running()
+            n._ensure_running()
+        spawn.assert_called_once()
+        self.assertEqual((root / 'preferences.json').read_bytes(), before)
+
+    def test_same_version_background_worker_is_reused(self):
+        root = Path(self.directory.name)
+        helper = root / 'PaneCompanion.exe'
+        n._write(root / 'companion-status.json', {'pid': 42, 'helper_executable': str(helper)})
+        with patch.object(n, '_helper', return_value=helper), patch.object(n, '_alive', return_value=True), patch.object(n.subprocess, 'Popen') as spawn:
+            n._ensure_running({**n.DEFAULTS, 'notifications_enabled': True, 'background_enabled': True})
+        spawn.assert_not_called()
+
+    def test_failed_replacement_is_rate_limited_but_normal_restart_is_not(self):
+        helper = Path(self.directory.name) / 'PaneCompanion.exe'
+        prefs = {**n.DEFAULTS, 'notifications_enabled': True, 'background_enabled': True}
+        n._NEXT_START = 100
+        n._PROCESS = SimpleNamespace(poll=lambda: 1)
+        with patch.object(n, '_helper', return_value=helper), patch.object(n.time, 'monotonic', return_value=90), patch.object(n.subprocess, 'Popen') as spawn:
+            n._ensure_running(prefs)
+            spawn.assert_not_called()
+            self.assertIn('could not restart', n.status()['notifications'])
+            n._PROCESS = SimpleNamespace(poll=lambda: 0)
+            n._ensure_running(prefs)
+            spawn.assert_called_once()

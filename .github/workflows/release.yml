@@ -46,6 +46,12 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: node --test tests/ui.test.cjs tests/hevc.test.cjs tests/stream.test.cjs
       - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run test:setup
+      - run: npm run test:experience
+      - run: npm run test:visual
+      - run: cargo fmt --check --manifest-path native/Cargo.toml
+      - run: cargo test --locked --manifest-path native/Cargo.toml
       - run: npm run test:native
       - run: |
           node --check handset/web/app.js
@@ -55,6 +61,8 @@ jobs:
           node --check handset/web/hevc.js
           node --check handset/web/onboarding.js
           node --check handset/web/setup.js
+          node --check handset/web/experience.js
+          node --check handset/web/selects.js
           node --check handset/web/stream.js
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/install_update.tests.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1

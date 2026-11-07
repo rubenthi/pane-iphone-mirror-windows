@@ -2,6 +2,16 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.3.0 - Compact controls and optional Bluetooth services
+
+- Adds compact Connection, Uploads and Settings navigation, dark teal controls, locally bundled typography, accessible custom dropdowns, clearer required setup steps and a replayable feature tour.
+- Retains the phone-shaped native window, joined control island, blue Pane icon, volume/Siri/keyboard controls and frame-rate choices. Coalesces drag/resize commands and reduces idle status polling.
+- Adds optional Windows Bluetooth audio reception while mirroring and category-filtered iPhone system notifications. Background notification mode and message previews default off. iOS still controls audio routing and notification permissions.
+- Preserves existing preferences, saved phone pairings, browser profiles and protected signing data. Includes the 2.2.1 USB reconnect fix. Updates install on normal close; reopen Pane to use the new version.
+- Bundles the 2.3.0 iPhone companion. Installing or renewing it remains a separate signing step, not an automatic effect of the Windows update.
+
+Automated Windows, browser, Rust and iOS checks cover the supported build and update paths. Physical iPhone Bluetooth/audio/notification/signing behavior and whole-program performance still need device acceptance testing. See [verification scope](docs/ux-efficiency-validation.md).
+
 ## 2.2.1 — Enable installation after USB reconnection
 
 - Fixes the greyed-out Sign & install button when the phone is plugged in or reconnects after Developer Mode setup. The guide now refreshes the USB status used by signing.

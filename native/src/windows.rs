@@ -53,6 +53,8 @@ struct Session {
     mirroring: bool,
     #[serde(default)]
     desktop_executable: String,
+    #[serde(default)]
+    helper_executable: String,
 }
 enum Event {
     Config,
@@ -108,7 +110,7 @@ struct Status {
 }
 impl Status {
     fn save(&self, dir: &Path) {
-        let body = serde_json::json!({"pid":std::process::id(),"audio":self.audio,"notifications":self.notifications});
+        let body = serde_json::json!({"pid":std::process::id(),"audio":self.audio,"notifications":self.notifications,"helper_executable":std::env::current_exe().ok()});
         // This file contains state only, never notification titles, bodies or device IDs.
         if let Ok(bytes) = serde_json::to_vec(&body) {
             let _ = fs::write(dir.join("companion-status.json"), bytes);
@@ -379,6 +381,9 @@ struct Request {
     buffer: AttributeBuffer,
     deadline: tokio::time::Instant,
 }
+fn helper_superseded(session: &Session, executable: &Path) -> bool {
+    !session.helper_executable.is_empty() && Path::new(&session.helper_executable) != executable
+}
 async fn worker(dir: PathBuf) -> Result<()> {
     fs::create_dir_all(&dir)?;
     let lock = fs::OpenOptions::new()
@@ -387,8 +392,30 @@ async fn worker(dir: PathBuf) -> Result<()> {
         .create(true)
         .truncate(false)
         .open(dir.join("companion.lock"))?;
-    if lock.try_lock_exclusive().is_err() {
-        return Ok(());
+    let executable = std::env::current_exe()?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(40);
+    loop {
+        let desired: Session = read(&dir.join("session.json"));
+        if helper_superseded(&desired, &executable) {
+            return Ok(());
+        }
+        if lock.try_lock_exclusive().is_ok() {
+            break;
+        }
+        // Keep the same-version singleton. An upgrade waits for cooperative
+        // shutdown, never killing a process or changing saved preferences.
+        let status: serde_json::Value = read(&dir.join("companion-status.json"));
+        if status
+            .get("helper_executable")
+            .and_then(|v| v.as_str())
+            .is_some_and(|path| Path::new(path) == executable)
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("Timed out waiting for the previous Bluetooth worker to close.".into());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let (tx, mut rx) = mpsc::channel(64);
     let config_changed = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -409,6 +436,9 @@ async fn worker(dir: PathBuf) -> Result<()> {
     let mut status = Status::default();
     let mut prefs: Preferences = read(&dir.join("preferences.json"));
     let mut session: Session = read(&dir.join("session.json"));
+    if helper_superseded(&session, &executable) {
+        return Ok(());
+    }
     // Audio remains available if Windows blocks notification registration.
     if prefs.notifications_enabled {
         let _ = register_toasts(&session.desktop_executable);
@@ -581,6 +611,9 @@ async fn worker(dir: PathBuf) -> Result<()> {
             }
             Event::Config => {
                 let next: Session = read(&dir.join("session.json"));
+                if helper_superseded(&next, &executable) {
+                    break;
+                }
                 if next.desktop_pid != session.desktop_pid && alive(next.desktop_pid) {
                     parent_exit(next.desktop_pid, tx.clone());
                 }
@@ -707,4 +740,89 @@ pub fn run() -> Result<()> {
         return runtime.block_on(worker(PathBuf::from(path)));
     }
     Err("Use --devices or --run <Pane data directory>.".into())
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_different_requested_helper_replaces_the_worker() {
+        let current = Path::new(r"C:\Pane\native\old\PaneCompanion.exe");
+        let mut session = Session::default();
+        assert!(!helper_superseded(&session, current));
+        session.helper_executable = current.to_string_lossy().into_owned();
+        assert!(!helper_superseded(&session, current));
+        session.helper_executable = r"C:\Pane\native\new\PaneCompanion.exe".into();
+        assert!(helper_superseded(&session, current));
+    }
+
+    #[test]
+    fn singleton_and_cooperative_lock_handover() {
+        let dir = std::env::temp_dir().join(format!(
+            "pane-lock-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let executable = std::env::current_exe().unwrap();
+        fs::write(
+            dir.join("session.json"),
+            serde_json::json!({
+                "desktop_pid": 0, "mirroring": false, "helper_executable": executable
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(dir.join("companion.lock"))
+            .unwrap();
+        lock.try_lock_exclusive().unwrap();
+        fs::write(
+            dir.join("companion-status.json"),
+            serde_json::json!({
+                "helper_executable": executable
+            })
+            .to_string(),
+        )
+        .unwrap();
+        runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(2), worker(dir.clone()))
+                .await
+                .unwrap()
+                .unwrap();
+        });
+        // A different version must wait for the owner rather than exit early.
+        fs::write(
+            dir.join("companion-status.json"),
+            r#"{"helper_executable":"old.exe"}"#,
+        )
+        .unwrap();
+        runtime.block_on(async {
+            let replacement = worker(dir.clone());
+            tokio::pin!(replacement);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(200), &mut replacement)
+                    .await
+                    .is_err()
+            );
+            drop(lock);
+            tokio::time::timeout(Duration::from_secs(3), replacement)
+                .await
+                .unwrap()
+                .unwrap();
+        });
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

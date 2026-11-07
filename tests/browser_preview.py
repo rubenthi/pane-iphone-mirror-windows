@@ -5,7 +5,7 @@ import sys
 import tempfile
 sys.path.insert(0, os.environ.get('PANE_TEST_SOURCE', str(Path(__file__).resolve().parents[1])))
 os.environ['PANE_DATA_DIR'] = tempfile.mkdtemp(prefix='Pane-browser-')
-from handset import server, transfers
+from handset import server, transfers, setup
 try:
     from handset import notifications
 except ImportError:
@@ -15,6 +15,8 @@ else:
 transfers._STORE = transfers.TransferStore(Path(os.environ['PANE_DATA_DIR']), Path(os.environ['PANE_DATA_DIR']) / 'Downloads')
 server.snapshot = lambda: {'driver': {'ready': True}, 'library': {'ready': True}, 'devices': [], 'developerMode': None, 'error': None}
 server.wifi_paired_udids = lambda: []
+# Setup imports its own reference; saved host pairings must not affect fixtures.
+setup.wifi_paired_udids = lambda: []
 http = server.SingleServer(('127.0.0.1', int(os.environ.get('PANE_TEST_PORT', '0'))), server.Handler)
 print(f'ready http://127.0.0.1:{http.server_port}', flush=True)
 try:
