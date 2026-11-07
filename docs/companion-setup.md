@@ -46,7 +46,7 @@ The CI build compiles the iPhone app without signing and packages `Pane-unsigned
 
 ## Verification boundaries
 
-Automated tests exercise reset safety, authenticated HTTP actions, file limits/names, chunk ordering, checksums, duplicate names, disconnect cleanup, BLE framing and the browser setup/Uploads flow. GitHub Actions builds the iPhone companion and the Windows executable. These checks do not establish physical Bluetooth throughput, USB installation acceptance, signing eligibility, device prompts or iOS 27 mirroring compatibility. Test those on a Windows BLE-capable laptop with a physical iPhone before treating the full setup as hardware verified.
+Automated tests exercise reset safety, authenticated HTTP actions, file limits/names, chunk ordering, checksums, duplicate names, disconnect cleanup, BLE framing and the browser setup/Uploads flow. The Windows executable is built locally. A manual macOS build is available for iPhone source changes. These checks do not establish physical Bluetooth throughput, USB installation acceptance, signing eligibility, device prompts or iOS 27 mirroring compatibility. Test those on a Windows BLE-capable laptop with a physical iPhone before treating the full setup as hardware verified.
 
 
 ## Developer identity shown by iOS

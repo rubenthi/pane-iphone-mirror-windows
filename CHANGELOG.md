@@ -2,6 +2,10 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.3.2 - Local Windows development and releases
+
+Pane now runs from the developer's Windows checkout. The Windows executable and native helpers are compiled and tested on the laptop before the finished files are uploaded to GitHub Releases. The installer and updater still use the published release. This desktop release includes the same 2.3.0 iPhone companion as 2.3.1.
+
 ## 2.3.0 - Compact controls and optional Bluetooth services
 
 - Adds compact Connection, Uploads and Settings navigation, dark teal controls, locally bundled typography, accessible custom dropdowns, clearer required setup steps and a replayable feature tour.

@@ -73,7 +73,9 @@ class NotificationPreferencesTests(unittest.TestCase):
         self.assertIn('could not start', n.status()['notifications'])
 
     def test_reset_disables_background_before_deleting_owned_state(self):
-        n.save({'background_enabled': True, 'notifications_enabled': True})
+        # A prebuilt local worker would otherwise start and lock the temp folder.
+        with patch.object(n, '_helper', return_value=None):
+            n.save({'background_enabled': True, 'notifications_enabled': True})
         with patch.object(n, '_alive', return_value=False):
             n.stop_for_reset()
         self.assertFalse(n.preferences()['background_enabled'])
