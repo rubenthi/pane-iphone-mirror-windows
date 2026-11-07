@@ -17,6 +17,10 @@ class NotificationPreferencesTests(unittest.TestCase):
         env = patch.dict(os.environ, {'PANE_DATA_DIR': self.directory.name})
         env.start()
         self.addCleanup(env.stop)
+        # The native launch is mocked; Linux does not define this Windows flag.
+        flag = patch.object(n.subprocess, 'CREATE_NO_WINDOW', 0, create=True)
+        flag.start()
+        self.addCleanup(flag.stop)
         for name, value in [('_PROCESS', None), ('_NEXT_START', 0.0), ('_CACHED_HELPER', None), ('_ERROR', None), ('_DESKTOP_ACTIVE', False), ('_MIRRORING', False)]:
             mock = patch.object(n, name, value)
             mock.start()
