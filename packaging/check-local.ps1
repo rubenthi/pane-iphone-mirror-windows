@@ -2,6 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $previousPath = $env:Path
+$previousTestPython = $env:PANE_TEST_PYTHON
 Push-Location $root
 function Run([string]$program, [string[]]$arguments) {
     & $program @arguments
@@ -16,6 +17,7 @@ try {
     $before = git status --porcelain
     if ($LASTEXITCODE) { throw 'Cannot read the working tree.' }
     $env:Path = "$root\.venv\Scripts;$env:Path"
+    $env:PANE_TEST_PYTHON = "$root\.venv\Scripts\python.exe"
     Run python @('-m','unittest','discover','-s','tests','-v')
     Get-ChildItem handset/web/*.js | ForEach-Object { Run node @('--check',$_.FullName) }
     Run npm.cmd @('test')
@@ -46,5 +48,6 @@ try {
     Write-Host "Verified local Pane $version in $root\dist"
 } finally {
     $env:Path = $previousPath
+    $env:PANE_TEST_PYTHON = $previousTestPython
     Pop-Location
 }
