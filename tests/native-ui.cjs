@@ -113,6 +113,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.getByRole('button',{name:'Maximize window',exact:true}).waitFor({state:'visible'});
     assert.equal(await page.locator('.rail-button[aria-label="Volume up"]').getAttribute('title'),'Volume up');
     await page.getByRole('button',{name:'Maximize window',exact:true}).click();
+    // Resizing moves the hover menu away from the pointer on larger monitors.
+    await page.waitForFunction(async () => {
+      const state = await getJson('/api/window');
+      return state.maximized && innerWidth === state.width && innerHeight === state.height;
+    });
+    await page.locator('.rail-grip').hover();
     await page.getByRole('button',{name:'Restore window',exact:true}).click();
     await page.waitForFunction(h=>innerHeight===h,compact.height);
     await page.waitForFunction(h=>document.querySelector('.workspace').getBoundingClientRect().height===h,compact.height);
