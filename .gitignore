@@ -16,3 +16,6 @@ ios/*.ipa
 
 signer/target/
 signer/pane-signer*
+
+native/target/
+work/

@@ -82,6 +82,16 @@ class ServerSecurityTests(unittest.TestCase):
         self.assertEqual(self.request('GET', '/api/signing')[0], 403)
         self.assertEqual(self.request('GET', '/api/uploads')[0], 403)
 
+    def test_bluetooth_preferences_require_same_origin_token(self):
+        for method, path in [('GET', '/api/preferences'), ('POST', '/api/preferences'),
+                             ('GET', '/api/bluetooth/devices'), ('POST', '/api/bluetooth/settings')]:
+            with self.subTest(method=method, path=path):
+                self.assertEqual(self.request(method, path)[0], 403)
+        status, _, _ = self.request('POST', '/api/preferences', {
+            'X-Pane-Token': ACCESS_TOKEN, 'Content-Type': 'application/json',
+        }, b'{"background_enabled":"false"}')
+        self.assertEqual(status, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

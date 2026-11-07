@@ -26,3 +26,19 @@ test('late responses from previous selections are ignored', () => {
   assert.equal(generations.current(old), false);
   assert.equal(generations.current(latest), true);
 });
+
+test('window movement drops obsolete positions without losing the final position', async () => {
+  const seen = [], rendered = []; let release;
+  const gate = new Promise(resolve => release = resolve);
+  const queue = context.window.createPaneLatestQueue(async p => { seen.push(p.x); if (p.x === 1) await gate; return p; }, p => rendered.push(p.x));
+  const first = queue({x:1});
+  for (let x = 2; x <= 100; x++) queue({x});
+  release(); await first;
+  assert.deepEqual(seen,[1,100]); assert.deepEqual(rendered,[100]);
+  await queue({x:101}); assert.deepEqual(rendered,[100,101]);
+});
+test('geometry queue recovers from native errors', async () => {
+  let fail = true;
+  const queue = context.window.createPaneLatestQueue(async () => { if (fail) throw new Error('native failure'); });
+  await assert.rejects(queue({x:1})); fail = false; await queue({x:2});
+});

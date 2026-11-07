@@ -11,7 +11,8 @@ import webview
 webview.settings['REMOTE_DEBUGGING_PORT'] = 18777
 from handset.state import DATA_DIR, write_json
 write_json(DATA_DIR / 'binding.json', {'udid': 'saved-phone', 'token': 'test'})
-from handset import server, app
+from handset import server, app, companion_update
+companion_update.list_devices = lambda: []
 server.snapshot = lambda: {'driver': {'ready': True}, 'library': {'ready': True}, 'devices': [], 'developerMode': None, 'error': None}
 server.wifi_paired_udids = lambda: []
 # Query the real HWND region, not just CSS or our intended geometry.

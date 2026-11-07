@@ -28,10 +28,12 @@ struct ContentView: View {
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var importing = false
-    @State private var showConnectionSetup = true
+    @State private var showConnectionSetup = false
     @Environment(\.scenePhase) private var scenePhase
 
-    private let accent = Color(red: 0.39, green: 0.47, blue: 0.82)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private let accent = Color(red: 0.12, green: 0.48, blue: 0.9)
 
     var body: some View {
         NavigationStack {
@@ -41,6 +43,7 @@ struct ContentView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "laptopcomputer.and.iphone")
                                 .font(.system(size: 24, weight: .light))
+                                .symbolEffect(.bounce, value: reduceMotion ? false : companion.isConnected)
                                 .foregroundStyle(accent)
                                 .frame(width: 42, height: 42)
                                 .background(accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -66,6 +69,7 @@ struct ContentView: View {
                             }.padding(.top, 8)
                         }.font(.footnote.weight(.medium))
                     }.padding(.vertical, 6)
+                        .listRowBackground(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
                 }
                 Section {
                     HStack(spacing: 12) {
@@ -141,15 +145,33 @@ struct ContentView: View {
                     }
                 }
             }
-            .task {
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
                 while !Task.isCancelled {
                     companion.activatePendingUSB()
                     try? await Task.sleep(for: .seconds(2))
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background {
+                LinearGradient(colors: [accent.opacity(0.14), Color(uiColor: .systemGroupedBackground), accent.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
+            }
+            .onAppear { showConnectionSetup = !companion.isPaired }
+            .onChange(of: companion.isPaired) { _, paired in
+                if paired { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showConnectionSetup = false } }
+            }
             .navigationTitle("Pane")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        Image("PaneMark").resizable().frame(width: 25, height: 25).accessibilityHidden(true)
+                        Text("Pane").font(.headline)
+                    }
+                }
+            }
             .tint(accent)
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 switch result {

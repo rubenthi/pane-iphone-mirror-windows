@@ -15,7 +15,7 @@
     tab.addEventListener('keydown', event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
-      const next = tabs[event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + 1) % tabs.length];
+      const next = tabs[event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? tabs.length - 1 : 1)) % tabs.length];
       selectTab(next); next.focus();
     });
   }
@@ -147,11 +147,7 @@
       if(id)await postJson('/api/uploads/cancel',{id}).catch(()=>{});
     } finally { signingStaging=false; $('#signing-password').value=''; }
   });
-  async function pollSigning() {
-    try { renderSigning(await getJson('/api/signing')); } catch(error) { $('#signing-note').textContent=error.message; }
-    setTimeout(pollSigning,1500);
-  }
-  pollSigning();
+  window.addEventListener('pane-status', () => { renderSigning(signingState); renderSetup(setupState); });
   $('#send-files').addEventListener('click', () => $('#outgoing-files').click());
   $('#outgoing-files').addEventListener('change', async event => {
     const files = [...event.target.files];
@@ -166,6 +162,10 @@
     } catch (error) { $('#upload-progress').textContent = error.message; }
     finally { $('#send-files').disabled = false; event.target.value = ''; }
   });
+  let transferPage = 0;
+  for (const [id, delta] of [['transfers-prev', -1], ['transfers-next', 1]]) {
+    $('#'+id).addEventListener('click', () => { transferPage += delta; renderTransfers(transferState); });
+  }
   function renderTransfers(state) {
     transferState = state;
     $('#bluetooth-status').textContent = state.bluetooth.note;
@@ -183,7 +183,14 @@
     $('#history-count').textContent = state.transfers.length ? String(state.transfers.length) : '';
     const list = $('#transfer-list');
     // Polling must not rebuild an unchanged list and steal focus or selection.
-    const serialized = JSON.stringify(state.transfers);
+    const pages = Math.max(1, Math.ceil(state.transfers.length / 2));
+    transferPage = Math.max(0, Math.min(transferPage, pages - 1));
+    $('#transfer-pages').hidden = pages === 1;
+    $('#transfers-page').textContent = `${transferPage + 1} of ${pages}`;
+    $('#transfers-prev').disabled = transferPage === 0;
+    $('#transfers-next').disabled = transferPage === pages - 1;
+    const visible = state.transfers.slice(transferPage * 2, transferPage * 2 + 2);
+    const serialized = JSON.stringify([transferPage, visible]);
     if (list.dataset.snapshot === serialized) return;
     list.dataset.snapshot = serialized;
     const focused = document.activeElement?.dataset.cancel;
@@ -194,7 +201,7 @@
       const detail = document.createElement('p'); detail.textContent = 'Send a file from either device. Its progress and status will appear here.';
       empty.append(window.paneIcon('folder'), title, detail); list.append(empty);
     }
-    for (const transfer of state.transfers) {
+    for (const transfer of visible) {
       const item = document.createElement('li'); item.className = 'transfer'; item.dataset.state = transfer.state;
       const top = document.createElement('div'); top.className = 'transfer-top';
       const kind = /\.(jpg|jpeg|png|heic|gif|webp)$/i.test(transfer.name) ? 'image' : 'file';
@@ -218,7 +225,7 @@
         const cancel = document.createElement('button'); cancel.className = 'transfer-cancel'; cancel.textContent = 'Cancel'; cancel.dataset.cancel = transfer.id;
         cancel.title = `Cancel ${transfer.name}`;
         cancel.addEventListener('click', () => postJson('/api/uploads/cancel', {id: transfer.id}).catch(error => {$('#upload-progress').textContent = error.message;}));
-        item.append(cancel);
+        top.append(cancel);
       }
       list.append(item);
     }
@@ -226,10 +233,15 @@
   }
   async function poll() {
     try {
-      const [setup, transfers] = await Promise.all([getJson('/api/setup'), getJson('/api/uploads')]);
-      renderTransfers(transfers); renderSetup(setup);
+      const [setup, transfers, signing, snapshot] = await Promise.all([getJson('/api/setup'), getJson('/api/uploads'), getJson('/api/signing'), getJson('/api/status')]);
+      usbConnected = (snapshot.devices || []).some(d => d.connection === 'USB');
+      window.paneLastSnapshot = snapshot;
+      window.dispatchEvent(new CustomEvent('pane-status', {detail:snapshot}));
+      renderTransfers(transfers); renderSetup(setup); renderSigning(signing);
+      window.dispatchEvent(new CustomEvent('pane-setup-state', {detail:{setup,transfers}}));
     } catch (error) { $('#bluetooth-status').textContent = error.message; }
-    setTimeout(poll, 1500);
+    const busy = document.body.classList.contains('onboarding-open') || ['working','prompt'].includes(signingState.phase) || setupState.phase === 'working' || transferState.transfers?.some(t => ['queued','sending','receiving'].includes(t.state));
+    setTimeout(poll, busy ? 1500 : document.hidden || !document.body.classList.contains('drawer-open') ? 10000 : 4000);
   }
   poll();
 })();

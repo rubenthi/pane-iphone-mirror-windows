@@ -14,9 +14,9 @@ from handset.mux import MuxError
 from handset.screen import restart_screen, screen_status, start_screen, stop_screen
 from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY, request_allowed
 from handset.wifi import pair_for_wifi, wifi_paired_udids
-from handset import updater
+from handset import updater, companion_update
 from handset.window import shell
-from handset import setup, signing
+from handset import setup, signing, notifications
 from handset.bluetooth import bluetooth
 from handset.transfers import store
 from handset.state import prepare_state, isolate_device_state
@@ -81,13 +81,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json(payload)
             return
         if path == "/api/screen":
-            self._json({**screen_status(), "update": updater.status()})
+            self._json({**screen_status(), "update": updater.status(), "companion": notifications.status()})
+            return
+        if path == '/api/preferences':
+            self._json({'preferences': notifications.preferences(), 'companion': notifications.status()})
+            return
+        if path == '/api/bluetooth/devices':
+            self._json(notifications.devices())
             return
         if path == '/api/window':
             self._json(shell.status())
             return
         if path == '/api/signing':
             self._json(signing.status())
+            return
+        if path == '/api/companion-update':
+            self._json(companion_update.check())
             return
         if path == '/api/setup':
             self._json(setup.status())
@@ -126,6 +135,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/window':
             try:
                 self._json(shell.command(payload))
+            except (ValueError, OSError) as error:
+                self._json({'error': str(error)}, status=400)
+            return
+        if path in ('/api/preferences', '/api/bluetooth/settings'):
+            try:
+                if path == '/api/preferences':
+                    self._json(notifications.save(payload))
+                else:
+                    notifications.open_bluetooth_settings()
+                    self._json({'ok': True})
             except (ValueError, OSError) as error:
                 self._json({'error': str(error)}, status=400)
             return
@@ -320,6 +339,7 @@ class Handler(BaseHTTPRequestHandler):
         kind = {
             ".html": "text/html; charset=utf-8",
             ".css": "text/css; charset=utf-8",
+            ".woff2": "font/woff2",
             ".js": "text/javascript; charset=utf-8",
             ".svg": "image/svg+xml",
         }.get(target.suffix, "application/octet-stream")

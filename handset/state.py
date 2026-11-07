@@ -10,7 +10,8 @@ DATA_DIR = Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get('LOCALAP
 SCHEMA = 2
 # Never erase arbitrary PANE_DATA_DIR contents or shared Apple trust records.
 OWNED = ('signing', 'window', 'webview', 'device', 'staging', 'outbox', 'settings.json',
-         'binding.json', 'setup.json', 'transfers.json', 'pane.log', 'state-version.json')
+         'preferences.json', 'session.json', 'companion-status.json', 'native', 'companion.lock',
+         'companion-version.json', 'binding.json', 'setup.json', 'transfers.json', 'pane.log', 'state-version.json')
 
 
 def write_json(path: Path, value) -> None:
