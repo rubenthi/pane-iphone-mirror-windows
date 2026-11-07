@@ -91,7 +91,7 @@ const fs = require("node:fs");
     fs.mkdirSync("test-results", { recursive: true });
     await page.screenshot({ path: "test-results/settings.png" });
     assert.equal(await page.locator("#background-enabled").isChecked(), false);
-    await page.locator('[data-settings="notifications"]').click();
+    await page.locator('.settings-links [data-settings="notifications"]').click();
     await page
       .locator('#notification-device option[value="ble-phone"]')
       .waitFor({ state: "attached" });

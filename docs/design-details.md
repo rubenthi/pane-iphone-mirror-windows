@@ -26,6 +26,23 @@ Other implementation details:
 Validation includes browser screenshots, real staging/cancellation requests, keyboard tabs, narrow-layout checks, and the Windows native-window test suite. Device installation and radio behavior are separate hardware acceptance checks.
 
 
-The current redesign applies the requested frontend-design skill. `rubenthi.com` could not be opened: the cloud proxy returned 403 CONNECT. No visual details from that site are claimed as examined. The approved Pane SVG supplies the desktop and mobile icons; native SwiftUI material and restrained blue translucent desktop surfaces provide the shared visual direction.
+The current redesign applies the requested frontend-design skill. Direct access to `rubenthi.com` still returns proxy HTTP 403; the web reader also could not open it. The user supplied verified samples from the published ChatGPT Site's production screenshot. The Sites connector confirmed the matching published portfolio. These are representative sampled colors, **not exact source CSS tokens**:
+
+| Reference sample | Role in the darker desktop adaptation |
+| --- | --- |
+| Ivory `#FBFAF6` | Primary text |
+| Deep blue-green `#132B35` | Button text and the glass hue |
+| Charcoal-green `#25312F` | Neutral surface direction |
+| Muted gray-green `#666B64` | Lightened to `#A5B5AA` for readable dark-mode secondary text |
+| Pale sage `#E6EDE5` | Stronger sage `#D3E5C7` for links, focus and selected controls |
+| Soft background `#F2F3ED` | Warm ivory highlights on near-black teal `#080F11` |
+
+Desktop typography is locally bundled **Commissioner**, a compact variable family with distinct letterforms. The single Latin file is 36.7 KB; the license ships alongside it. There is no font CDN or animation library. Text and secondary text against the brightest solid drawer color (`#172B2B`) have calculated contrast ratios of 14.19:1 and 6.91:1; primary button text against the darker gradient stop is 9.29:1. These token comparisons do not replace a full accessibility audit. The approved blue icon remains unchanged. This refinement does not change the native iOS interface.
+
+Dropdowns progressively enhance the existing select elements, preserving form IDs, values, preference writes and device state. One shared listbox supports keyboard arrows, Home/End, typeahead, Enter, Escape, Tab and pointer selection. Lists are bounded to the phone surface, close on navigation/resize and react to changed device options without an idle timer. Labels and descriptions remain accessible; the native select remains the no-JavaScript fallback.
+
+Required steps start as short, small hints. Enabling phone notifications expands a larger, high-contrast instruction to enable **Share System Notifications** on the iPhone. Enabling audio reveals the iPhone output-selection step. Background mode exposes a direct link to phone notifications when they are still off. Preview text explains that message content will appear on the PC when enabled. These are instructions, not confirmations that an OS permission or route is already enabled.
+
+Motion responds to pointer or keyboard actions: the rail's connected island, dropdown caret and list, settings-row cue, icon movement and switch thumb. Reduced motion removes transitions and animations. No pointer-tracking loop or idle animation is added. At narrow sizes, tabs adapt and content can scroll; the default main menus fit without scrolling.
 
 The three-line handle expands into a single connected island containing minimize, maximize/restore and close. Icons react to hover/press and all motion respects Reduce Motion. A single custom tooltip supports keyboard focus and pointer hover. Setup and the feature tour remain separate: clicking through a tour cannot mark a device as configured. Signing options and troubleshooting expand on demand, leaving the main install action visible.

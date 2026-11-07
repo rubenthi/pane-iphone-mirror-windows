@@ -28,11 +28,11 @@
     if (!active) return;
     stage = state.boundUdid ? 'bluetooth' : state.developerEnabled ? (state.installed ? 'bind' : 'install') : state.revealed ? 'developer' : 'connect';
     const copy = {
-      connect: ['WELCOME TO PANE', 'Your iPhone, connected.', 'One guided setup links your phone to this laptop.', 'Connect'],
-      developer: ['ON YOUR IPHONE', 'Enable Developer Mode.', 'Pane has requested the developer switch. Finish these steps on your phone.', 'I’ve enabled it — check'],
-      install: ['YOUR COMPANION APP', 'Install Pane on iPhone.', 'Pane signs and pushes the included app over USB. Complete Apple verification when asked.', 'Install'],
-      bind: ['LINK YOUR CONNECTIONS', 'Bind this laptop.', 'Pane will provision the companion over USB and pair Wi-Fi mirroring.', 'Bind connections'],
-      bluetooth: ['ONE LAST CONNECTION', 'Open Pane on iPhone.', 'Keep the cable connected for this final step.', 'Connect Bluetooth']
+      connect: ['Welcome to Pane', 'Your iPhone, connected.', 'One guided setup links your phone to this laptop.', 'Connect'],
+      developer: ['On your iPhone', 'Enable Developer Mode.', 'Pane has requested the developer switch. Finish these steps on your phone.', 'I’ve enabled it — check'],
+      install: ['Your companion app', 'Install Pane on iPhone.', 'Pane signs and pushes the included app over USB. Complete Apple verification when asked.', 'Install'],
+      bind: ['Link your connections', 'Bind this laptop.', 'Pane will provision the companion over USB and pair Wi-Fi mirroring.', 'Bind connections'],
+      bluetooth: ['One last connection', 'Open Pane on iPhone.', 'Keep the cable connected for this final step.', 'Connect Bluetooth']
     }[stage];
     $('#onboarding-kicker').textContent=copy[0]; $('#onboarding-title').textContent=copy[1]; $('#onboarding-description').textContent=copy[2];
     for (const name of ['connect','developer','signing','bluetooth']) $('#onboarding-'+name).hidden = name !== ({install:'signing',bind:'bluetooth'}[stage] || stage);

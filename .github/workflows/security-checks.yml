@@ -25,6 +25,7 @@ jobs:
           node --check handset/web/setup.js
           node --check handset/web/icons.js
           node --check handset/web/experience.js
+          node --check handset/web/selects.js
           node --check handset/web/onboarding.js
           node --check handset/web/shell.js
           node --test tests/ui.test.cjs
@@ -36,6 +37,8 @@ jobs:
         run: npm run test:setup
       - name: Exercise compact menus and preferences
         run: npm run test:experience
+      - name: Exercise custom controls, visual states and zoom
+        run: npm run test:visual
   native-tests:
     runs-on: ubuntu-latest
     steps:

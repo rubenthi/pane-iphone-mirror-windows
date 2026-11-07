@@ -106,9 +106,29 @@
   });
   window.paneView = { open };
   function renderPreferences() {
-    $("background-hint").textContent = prefs.notifications_enabled
-      ? "Continue after closing Pane."
-      : "Enable phone notifications in Settings.";
+    $("notifications-toggle-hint").textContent = prefs.notifications_enabled
+      ? "Complete the iPhone step below."
+      : "Off until you choose to enable it.";
+    $("previews-toggle-hint").textContent = prefs.show_previews
+      ? "Titles and messages appear on this PC."
+      : "Keep content private when this is off.";
+    $("background-hint").textContent = prefs.background_enabled
+      ? prefs.notifications_enabled
+        ? "Notifications continue after closing Pane."
+        : "Phone notifications must also be enabled."
+      : "Optional. Keep alerts on after closing Pane.";
+    $("background-next").hidden =
+      !prefs.background_enabled || !!prefs.notifications_enabled;
+    for (const [id, key] of [
+      ["notification-setup-help", "notifications_enabled"],
+      ["audio-setup-help", "audio_enabled"],
+    ]) {
+      const detail = $(id),
+        expanded = !!prefs[key];
+      detail.dataset.expanded = String(expanded);
+      detail.querySelector(".action-summary").hidden = expanded;
+      detail.querySelector(".action-expanded").hidden = !expanded;
+    }
     for (const [id, key] of [
       ["background-enabled", "background_enabled"],
       ["notifications-enabled", "notifications_enabled"],
@@ -133,6 +153,7 @@
         );
       select.value = prefs[key] || "";
     }
+    window.paneSelects?.sync();
   }
   // Preference writes are ordered. A quick second change cannot resurrect stale state.
   let saveChain = Promise.resolve();
@@ -165,17 +186,15 @@
       }),
     );
   }
-  document
-    .querySelectorAll("#notification-types input")
-    .forEach((x) =>
-      x.addEventListener("change", () =>
-        save({
-          categories: [
-            ...document.querySelectorAll("#notification-types input:checked"),
-          ].map((x) => x.value),
-        }),
-      ),
-    );
+  document.querySelectorAll("#notification-types input").forEach((x) =>
+    x.addEventListener("change", () =>
+      save({
+        categories: [
+          ...document.querySelectorAll("#notification-types input:checked"),
+        ].map((x) => x.value),
+      }),
+    ),
+  );
   function renderCompanion(state = {}) {
     $("notifications-note").textContent =
       state.notifications ||
@@ -226,7 +245,13 @@
   function hide() {
     clearTimeout(timer);
     tip.hidden = true;
-    current?.removeAttribute("aria-describedby");
+    if (current) {
+      const ids = (current.getAttribute("aria-describedby") || "")
+        .split(/\s+/)
+        .filter((id) => id && id !== "pane-tooltip");
+      if (ids.length) current.setAttribute("aria-describedby", ids.join(" "));
+      else current.removeAttribute("aria-describedby");
+    }
     current = null;
   }
   function show(target) {
@@ -235,6 +260,11 @@
     );
     if (!el || el === current) return;
     hide();
+    if (
+      el.getAttribute("role") === "combobox" &&
+      el.getAttribute("aria-expanded") === "true"
+    )
+      return;
     const text =
       el.getAttribute("title") ||
       el.dataset.tip ||
@@ -249,13 +279,26 @@
       if (current !== el) return;
       tip.textContent = text;
       tip.hidden = false;
-      el.setAttribute("aria-describedby", "pane-tooltip");
+      el.setAttribute(
+        "aria-describedby",
+        [
+          ...new Set([
+            ...(el.getAttribute("aria-describedby") || "")
+              .split(/\s+/)
+              .filter(Boolean),
+            "pane-tooltip",
+          ]),
+        ].join(" "),
+      );
       const r = el.getBoundingClientRect(),
         phone = $("phone-shell").getBoundingClientRect(),
         drawer = $("connection-drawer").getBoundingClientRect();
       const bounds = el.closest(".drawer") ? drawer : phone;
-      tip.style.left = `${Math.max(bounds.left + 8, Math.min(r.left, bounds.right - tip.offsetWidth - 8))}px`;
-      tip.style.top = `${Math.max(8, Math.min(r.bottom + 8, window.innerHeight - tip.offsetHeight - 12))}px`;
+      const scale =
+        parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      const size = tip.getBoundingClientRect();
+      tip.style.left = `${Math.max(bounds.left + 8, Math.min(r.left, bounds.right - size.width - 8)) / scale}px`;
+      tip.style.top = `${Math.max(bounds.top + 8, Math.min(r.bottom + 8, bounds.bottom - size.height - 12, window.innerHeight - size.height - 12)) / scale}px`;
     }, 450);
   }
   document.addEventListener("pointerover", (e) => show(e.target));
@@ -265,6 +308,22 @@
   document.addEventListener("focusin", (e) => show(e.target));
   document.addEventListener("focusout", hide);
   document.addEventListener("pointerdown", hide);
+  document.addEventListener("pane-select-open", hide);
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (
+        e.key === "Escape" &&
+        !tip.hidden &&
+        document.querySelector("#pane-select-menu")?.hidden !== false
+      ) {
+        hide();
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    true,
+  );
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") hide();
   });

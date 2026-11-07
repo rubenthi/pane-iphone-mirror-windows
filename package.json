@@ -5,7 +5,8 @@
     "test": "node --test tests/ui.test.cjs tests/hevc.test.cjs tests/stream.test.cjs",
     "test:native": "node tests/native-ui.cjs",
     "test:setup": "node tests/setup-ui.cjs",
-    "test:experience": "node tests/experience-ui.cjs"
+    "test:experience": "node tests/experience-ui.cjs",
+    "test:visual": "node tests/visual-ui.cjs"
   },
   "devDependencies": {
     "playwright": "1.64.1"

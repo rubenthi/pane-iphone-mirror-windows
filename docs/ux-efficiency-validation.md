@@ -41,6 +41,7 @@ npm ci --ignore-scripts
 npm test
 npm run test:setup
 npm run test:experience
+npm run test:visual
 cargo fmt --check --manifest-path native/Cargo.toml
 cargo test --locked --manifest-path native/Cargo.toml
 cargo clippy --locked --manifest-path native/Cargo.toml --target x86_64-pc-windows-gnu -- -D warnings
@@ -48,7 +49,9 @@ cargo clippy --locked --manifest-path native/Cargo.toml --target x86_64-pc-windo
 
 For browser tests, set `PANE_TEST_PYTHON` and `PANE_TEST_CHROMIUM` when the executables are not the defaults. The Windows target must be installed through rustup for cross-platform checks. Tests cover authenticated preference endpoints, strict category validation, opt-in defaults, preservation of existing state, optional-worker error isolation, ANCS fragmentation/bounds/XML escaping, setup confirmation, signing USB disconnect/reconnect, transfers, tours, compact menus, tooltip focus, reduced motion and history pagination.
 
-The existing Windows and iOS CI jobs remain and include the new helper/assets. Linux compilation of Windows bindings checks API types; it does not exercise the Windows runtime. At initial cloud verification, no Windows/iOS CI run or binary release had been completed.
+The existing Windows and iOS CI jobs remain and include the new helper/assets. Linux compilation of Windows bindings checks API types; it does not exercise the Windows runtime. Commit `abd92113f85892cb029170e5ff50650472251ffc` subsequently passed Windows native-window, installer/update and packaged-app smoke tests, and the iOS companion compiled in [CI run 42323942778](https://github.com/rubenthi/pane-iphone-mirror-windows/actions/runs/42323942778). This is separate from physical-device testing. No binary release was published.
+
+The later visual refinement adds a 33-state browser review covering the three tabs, all settings views, notification and audio instructions off/on, background prerequisite, previews, tooltips, listbox focus/selection, setup stages, all tour pages, transfer progress, a small window, 160% CSS zoom and reduced motion. Tests assert local font loading, no external asset requests, normal-menu fit, keyboard listbox behavior, instruction expansion and popup bounds. PNGs under `test-results/visual/` are rendered from current code with simulated device state, not native Windows captures. The current revision's PR checks are the source of its Windows CI result.
 
 ## Still requiring physical hardware or platform tools
 
@@ -60,6 +63,6 @@ The existing Windows and iOS CI jobs remain and include the new helper/assets. L
 
 ## Reference and identity limits
 
-`https://www.rubenthi.com/` was denied by the cloud network proxy (403 CONNECT); no access bypass was attempted and its visual details were not represented as reviewed. The requested frontend-design skill and the existing Pane assets guided the design.
+Direct `https://www.rubenthi.com/` access was denied by the cloud network proxy (403 CONNECT), and the web reader also failed. No access bypass was attempted. The user subsequently supplied verified screenshot palette samples from the published ChatGPT Site, and the Sites connector confirmed the matching portfolio. The desktop dark-teal/ivory/sage palette adapts those samples; they are not claimed to be source CSS tokens. See `docs/design-details.md` for the mapping and typography.
 
 The system developer label belongs to Apple's signing identity. App UI changes cannot hide that email/name from iOS trust screens. A different suitable identity or supported distribution route requires account/distribution work; existing credentials were preserved. No account or signing identity was changed.
