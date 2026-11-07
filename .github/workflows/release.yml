@@ -3,7 +3,18 @@ on:
   push:
     tags: ['v*']
     branches: [main]
-    paths: ['handset/version.py', 'packaging/version.txt', '.github/workflows/release.yml']
+    paths:
+      - 'handset/**'
+      - 'native/**'
+      - 'signer/**'
+      - 'ios/**'
+      - 'packaging/**'
+      - 'requirements*.txt'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/companion.yml'
+      - '!**/*.md'
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +31,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: Pane-unsigned
@@ -28,20 +41,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Determine release version and refuse overwrites
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare immutable release snapshot
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_REF_TYPE: ${{ github.ref_type }}
+          SOURCE_REF_NAME: ${{ github.ref_name }}
         shell: pwsh
         run: |
-          $version = python -c "from handset.version import VERSION; print(VERSION)"
-          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
-          $tag = "v$version"
-          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne $tag) { throw 'Tag does not match source version.' }
-          if ('${{ github.ref_type }}' -ne 'tag' -and '${{ github.ref_name }}' -ne 'main') { throw 'Publish only from main or a version tag.' }
-          "PANE_RELEASE_TAG=$tag" >> $env:GITHUB_ENV
-          $releases = gh api repos/${{ github.repository }}/releases --paginate | ConvertFrom-Json
+          if ($env:SOURCE_REF_TYPE -ne 'tag' -and $env:SOURCE_REF_NAME -ne 'main') { throw 'Publish only from main or a version tag.' }
+          gh api 'repos/${{ github.repository }}/releases?per_page=100' --paginate --slurp > "$env:RUNNER_TEMP/releases.json"
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect releases.' }
-          if ($releases | Where-Object tag_name -eq $tag) { throw 'Version already exists; choose a new version.' }
+          $arguments = @('packaging/prepare_release.py', '--releases', "$env:RUNNER_TEMP/releases.json", '--source', $env:SOURCE_SHA, '--output', $env:GITHUB_ENV)
+          if ($env:SOURCE_REF_TYPE -eq 'tag') { $arguments += @('--tag', $env:SOURCE_REF_NAME) }
+          python @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Release preparation failed.' }
       - run: python -m pip install -r requirements-build.txt
       - run: python -m unittest discover -s tests -v
       - run: node --test tests/ui.test.cjs tests/hevc.test.cjs tests/stream.test.cjs
@@ -54,18 +71,13 @@ jobs:
       - run: cargo fmt --check --manifest-path native/Cargo.toml
       - run: cargo test --locked --manifest-path native/Cargo.toml
       - run: npm run test:native
-      - run: |
-          node --check handset/web/app.js
-          node --check handset/web/mirror.js
-          node --check handset/web/keys.js
-          node --check handset/web/shell.js
-          node --check handset/web/hevc.js
-          node --check handset/web/onboarding.js
-          node --check handset/web/setup.js
-          node --check handset/web/experience.js
-          node --check handset/web/selects.js
-          node --check handset/web/companion-update.js
-          node --check handset/web/stream.js
+      - name: Check every browser script syntax
+        shell: pwsh
+        run: |
+          Get-ChildItem handset/web/*.js | ForEach-Object {
+            node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax failed: $($_.Name)" }
+          }
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/install_update.tests.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1
       - run: python packaging/release_manifest.py --tag '${{ env.PANE_RELEASE_TAG }}'
@@ -87,9 +99,26 @@ jobs:
       - name: Publish all verified assets together
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_REF_TYPE: ${{ github.ref_type }}
         shell: pwsh
         run: |
-          gh release create '${{ env.PANE_RELEASE_TAG }}' dist/Pane.exe dist/update.json dist/install.ps1 ios/Pane-unsigned.ipa --repo '${{ github.repository }}' --target '${{ github.sha }}' --draft --title 'Pane ${{ env.PANE_RELEASE_TAG }}' --notes-file packaging/release-notes.md
-          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; draft retained.' }
-          gh release edit '${{ env.PANE_RELEASE_TAG }}' --repo '${{ github.repository }}' --draft=false --latest
-          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+          # Supersede only for newer release inputs, not docs/tests-only pushes.
+          if ($env:SOURCE_REF_TYPE -ne 'tag') {
+            git fetch origin main
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect current main.' }
+            $main = git rev-parse FETCH_HEAD
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve current main.' }
+            python packaging/prepare_release.py --source $env:SOURCE_SHA --check-current $main
+            if ($LASTEXITCODE -ne 0) { throw 'Source superseded or main history changed.' }
+            git tag $env:PANE_RELEASE_TAG $env:PANE_RELEASE_COMMIT
+            if ($LASTEXITCODE -ne 0) { throw 'Tag collision; no publication.' }
+            git push origin "refs/tags/$env:PANE_RELEASE_TAG"
+            if ($LASTEXITCODE -ne 0) { throw 'Tag reservation failed; no publication.' }
+          }
+          # Tags from GITHUB_TOKEN do not start another workflow. Never force-push.
+          $notes = "Automated tested release from source $env:SOURCE_SHA (release commit $env:PANE_RELEASE_COMMIT).`n`nWindows updates install after normal exit; reopen Pane afterward. Settings and pairings are preserved. iPhone companion installation/signing remains separate. Physical-device behavior is not hardware-verified by CI."
+          gh release create $env:PANE_RELEASE_TAG dist/Pane.exe dist/update.json dist/install.ps1 ios/Pane-unsigned.ipa --repo '${{ github.repository }}' --verify-tag --draft --title "Pane $env:PANE_RELEASE_TAG" --generate-notes --notes $notes
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; inspect tag/draft before recovery.' }
+          gh release edit $env:PANE_RELEASE_TAG --repo '${{ github.repository }}' --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed; draft retained.' }
