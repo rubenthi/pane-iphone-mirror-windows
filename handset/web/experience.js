@@ -296,6 +296,7 @@
       const bounds = el.closest(".drawer") ? drawer : phone;
       const scale =
         parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      tip.style.maxWidth = `${Math.max(60, Math.min(226, (bounds.width - 16) / scale))}px`;
       const size = tip.getBoundingClientRect();
       tip.style.left = `${Math.max(bounds.left + 8, Math.min(r.left, bounds.right - size.width - 8)) / scale}px`;
       tip.style.top = `${Math.max(bounds.top + 8, Math.min(r.bottom + 8, bounds.bottom - size.height - 12, window.innerHeight - size.height - 12)) / scale}px`;

@@ -542,6 +542,7 @@ body.tour-open #drawer-toggle {
 }
 #pane-tooltip {
   position: fixed;
+  overflow-wrap: anywhere;
   z-index: 1000;
   max-width: 226px;
   padding: 9px 12px;

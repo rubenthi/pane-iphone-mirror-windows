@@ -311,6 +311,24 @@ const fs = require("node:fs");
     );
     await page.locator(".transfer").first().waitFor();
     await capture("23-uploads-progress");
+    const longName = "A".repeat(180) + ".heic";
+    await page
+      .locator(".transfer strong")
+      .first()
+      .evaluate((element, name) => (element.title = name), longName);
+    await page.locator(".transfer strong").first().hover();
+    await page.locator("#pane-tooltip").waitFor({ state: "visible" });
+    const textBounds = await page
+      .locator("#pane-tooltip")
+      .evaluate((element) => ({
+        width: element.clientWidth,
+        content: element.scrollWidth,
+      }));
+    assert.ok(
+      textBounds.content <= textBounds.width + 1,
+      "Long filenames must wrap inside tooltips",
+    );
+    await capture("23-long-filename-tooltip", false);
     await settings();
     await page.locator("[data-show-tour]").click();
     for (let i = 1; i <= 3; i++) {
@@ -378,6 +396,8 @@ const fs = require("node:fs");
     await settings("audio");
     await page.locator("#audio-device-control").click();
     await page.setViewportSize({ width: 460, height: 620 });
+    // Viewport acknowledgement precedes the renderer's resize event on Windows.
+    await page.getByRole("listbox").waitFor({ state: "hidden" });
     assert.equal(await page.getByRole("listbox").isVisible(), false);
     await page.evaluate(() =>
       document.documentElement.style.setProperty("--phone-height", "590px"),
@@ -388,6 +408,12 @@ const fs = require("node:fs");
       document.documentElement.style.setProperty("--phone-height", "360px");
       document.documentElement.style.setProperty("--phone-width", "260px");
     });
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
     await page.locator("#audio-device-control").scrollIntoViewIfNeeded();
     await page.locator("#audio-device-control").click();
     await capture("27-zoom-dropdown", false);
