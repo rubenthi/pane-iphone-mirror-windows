@@ -67,6 +67,8 @@ const fs = require("node:fs");
       if (!(await page.locator("#connection-drawer").isVisible()))
         await page.locator("#drawer-toggle").click();
       await page.locator("#connection-drawer").waitFor({ state: "visible" });
+      // Native layout and saved preferences load independently on a fresh page.
+      await page.evaluate(() => window.paneExperience.ready);
     }
     await page.goto(url);
     await openDrawer();
