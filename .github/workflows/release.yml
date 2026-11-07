@@ -71,18 +71,13 @@ jobs:
       - run: cargo fmt --check --manifest-path native/Cargo.toml
       - run: cargo test --locked --manifest-path native/Cargo.toml
       - run: npm run test:native
-      - run: |
-          node --check handset/web/app.js
-          node --check handset/web/mirror.js
-          node --check handset/web/keys.js
-          node --check handset/web/shell.js
-          node --check handset/web/hevc.js
-          node --check handset/web/onboarding.js
-          node --check handset/web/setup.js
-          node --check handset/web/experience.js
-          node --check handset/web/selects.js
-          node --check handset/web/companion-update.js
-          node --check handset/web/stream.js
+      - name: Check every browser script syntax
+        shell: pwsh
+        run: |
+          Get-ChildItem handset/web/*.js | ForEach-Object {
+            node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax failed: $($_.Name)" }
+          }
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/install_update.tests.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1
       - run: python packaging/release_manifest.py --tag '${{ env.PANE_RELEASE_TAG }}'
