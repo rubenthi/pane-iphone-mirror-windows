@@ -4,7 +4,7 @@ This log explains changes to the Windows application and its iPhone companion. D
 
 ## 2.3.2 - Local Windows development and releases
 
-Pane now runs from the developer's Windows checkout. The Windows executable and native helpers are compiled and tested on the laptop before the finished files are uploaded to GitHub Releases. The installer and updater still use the published release. This desktop release includes the same 2.3.0 iPhone companion as 2.3.1.
+Pane now runs from the developer's Windows checkout. The Windows executable and native helpers are compiled and tested on the laptop before the finished files are uploaded to GitHub Releases. The installer and updater still use the published release. Shorter notification setup text keeps the status visible at the default window size. This desktop release includes the same 2.3.0 iPhone companion as 2.3.1.
 
 ## 2.3.0 - Compact controls and optional Bluetooth services
 
