@@ -19,7 +19,10 @@
       for (const device of devices) select.add(new Option(device.name || device.udid, device.udid));
       if (devices.some(d => d.udid === wanted)) select.value = wanted;
     }
-    if (active && select.value) selectedUdid = select.value;
+    if (active) {
+      if (select.value) selectedUdid = select.value;
+      usbConnected = devices.some(device => device.udid === selectedUdid);
+    }
   }
   function render() {
     if (!active) return;

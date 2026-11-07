@@ -2,6 +2,12 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.2.1 — Enable installation after USB reconnection
+
+- Fixes the greyed-out Sign & install button when the phone is plugged in or reconnects after Developer Mode setup. The guide now refreshes the USB status used by signing.
+- Explains when a USB connection is required to enable installation.
+- Preserves settings, setup progress and saved phone pairings.
+
 ## 2.2.0 — Restored floating window and first-run setup
 
 - Restores 1.7.4's native WinForms/WebView region clipping, phone outline, joined control rail and upward hover menu. The Connection/Uploads panel overlays the phone without expanding the window; all four corners resize proportionally.

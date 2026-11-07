@@ -105,7 +105,9 @@
     signingState = state;
     const busy = ['working', 'prompt'].includes(state.phase);
     $('#signing-start').disabled = signingStaging || busy || !state.available || !usbConnected || !selectedUdid;
-    $('#signing-note').textContent = state.available ? state.note : 'This build does not include the Windows signing helper.';
+    $('#signing-note').textContent = !state.available ? 'This build does not include the Windows signing helper.'
+      : !busy && !signingStaging && (!usbConnected || !selectedUdid) ? 'Connect your unlocked iPhone by USB to enable installation. Tap Trust on the phone if asked.'
+      : state.note;
     $('#signing-cancel').hidden = !busy;
     $('#signing-prompt').hidden = state.phase !== 'prompt';
     if (state.prompt && $('#signing-prompt').dataset.id !== state.prompt.id) {
