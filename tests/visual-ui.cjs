@@ -336,7 +336,12 @@ const fs = require("node:fs");
       await page.locator("#tour-next").click();
     }
     await page.locator("#feature-tour").waitFor({ state: "hidden" });
-    // All screenshots use the same real UI. Setup state changes represent backend events.
+    // Use the real poller: an in-flight response can overwrite synthetic events.
+    const setupTransfers = (route) => route.fulfill({ json: {
+      transfers: [], bluetooth: { phase: "connecting", note: "Waiting for your iPhone." },
+    } });
+    await page.route("**/api/uploads", setupTransfers);
+    // All screenshots use the same real UI and simulated backend snapshots.
     for (const [stage, state] of [
       ["connect", {}],
       ["developer", { revealed: true }],
@@ -344,22 +349,16 @@ const fs = require("node:fs");
       ["pair", { boundUdid: "preview-phone" }],
     ]) {
       setupSnapshot = { phase: "idle", onboardingRequired: true, ...state };
-      await page.evaluate(
-        (state) =>
-          window.dispatchEvent(
-            new CustomEvent("pane-setup-state", {
-              detail: {
-                setup: { phase: "idle", onboardingRequired: true, ...state },
-                transfers: {
-                  bluetooth: {
-                    phase: "connecting",
-                    note: "Waiting for your iPhone.",
-                  },
-                },
-              },
-            }),
-          ),
-        state,
+      const expectedTitle = {
+        connect: "Your iPhone, connected.",
+        developer: "Enable Developer Mode.",
+        install: "Install Pane on iPhone.",
+        pair: "Open Pane on iPhone.",
+      }[stage];
+      await page.waitForFunction(
+        (title) => document.querySelector("#onboarding-title").textContent === title
+          && !document.querySelector("#onboarding").hidden,
+        expectedTitle,
       );
       await capture(`25-setup-${stage}`);
       assert.equal(
@@ -382,16 +381,8 @@ const fs = require("node:fs");
       onboardingRequired: false,
       boundUdid: "preview-phone",
     };
-    await page.evaluate(() =>
-      window.dispatchEvent(
-        new CustomEvent("pane-setup-state", {
-          detail: {
-            setup: { onboardingRequired: false },
-            transfers: { bluetooth: { phase: "idle" } },
-          },
-        }),
-      ),
-    );
+    await page.locator("#onboarding").waitFor({ state: "hidden" });
+    await page.unroute("**/api/uploads", setupTransfers);
     await page.locator("#connection-drawer").waitFor({ state: "hidden" });
     await settings("audio");
     await page.locator("#audio-device-control").click();
