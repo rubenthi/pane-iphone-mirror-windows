@@ -5,3 +5,5 @@ Optional Bluetooth audio reception and category-filtered iPhone system notificat
 Existing preferences, saved phone pairings, browser profiles and protected signing data are preserved. Includes the 2.2.1 USB reconnection fix. The updater verifies the download, installs when Pane closes normally, and retains the previous executable as a rollback backup. Reopen Pane to use this version. Windows updates do not automatically install or renew the iPhone companion.
 
 Automated checks cover Python and JavaScript behavior, browser setup and preferences, 34 visual/interaction states, Rust protocol tests, Windows native-window and installer/update behavior, packaged launch and iOS compilation. Physical iPhone audio/notification permissions, signing/install, live mirroring and whole-program performance are not claimed as hardware-verified.
+
+The matching Pane-unsigned.ipa is also included as a separate release asset. It is not directly installable: use Settings > Setup & signing in Pane on Windows with the iPhone connected by USB, or another supported signing tool. Use the same Apple Account/team to preserve the installed app identity and files.

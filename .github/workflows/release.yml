@@ -81,12 +81,13 @@ jobs:
             dist/Pane.exe
             dist/update.json
             dist/install.ps1
+            ios/Pane-unsigned.ipa
       - name: Publish all verified assets together
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create '${{ env.PANE_RELEASE_TAG }}' dist/Pane.exe dist/update.json dist/install.ps1 --repo '${{ github.repository }}' --target '${{ github.sha }}' --draft --title 'Pane ${{ env.PANE_RELEASE_TAG }}' --notes-file packaging/release-notes.md
+          gh release create '${{ env.PANE_RELEASE_TAG }}' dist/Pane.exe dist/update.json dist/install.ps1 ios/Pane-unsigned.ipa --repo '${{ github.repository }}' --target '${{ github.sha }}' --draft --title 'Pane ${{ env.PANE_RELEASE_TAG }}' --notes-file packaging/release-notes.md
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; draft retained.' }
           gh release edit '${{ env.PANE_RELEASE_TAG }}' --repo '${{ github.repository }}' --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
