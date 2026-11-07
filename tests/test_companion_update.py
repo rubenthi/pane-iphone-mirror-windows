@@ -1,4 +1,6 @@
 import asyncio
+import sys
+from types import SimpleNamespace
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,7 +83,11 @@ class CompanionUpdateTests(unittest.TestCase):
         service = MagicMock(); service.return_value.__aenter__ = AsyncMock(return_value=installer)
         service.return_value.__aexit__ = AsyncMock(return_value=False)
         app = {'CFBundleExecutable':'PaneFiles', 'CFBundleDisplayName':'Pane', 'CFBundleIdentifier':'app', 'CFBundleShortVersionString':'2.2.0'}
-        with patch('pymobiledevice3.lockdown.create_using_usbmux', AsyncMock(return_value=phone)) as connect, patch('pymobiledevice3.services.installation_proxy.InstallationProxyService', service):
+        connect = AsyncMock(return_value=phone)
+        # Keep this read-only protocol test independent of optional device packages.
+        modules = {'pymobiledevice3.lockdown': SimpleNamespace(create_using_usbmux=connect),
+                   'pymobiledevice3.services.installation_proxy': SimpleNamespace(InstallationProxyService=service)}
+        with patch.dict(sys.modules, modules):
             for apps, expected in [([], None), ([app, app], None), ([dict(app, CFBundleShortVersionString='bad')], None), ([app], {'version':'2.2.0','bundle':'app'})]:
                 installer.browse.return_value = apps
                 self.assertEqual(asyncio.run(update._read('phone', 'app')), expected)
