@@ -30,7 +30,9 @@ jobs:
       - run: npm test
       - run: npx playwright install chromium
       - run: npm run test:setup
+      - run: npm run test:experience
       - run: npm run test:native
+      - run: cargo test --locked --manifest-path native/Cargo.toml
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/install_update.tests.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/smoke.ps1

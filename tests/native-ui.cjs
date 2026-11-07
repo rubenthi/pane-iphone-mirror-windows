@@ -82,7 +82,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.ok(overlay.x>=phone.x && overlay.x+overlay.width<=phone.x+phone.width);
     await checkRegion();
 
-    await page.getByRole('button',{name:/Open setup/}).click();
+    await page.locator('#toggle-guide').click();
     await page.locator('#run-guide').waitFor({state:'visible'});
     const developer = page.locator('#run-guide > details').filter({has:page.locator('summary', {hasText:'Install Pane'})});
     await developer.locator(':scope > summary').click();
@@ -91,7 +91,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await page.locator('.altstore-guide').innerText(), /Install AltStore/);
     assert.match(await page.locator('.altstore-guide').innerText(), /iTunes and iCloud/);
     await page.screenshot({path:path.join(output,'pane-guide.png')});
-    await page.getByRole('button',{name:/Open setup/}).click();
+    await page.getByRole('tab',{name:'Connection',exact:true}).click();
     await page.getByRole('radio',{name:/Wi-Fi/}).click();
     await page.getByRole('heading',{name:'Wireless connection'}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Set up Wi-Fi',exact:true}).isDisabled(),true);

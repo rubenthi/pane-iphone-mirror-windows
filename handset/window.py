@@ -50,6 +50,7 @@ class FloatingWindow:
         self.preferred_height = 760
         self.menu_open = False
         self.maximized = False
+        self._restore_height = self.preferred_height
         self._lock = threading.RLock()
         self._geometry = dimensions()
         if os.name != 'nt':
@@ -68,6 +69,7 @@ class FloatingWindow:
             'GetWindowLongPtrW': ([W.HWND, ctypes.c_int], ctypes.c_ssize_t),
             'SetWindowLongPtrW': ([W.HWND, ctypes.c_int, ctypes.c_ssize_t], ctypes.c_ssize_t),
             'SetWindowPos': ([W.HWND, W.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, W.UINT], W.BOOL),
+            'RedrawWindow': ([W.HWND, ctypes.c_void_p, W.HRGN, W.UINT], W.BOOL),
             'GetWindowRgn': ([W.HWND, W.HRGN], ctypes.c_int),
             'GetWindowRect': ([W.HWND, ctypes.POINTER(W.RECT)], W.BOOL),
             'GetDpiForWindow': ([W.HWND], W.UINT),
@@ -170,7 +172,6 @@ class FloatingWindow:
                 width, height = round(geometry['width']*scale), round(geometry['height']*scale)
                 x = min(max(rect.left, work.left), work.right-width)
                 y = min(max(rect.top, work.top), work.bottom-height)
-                self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, x, y, width, height, 0x0030)
                 def rounded(left, top, right, bottom, radius):
                     return self.g.CreateRoundRectRgn(*(round(v*scale) for v in (left, top, right, bottom, radius*2, radius*2)))
                 pw, h = geometry['phone_width'], geometry['height']
@@ -178,7 +179,7 @@ class FloatingWindow:
                 rail_top, rail_scale = geometry['rail_top'], geometry['rail_scale']
                 parts = [rounded(pw-16, rail_top-50, pw+60, rail_top+292*rail_scale, 28)]
                 if self.menu_open:
-                    parts.append(rounded(pw+8, rail_top-158, pw+52, rail_top-44, 11))
+                    parts.append(rounded(pw+8, rail_top-152, pw+52, rail_top-10, 12))
                 for part in parts:
                     self.g.CombineRgn(region, region, part, 2)
                     self.g.DeleteObject(part)
@@ -195,6 +196,15 @@ class FloatingWindow:
                         previous.Dispose()
                 finally:
                     self.g.DeleteObject(region)
+                # Apply the new clipping before exposing resized pixels. Keep
+                # parent and WebView bounds in one WinForms UI-thread operation;
+                # never copy the old backing bitmap or recreate the DWM frame.
+                if width != rect.right-rect.left or height != rect.bottom-rect.top:
+                    self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, x, y, width, height, 0x0110)
+                    self._form.webview.SetBounds(0, 0, width, height)
+                    self.u.RedrawWindow(self.handle, None, None, 0x0181)
+                else:
+                    self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, 0, 0, 0, 0, 0x0013)
             self.aspect, self.expanded, self._geometry = aspect, expanded, geometry
             if self.handle: self._repair_regions()
             return self.status()
@@ -271,8 +281,10 @@ class FloatingWindow:
                 self.u.SetWindowPos(self.handle, 0, x, y, 0, 0, 0x0015)
             return result
         if action == 'maximize':
+            if not self.maximized:
+                self._restore_height = self.preferred_height
             self.maximized = not self.maximized
-            self.preferred_height = 10000 if self.maximized else 760
+            self.preferred_height = 10000 if self.maximized else self._restore_height
             return self.layout(self.expanded, self.aspect)
         if action == 'window-menu':
             self.menu_open = payload.get('open') is True

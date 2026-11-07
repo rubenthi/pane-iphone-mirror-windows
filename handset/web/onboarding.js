@@ -60,9 +60,9 @@
   }
   $('#onboarding-next').onclick=()=>act({connect:'start',developer:'developer',bind:'bind',bluetooth:'bluetooth'}[stage]);
   $('#onboarding-device').onchange=()=>{selectedUdid=chosen();autoBound=false;autoConnected=false;render();};
-  async function poll() {
-    try {
-      const [setup, transfers, snapshot]=await Promise.all([getJson('/api/setup'),getJson('/api/uploads'),getJson('/api/status')]);
+  window.addEventListener('pane-status', event => {refreshDevices(event.detail);render();});
+  window.addEventListener('pane-setup-state', event => {
+    const {setup,transfers}=event.detail;
       state=setup;bluetooth=transfers.bluetooth;
       const needed=state.onboardingRequired===true;
       if(needed&&!active) {
@@ -72,11 +72,10 @@
       } else if(!needed&&active) {
         active=false;panel.hidden=true;document.body.classList.remove('onboarding-open');signingHome.after(signing);
         if(document.body.classList.contains('drawer-open'))$('#drawer-toggle').click();
+        window.dispatchEvent(new CustomEvent('pane-setup-complete'));
         if(bluetooth.phase==='connected'&&connectionPhase!=='running') {selectedUdid=state.boundUdid;setTransport('usb',false);showPhone();}
       }
-      refreshDevices(snapshot);render();
-    } catch(error) {if(active)$('#onboarding-note').textContent=error.message;}
-  }
-  $('#onboarding-refresh').onclick=poll;
-  poll();setInterval(poll,1500);
+      if(window.paneLastSnapshot)refreshDevices(window.paneLastSnapshot);render();
+  });
+  $('#onboarding-refresh').onclick=()=>load();
 })();

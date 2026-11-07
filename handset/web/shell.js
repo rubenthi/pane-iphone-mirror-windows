@@ -8,7 +8,6 @@
   let expanded = false;
   let aspect = 390 / 844;
   let native = false;
-  let chain = Promise.resolve();
   function render(state) {
     native = state.native;
     document.documentElement.style.setProperty('--rail-scale',state.rail_scale??1);
@@ -28,27 +27,28 @@
     document.querySelector('#pin-window').setAttribute('aria-pressed', String(state.pinned));
   }
   function command(action, extra = {}) {
-    const result = chain.then(() => postJson('/api/window', { action, ...extra }));
-    chain = result.catch(error => { document.querySelector('#screen-note').textContent = error.message; });
-    return result;
+    const payload={action,...extra};
+    return window.pywebview?.api?.window_command ? window.pywebview.api.window_command(payload).then(result => {if(result.error)throw new Error(result.error);return result;}) : postJson('/api/window',payload);
   }
+  let dragReady=Promise.resolve();
+  const move=window.createPaneLatestQueue(async payload=>{await dragReady;return command('move',payload);});
   async function layout(open = expanded) {
     render(await command('layout', { expanded: open, aspect }));
   }
   arrow.addEventListener('click', () => layout(!expanded).catch(() => {}));
   document.querySelector('#welcome-setup').addEventListener('click', async () => {
     await layout(true);
-    if (document.querySelector('#run-guide').hidden) document.querySelector('#toggle-guide').click();
+    document.querySelector('#toggle-guide').click();
   });
   document.querySelectorAll('#drag-handle,[data-window-drag]').forEach(handle => {
     let origin=null;
     handle.addEventListener('pointerdown', event => {
       if (event.button !== 0 || !native) return;
       event.preventDefault(); origin={x:event.screenX,y:event.screenY};
-      handle.setPointerCapture(event.pointerId); command('drag').catch(() => {origin=null;});
+      handle.setPointerCapture(event.pointerId); dragReady=command('drag'); dragReady.catch(() => {origin=null;});
     });
     handle.addEventListener('pointermove',event=>{
-      if(origin) command('move',{dx:event.screenX-origin.x,dy:event.screenY-origin.y}).catch(()=>{});
+      if(origin) move({dx:event.screenX-origin.x,dy:event.screenY-origin.y}).catch(()=>{});
     });
     const end=()=>{origin=null;};
     handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);handle.addEventListener('lostpointercapture',end);
@@ -76,9 +76,10 @@
   let menuTimer;
   cluster.addEventListener('pointerenter',()=>{clearTimeout(menuTimer);cluster.classList.add('menu-open');command('window-menu',{open:true}).catch(()=>{});});
   cluster.addEventListener('pointerleave',()=>{menuTimer=setTimeout(()=>{cluster.classList.remove('menu-open');command('window-menu',{open:false}).catch(()=>{});},250);});
+  cluster.addEventListener('focusout',()=>{menuTimer=setTimeout(()=>{if(!cluster.contains(document.activeElement)&&!cluster.matches(':hover')){cluster.classList.remove('menu-open');command('window-menu',{open:false}).catch(()=>{});}},180);});
   cluster.addEventListener('focusin',()=>{cluster.classList.add('menu-open');command('window-menu',{open:true}).catch(()=>{});});
-  let resizing=null, resizeBusy=false, wantedHeight=null;
-  async function flushResize(){resizeBusy=true;try{while(wantedHeight!==null){const height=wantedHeight;wantedHeight=null;render(await command('resize',height));}}finally{resizeBusy=false;}}
+  let resizing=null;
+  const resize=window.createPaneLatestQueue(payload=>command('resize',payload),render,true);
   document.querySelectorAll('[data-resize-corner]').forEach(corner=>{
     corner.addEventListener('pointerdown',event=>{
       if(event.button!==0)return;
@@ -90,8 +91,8 @@
       if(!resizing)return;
       const dy=(event.screenY-resizing.y)*(resizing.corner.includes('n')?-1:1);
       const dx=(event.screenX-resizing.x)*(resizing.corner.includes('w')?-1:1)/aspect;
-      wantedHeight={corner:resizing.corner,height:Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)))};
-      if(!resizeBusy)flushResize().catch(()=>{});
+      const size={corner:resizing.corner,height:Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)))};
+      resize(size).catch(error=>{document.querySelector("#screen-note").textContent=error.message;});
     });
     const end=()=>{resizing=null;};
     corner.addEventListener('pointerup',end);corner.addEventListener('pointercancel',end);corner.addEventListener('lostpointercapture',end);

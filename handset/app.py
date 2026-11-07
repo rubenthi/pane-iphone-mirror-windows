@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 
 from handset.server import HOST, PORT, Handler, SingleServer
-from handset import updater
+from handset import updater, notifications
 from handset.screen import stop_screen
 from handset.state import DATA_DIR, prepare_state, isolate_device_state
 from handset.bluetooth import bluetooth
@@ -80,9 +80,12 @@ def main() -> None:
             _open_window()
         return
 
+    if '--reset' in sys.argv:
+        notifications.stop_for_reset()
     prepare_state(force='--reset' in sys.argv)
     isolate_device_state()
     _setup_logging()
+    notifications.session(desktop=True, mirroring=False)
 
     server = SingleServer((HOST, PORT), Handler)
     threading.Thread(target=server.serve_forever, name="pane-server", daemon=True).start()
@@ -102,6 +105,7 @@ def main() -> None:
     server.server_close()
     stop_screen()
     bluetooth.disconnect()
+    notifications.session(desktop=False, mirroring=False)
     updater.apply_on_exit()
     os._exit(0)
 
@@ -111,9 +115,18 @@ def run_native_window():
     from handset.window import shell
     webview.settings['ALLOW_FILE_URLS'] = False
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
+    class NativeBridge:
+        def window_command(self, payload):
+            try:
+                if not isinstance(payload, dict):
+                    raise ValueError('Invalid window action.')
+                return shell.command(payload)
+            except (ValueError, OSError) as error:
+                return {'error': str(error)}
+
     window = webview.create_window('Pane', URL, width=388, height=760,
                                    frameless=True, easy_drag=False, resizable=False, shadow=False, transparent=True,
-                                   background_color='#090c0d', text_select=True)
+                                   background_color='#122337', text_select=True, js_api=NativeBridge())
     def shown():
         if shell.handle:
             return

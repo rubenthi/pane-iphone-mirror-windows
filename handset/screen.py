@@ -249,7 +249,11 @@ def _only_udid(usb: list[str] | None = None, wifi: list[str] | None = None, tran
 def _set(**values) -> dict:
     with _LOCK:
         _STATE.update(values)
-        return dict(_STATE)
+        state = dict(_STATE)
+    if 'phase' in values:
+        from handset import notifications
+        notifications.session(mirroring=values['phase'] == 'running')
+    return state
 
 
 def _plain(error: Exception) -> str:

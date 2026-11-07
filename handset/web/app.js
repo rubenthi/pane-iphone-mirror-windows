@@ -108,12 +108,7 @@ showScreen.addEventListener("click", () => showPhone());
 restartScreen.addEventListener("click", () => restartMirror());
 wireRemoteControls();
 
-toggleGuide.addEventListener("click", () => {
-  const open = runGuide.hidden;
-  runGuide.hidden = !open;
-  toggleGuide.setAttribute("aria-expanded", String(open));
-  if (open) runGuide.scrollIntoView({ behavior: "smooth", block: "start" });
-});
+toggleGuide.addEventListener('click', () => window.paneView.open('setup'));
 
 async function load() {
   const generation = loadGeneration.next();
@@ -131,6 +126,8 @@ async function load() {
     renderWifi();
     renderScreen(state.screen);
     renderPills(state);
+    window.paneLastSnapshot = state;
+    window.dispatchEvent(new CustomEvent("pane-status", {detail:state}));
   } catch (error) {
     if (!loadGeneration.current(generation)) return;
     setPill(pillConnection, "Offline", "bad");
@@ -292,6 +289,7 @@ function renderDetail(device) {
 function renderScreen(screen) {
   if (!screen) return;
   connectionPhase = screen.phase;
+  if (screen.companion) window.paneExperience?.renderCompanion(screen.companion);
   if (screen.update) document.querySelector("#update-note").textContent = `Pane ${screen.update.version} · ${screen.update.note || screen.update.phase}`;
   const mirroring = screen.phase === "running";
   document.querySelectorAll(".rail-navigation button:not(#drawer-toggle)").forEach(button=>button.disabled=!mirroring);
@@ -374,10 +372,10 @@ function watchScreen() {
       if (!screenGeneration.current(generation)) return;
       renderScreen({ phase: "error", error: error.message });
     } finally {
-      if (screenGeneration.current(generation)) screenTimer = window.setTimeout(poll, 1000);
+      if (screenGeneration.current(generation)) screenTimer = window.setTimeout(poll, document.hidden ? 10000 : 2000);
     }
   }
-  screenTimer = window.setTimeout(poll, 1000);
+  screenTimer = window.setTimeout(poll, document.hidden ? 10000 : 2000);
 }
 
 function row(label, value, ok) {
@@ -544,7 +542,7 @@ function setKeyboard(on) {
 
 const keyboard = window.HandsetKeys.attach({
   post: (payload) => mirrorPost("/key", payload),
-  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live") && !document.body.classList.contains("drawer-open") && !document.body.classList.contains("onboarding-open"),
+  enabled: () => window.handsetKeyboardOn && workspace.classList.contains("is-live") && !document.body.classList.contains("drawer-open") && !document.body.classList.contains("onboarding-open") && !document.body.classList.contains("tour-open"),
 });
 
 function wireRemoteControls() {

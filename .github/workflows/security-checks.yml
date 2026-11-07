@@ -24,6 +24,9 @@ jobs:
           node --check handset/web/mirror.js
           node --check handset/web/setup.js
           node --check handset/web/icons.js
+          node --check handset/web/experience.js
+          node --check handset/web/onboarding.js
+          node --check handset/web/shell.js
           node --test tests/ui.test.cjs
       - name: Install browser test tools
         run: npm ci --ignore-scripts
@@ -31,3 +34,16 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Exercise setup and Uploads UI
         run: npm run test:setup
+      - name: Exercise compact menus and preferences
+        run: npm run test:experience
+  native-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+          components: rustfmt, clippy
+      - run: cargo fmt --check --manifest-path native/Cargo.toml
+      - run: cargo test --locked --manifest-path native/Cargo.toml
+      - run: cargo clippy --locked --manifest-path native/Cargo.toml --target x86_64-pc-windows-gnu -- -D warnings
