@@ -50,18 +50,24 @@ final class TransfersTests: XCTestCase {
         app.buttons["laptopConnection"].tap()
         let toggle = app.switches["keepScreenAwake"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        let original = toggle.value as? String
-        toggle.tap()
-        let changed = toggle.value as? String
-        XCTAssertNotEqual(changed, original)
+        let original = toggle.value as? String ?? "invalid"
+        XCTAssertTrue(["0", "1"].contains(original))
+        let changed = original == "1" ? "0" : "1"
+        // SwiftUI exposes the labeled row as a switch. Hit the trailing
+        // switch control rather than the center of its multiline label.
+        print("Keep-awake control: \(toggle.debugDescription)")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let changedValue = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", changed), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [changedValue], timeout: 5), .completed)
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["laptopConnection"].waitForExistence(timeout: 15))
         app.buttons["laptopConnection"].tap()
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         XCTAssertEqual(toggle.value as? String, changed)
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, original)
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let restoredValue = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", original), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [restoredValue], timeout: 5), .completed)
     }
 
 }
