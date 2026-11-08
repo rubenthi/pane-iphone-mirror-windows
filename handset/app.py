@@ -16,9 +16,9 @@ from pathlib import Path
 
 from handset.server import HOST, PORT, Handler, SingleServer
 from handset.edition import APP_NAME
-from handset import updater, notifications
+from handset import updater, notifications, setup
 from handset.screen import stop_screen
-from handset.state import DATA_DIR, prepare_state, isolate_device_state
+from handset.state import DATA_DIR, RESET_REQUEST, can_reset_development, prepare_state, isolate_device_state
 from handset.bluetooth import bluetooth
 
 URL = f"http://{HOST}:{PORT}/"
@@ -69,6 +69,21 @@ def _open_window() -> subprocess.Popen | None:
     return None
 
 
+def _clear_profile():
+    notifications.stop_for_reset()
+    deadline = time.monotonic() + 20
+    while True:
+        try:
+            prepare_state(force=True)
+            break
+        except PermissionError:
+            # WebView2 can briefly retain file handles after the old window closes.
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(.25)
+    setup.reload_state()
+
+
 def main() -> None:
     if _already_running():
         try:
@@ -80,14 +95,50 @@ def main() -> None:
             _open_window()
         return
 
-    if '--reset' in sys.argv:
-        notifications.stop_for_reset()
-    prepare_state(force='--reset' in sys.argv)
+    # Reserve the instance's port before changing any persistent state.
+    server = SingleServer((HOST, PORT), Handler)
+    marker = DATA_DIR / RESET_REQUEST
+    pending_reset = can_reset_development() and marker.is_file()
+    if pending_reset or '--reset' in sys.argv:
+        try:
+            _clear_profile()
+            if pending_reset:
+                marker.unlink()
+        except OSError as error:
+            server.server_close()
+            if pending_reset and os.name == 'nt':
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(None, f'Could not finish the reset. Reopen Pane (Development) to retry.\n\n{error}',
+                                                 APP_NAME, 0x10)
+            raise
+    else:
+        prepare_state()
     isolate_device_state()
     _setup_logging()
     notifications.session(desktop=True, mirroring=False)
 
-    server = SingleServer((HOST, PORT), Handler)
+    fallback = None
+    reset_lock = threading.Lock()
+
+    def request_reset():
+        from handset.window import shell
+        with reset_lock:
+            if not can_reset_development():
+                raise ValueError('Reset requires the standard development profile.')
+            if marker.exists():
+                return
+            marker.touch(exist_ok=False)
+            try:
+                if fallback is not None:
+                    fallback.terminate()
+                else:
+                    shell.command({'action': 'close'})
+            except Exception:
+                marker.unlink(missing_ok=True)
+                raise
+
+    if can_reset_development():
+        server.request_development_reset = request_reset
     threading.Thread(target=server.serve_forever, name="pane-server", daemon=True).start()
     threading.Thread(target=updater.monitor, name="pane-update", daemon=True).start()
     logging.info("Pane listening on %s", URL)
@@ -96,17 +147,21 @@ def main() -> None:
         run_native_window()
     except Exception:
         logging.exception('Native WebView2 window unavailable; using browser fallback.')
-        window = _open_window()
-        if window is None:
+        fallback = _open_window()
+        if fallback is None:
+            server.request_development_reset = None
             while True:
                 time.sleep(3600)
-        window.wait()
+        fallback.wait()
     server.shutdown()
-    server.server_close()
     stop_screen()
     bluetooth.disconnect()
     notifications.session(desktop=False, mirroring=False)
     updater.apply_on_exit()
+    server.server_close()
+    if can_reset_development() and marker.exists():
+        subprocess.Popen([sys.executable, '-m', 'handset.app'], cwd=Path(__file__).resolve().parents[1],
+                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), close_fds=True)
     os._exit(0)
 
 

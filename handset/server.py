@@ -19,7 +19,7 @@ from handset.window import shell
 from handset import setup, signing, notifications
 from handset.bluetooth import bluetooth
 from handset.transfers import store
-from handset.state import prepare_state, isolate_device_state
+from handset.state import prepare_state, isolate_device_state, can_reset_development
 from handset.edition import APP_NAME, PORT, STREAM_PORT
 
 ROOT = Path(__file__).resolve().parent / "web"
@@ -130,6 +130,22 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._json({"error": "Expected a JSON object."}, status=400)
+            return
+        if path == '/api/development/reset':
+            reset = self.server.request_development_reset
+            if not reset or not can_reset_development():
+                self._json({'error': 'Reset is unavailable in this instance.'}, status=404)
+            elif payload.get('confirm') is not True or len(payload) != 1:
+                self._json({'error': 'Confirm the development reset first.'}, status=400)
+            elif setup.status()['phase'] == 'working' or signing.status()['phase'] in {'working', 'prompt'}:
+                self._json({'error': 'Finish the current setup or signing operation before resetting.'}, status=409)
+            else:
+                try:
+                    reset()
+                except (OSError, ValueError) as error:
+                    self._json({'error': str(error)}, status=409)
+                    return
+                self._json({'restarting': True})
             return
         if path == '/api/window':
             try:
@@ -345,6 +361,8 @@ class Handler(BaseHTTPRequestHandler):
         body = target.read_bytes()
         if target == root / "index.html":
             body = body.replace(b"{{pane_name}}", APP_NAME.encode())
+            button = b'<button type="button" class="text-button" data-development-reset>Reset development app</button>'
+            body = body.replace(b'<!-- development-reset -->', button if self.server.request_development_reset and can_reset_development() else b'')
         self.send_response(200)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
@@ -354,6 +372,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class SingleServer(ThreadingHTTPServer):
+    request_development_reset = None
     # On Windows, address reuse lets a second copy bind the same port and steal requests.
     allow_reuse_address = False
 

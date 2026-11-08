@@ -350,10 +350,10 @@ const fs = require("node:fs");
     ]) {
       setupSnapshot = { phase: "idle", onboardingRequired: true, ...state };
       const expectedTitle = {
-        connect: "Your iPhone, connected.",
-        developer: "Enable Developer Mode.",
-        install: "Install Pane on iPhone.",
-        pair: "Open Pane on iPhone.",
+        connect: "Connect your iPhone",
+        developer: "Enable Developer Mode",
+        install: "Install Pane on iPhone",
+        pair: "Open Pane on iPhone",
       }[stage];
       await page.waitForFunction(
         (title) => document.querySelector("#onboarding-title").textContent === title
@@ -369,7 +369,7 @@ const fs = require("node:fs");
       assert.match(
         await page.locator("#onboarding-title").innerText(),
         {
-          connect: /connected/,
+          connect: /Connect your iPhone/,
           developer: /Developer Mode/,
           install: /Install Pane/,
           pair: /Open Pane/,

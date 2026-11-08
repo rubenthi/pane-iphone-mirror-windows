@@ -24,6 +24,8 @@ Use a local feature branch. Close any other copy of Pane and run `.\.venv\Script
 
 Source runs appear as **Pane (Development)**. They store settings, pairing records, and the browser profile in `%LOCALAPPDATA%\Pane (Development)` and use ports 8775 and 8776 for the UI and mirror. The downloaded **Pane** release uses `%LOCALAPPDATA%\Pane` and ports 8765 and 8766. Only the packaged release checks for desktop updates. For a disposable instance, set `PANE_DATA_DIR`, `PANE_PORT`, and `PANE_STREAM_PORT` before launching.
 
+Choose **Reset development app** in Settings or at the bottom of first-run setup to clear the standard development profile and reopen the Connect step. Files already saved in Downloads remain available.
+
 ## Build and upload a release
 
 1. Choose a desktop version above every reserved stable tag or release, including drafts. Update `handset/version.py`, both numeric and both string version fields in `packaging/version.txt`, and the changelog. Commit the finished source locally.
