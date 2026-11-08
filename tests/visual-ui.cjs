@@ -245,6 +245,8 @@ const fs = require("node:fs");
         .getAttribute("aria-describedby"),
       /notification-setup-help/,
     );
+    await page.locator('#pin-window').focus();
+    await page.locator('#pane-tooltip').waitFor({state:'visible'});
     await capture("13-tooltip", false);
     await page.keyboard.press("Escape");
     assert.equal(
