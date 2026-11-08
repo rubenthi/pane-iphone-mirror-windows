@@ -37,6 +37,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     });
     const windowsIdentity=(await page.evaluate(()=>getJson('/api/window'))).windows_identity;
     assert.deepEqual(windowsIdentity,{app_id:'Pane.Desktop.Development',form_icon_matches:true,small_icon:true,large_icon:true});
+    const initialDensity=await page.evaluate(async()=>({state:await getJson('/api/window'),dpr:devicePixelRatio}));
+    assert.equal(initialDensity.state.per_monitor_v2,true,'The native window must use PerMonitorV2, not Windows bitmap scaling');
+    assert.ok(Math.abs(initialDensity.dpr-initialDensity.state.dpi/96)<.01,'WebView2 must rasterize at the current monitor density');
     await page.evaluate(()=>load());
     await page.getByText('No iPhone detected.',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.locator('#connection-drawer').isVisible(),false);
@@ -253,12 +256,89 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await checkDesktopPixels();
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
-    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,windowsIdentity,resizeEvidence,checks:['Windows application identity and Pane icons','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','four-corner anchoring','resize latency and transient desktop pixels','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
+    // Move only the disposable preview across real monitors. Browser emulated
+    // DPR cannot verify WM_DPICHANGED, WebView2 scale detection, or native clips.
+    const beforeDensity=await page.evaluate(()=>getJson('/api/window'));
+    const homeMonitor=beforeDensity.monitors.find(m=>m.name===beforeDensity.monitor);
+    const densityEvidence=[];
+    for(const monitor of [...beforeDensity.monitors,homeMonitor]){
+      assert.ok(monitor,'Original test monitor remains available');
+      await page.evaluate(()=>{window.testDensityStableSince=0;});
+      const response=await fetch('http://127.0.0.1:18776/api/window',{
+        method:'POST',headers:{'X-Pane-Token':token,'Content-Type':'application/json'},
+        body:JSON.stringify({action:'test-monitor',index:monitor.index})
+      });
+      assert.equal(response.status,200);
+      await page.waitForFunction(async monitor=>{
+        const s=await getJson('/api/window');
+        const matches=s.monitor===monitor.name && s.dpi===monitor.dpi && s.per_monitor_v2 && Math.abs(devicePixelRatio-monitor.dpi/96)<.01 &&
+          innerWidth===s.width && innerHeight===s.height && s.web_offset.every(v=>v===0) &&
+          Math.abs(s.native_rect[2]-s.native_rect[0]-innerWidth*devicePixelRatio)<=1 &&
+          Math.abs(s.native_rect[3]-s.native_rect[1]-innerHeight*devicePixelRatio)<=1;
+        if(!matches){window.testDensityStableSince=0;return false;}
+        window.testDensityStableSince ||= performance.now();
+        return performance.now()-window.testDensityStableSince>=300;
+      },monitor,{timeout:15000,polling:100});
+      const density=await page.evaluate(async()=>{
+        const state=await getJson('/api/window');
+        const outer=document.querySelector('#phone-shell').getBoundingClientRect();
+        const inner=document.querySelector('#phone-screen').getBoundingClientRect();
+        return {monitor:state.monitor,dpi:state.dpi,dpr:devicePixelRatio,
+          viewport:[innerWidth,innerHeight],nativeRect:state.native_rect,
+          bezel:[inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom],
+          bezelColor:getComputedStyle(document.querySelector('#phone-shell')).backgroundColor};
+      });
+      console.log('Monitor density snapshot:',JSON.stringify(density));
+      assert.equal(density.dpi,monitor.dpi);
+      assert.ok(Math.abs(density.dpr-monitor.dpi/96)<.01,'Browser DPR must match the target display density, not the source display');
+      assert.ok(Math.abs((density.nativeRect[2]-density.nativeRect[0])-density.viewport[0]*density.dpr)<=1,'Physical width must match CSS width times monitor density');
+      assert.ok(Math.abs((density.nativeRect[3]-density.nativeRect[1])-density.viewport[1]*density.dpr)<=1,'Physical height must match CSS height times monitor density');
+      assert.ok(density.bezel.every(side=>Math.abs(side-3)<.1),`DPI migration changed bezel width: ${JSON.stringify(density)}`);
+      assert.equal(density.bezelColor,'rgb(0, 0, 0)');
+      await checkRegion();
+      await checkDesktopPixels();
+      density.resizeChecks=[];
+      // A monitor transition must leave resize anchors and physical raster
+      // sizing correct, including after returning to the original dimensions.
+      const originalHeight=density.viewport[1];
+      for(const corner of ['se','nw']){
+        for(const height of [originalHeight+20,originalHeight]){
+          const before=await page.evaluate(()=>getJson('/api/window'));
+          const reply=await page.evaluate(payload=>window.pywebview.api.window_command(payload),{action:'resize',corner,height});
+          assert.equal(reply.error,undefined);
+          await page.waitForFunction(async expected=>{
+            const s=await getJson('/api/window');
+            return s.height===expected && innerWidth===s.width && innerHeight===s.height &&
+              document.querySelector('.workspace').getBoundingClientRect().height===innerHeight;
+          },height);
+          const after=await page.evaluate(async()=>({state:await getJson('/api/window'),dpr:devicePixelRatio,viewport:[innerWidth,innerHeight]}));
+          const anchorX=corner.includes('w')?2:0,anchorY=corner.includes('n')?3:1;
+          assert.equal(after.state.native_rect[anchorX],before.native_rect[anchorX],`${monitor.dpi}-DPI ${corner} resize moved its horizontal anchor`);
+          assert.equal(after.state.native_rect[anchorY],before.native_rect[anchorY],`${monitor.dpi}-DPI ${corner} resize moved its vertical anchor`);
+          assert.equal(after.state.dpi,monitor.dpi);
+          assert.ok(Math.abs(after.dpr-monitor.dpi/96)<.01);
+          assert.ok(Math.abs(after.state.native_rect[2]-after.state.native_rect[0]-after.viewport[0]*after.dpr)<=1,'Resized physical width must match CSS width times density');
+          assert.ok(Math.abs(after.state.native_rect[3]-after.state.native_rect[1]-after.viewport[1]*after.dpr)<=1,'Resized physical height must match CSS height times density');
+          await checkRegion();
+          density.resizeChecks.push({corner,height,viewport:after.viewport,nativeRect:after.state.native_rect});
+        }
+      }
+      await checkDesktopPixels();
+      const screenshot=await page.screenshot({path:path.join(output,`native-density-${densityEvidence.length}-${density.dpi}.png`)});
+      density.screenshot=[screenshot.readUInt32BE(16),screenshot.readUInt32BE(20)];
+      assert.ok(Math.abs(density.screenshot[0]-density.viewport[0]*density.dpr)<=1,'Capture must contain native-density raster pixels');
+      assert.ok(Math.abs(density.screenshot[1]-density.viewport[1]*density.dpr)<=1,'Capture height must contain native-density raster pixels');
+      densityEvidence.push(density);
+    }
+    fs.writeFileSync(path.join(output,'native-density.json'),JSON.stringify(densityEvidence,null,2));
+    console.log('Native display density:',JSON.stringify(densityEvidence));
+
+    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,windowsIdentity,resizeEvidence,densityEvidence,checks:['Windows application identity and Pane icons','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','four-corner anchoring','resize latency and transient desktop pixels','full-frame canvas','wheel-to-touch mapping','native monitor density transitions','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
   } catch(error) {
     console.log('Native preview diagnostics:',logs);
     if(page){
-      console.log('Native desktop sample diagnostics:',await page.evaluate(async()=>{const s=await getJson('/api/window');return {native_rect:s.native_rect,pixels:s.pixels,resize_samples:s.resize_samples,web_offset:s.web_offset};}).catch(()=>({})));
+      console.log('Native desktop sample diagnostics:',await page.evaluate(async()=>{const s=await getJson('/api/window');return {native_rect:s.native_rect,pixels:s.pixels,resize_samples:s.resize_samples,web_offset:s.web_offset,dpi:s.dpi,dpr:devicePixelRatio,viewport:[innerWidth,innerHeight],geometry:[s.width,s.height],monitor:s.monitor};}).catch(()=>({})));
       await page.screenshot({path:path.join(output,'native-failure.png')}).catch(()=>{});
     }
     if(page) console.log(await page.evaluate(()=>({status:document.querySelector('#status-note')?.textContent,devices:document.querySelector('#devices')?.textContent,setup:document.querySelector('#onboarding-note')?.textContent})).catch(()=>({})));

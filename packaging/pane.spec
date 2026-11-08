@@ -64,4 +64,5 @@ exe = EXE(
     console=False,
     upx=False,
     version=str(ROOT / "packaging" / "version.txt"),
+    manifest=str(ROOT / "packaging" / "pane.manifest"),
 )

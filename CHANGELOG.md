@@ -2,6 +2,12 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.6 - Native display density and flat colors (development build)
+
+Pane renders at each monitor's own pixel density instead of letting Windows stretch a 100%-scale bitmap on a 200%-scale laptop screen. The packaged executable declares PerMonitorV2, source runs enable the same mode before opening the window, and moving between monitors updates the physical window shape and browser surface together. The three-pixel black bezel stays consistent.
+
+Flat Slate surfaces and Blue action colors from [Radix Colors](https://www.radix-ui.com/colors/docs/palette-composition/composing-a-palette) replace the layered blue gradients, glossy highlights and hover glows. Controls keep their existing layout and behavior. The iPhone companion is unchanged.
+
 ## 2.5.5 - Simpler notification setup and black bezel (development build)
 
 Phone notification setup starts with one switch. Pane selects a paired iPhone automatically when there is one unambiguous choice, while keeping saved choices. A compact Bluetooth settings preview shows the laptop name and Share System Notifications switch; it disappears once connected. Check again refreshes devices and retries, and Windows notification permission failures offer the correct settings shortcut. Alert categories and message previews are under Alerts & privacy; previews and background behavior remain separate opt-ins.

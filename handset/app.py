@@ -184,6 +184,8 @@ def main() -> None:
 
 
 def run_native_window():
+    from handset.display import enable_per_monitor_dpi
+    enable_per_monitor_dpi()
     import webview
     from handset.window import shell
     _set_windows_identity()
@@ -200,7 +202,7 @@ def run_native_window():
 
     window = webview.create_window(APP_NAME, URL, width=388, height=760,
                                    frameless=True, easy_drag=False, resizable=False, shadow=False, transparent=True,
-                                   background_color='#122337', text_select=True, js_api=NativeBridge())
+                                   background_color='#18191b', text_select=True, js_api=NativeBridge())
     def shown():
         if shell.handle:
             return

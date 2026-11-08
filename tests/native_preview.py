@@ -31,8 +31,47 @@ sample_until = 0
 original_command = shell.command
 
 
+def test_monitors():
+    from System.Windows.Forms import Screen
+    shell.u.MonitorFromRect.argtypes = [ctypes.POINTER(W.RECT), W.DWORD]
+    shell.u.MonitorFromRect.restype = W.HANDLE
+    shcore = ctypes.WinDLL('shcore')
+    shcore.GetDpiForMonitor.argtypes = [W.HANDLE, ctypes.c_int, ctypes.POINTER(W.UINT), ctypes.POINTER(W.UINT)]
+    shcore.GetDpiForMonitor.restype = ctypes.c_long
+    rows = []
+    for index, screen in enumerate(Screen.AllScreens):
+        bounds = screen.Bounds
+        rect = W.RECT(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom)
+        monitor = shell.u.MonitorFromRect(ctypes.byref(rect), 2)
+        x, y = W.UINT(), W.UINT()
+        result = shcore.GetDpiForMonitor(monitor, 0, ctypes.byref(x), ctypes.byref(y))
+        if result != 0:
+            raise OSError('Could not read test monitor density.')
+        rows.append({'index': index, 'name': screen.DeviceName, 'dpi': x.value})
+    return rows
+
+
 def timed_command(payload):
     global sample_until
+    if payload.get('action') == 'test-monitor':
+        # This route exists only in the disposable fixture. It can move only
+        # this fixture's own HWND and its known-color test backdrop.
+        index = payload.get('index')
+        if type(index) is not int:
+            raise ValueError('Expected a test monitor index.')
+        def move():
+            from System.Windows.Forms import Screen
+            screens = list(Screen.AllScreens)
+            if not 0 <= index < len(screens):
+                raise ValueError('Unknown test monitor.')
+            screen = screens[index]
+            shell._test_backdrop.Bounds = screen.Bounds
+            work = screen.WorkingArea
+            if not shell.u.SetWindowPos(shell.handle, 0, work.Left+48, work.Top+48, 0, 0, 0x0015):
+                raise OSError('Could not move the test window.')
+            shell._form.BringToFront()
+            return {'requested_monitor': screen.DeviceName}
+        return shell._on_ui(move)
     # Only instrument outer bridge calls; command marshals itself to the UI thread.
     outer = payload.get('action') == 'resize' and shell._form is not None and shell._form.InvokeRequired
     started = time.perf_counter()
@@ -102,6 +141,9 @@ def checked_status():
         state['minimized'] = bool(shell.u.IsIconic(shell.handle))
         bounds = W.RECT(); shell.u.GetWindowRect(shell.handle, ctypes.byref(bounds))
         state['native_rect'] = [bounds.left, bounds.top, bounds.right, bounds.bottom]
+        from System.Windows.Forms import Screen
+        state['monitor'] = Screen.FromHandle(shell._form.Handle).DeviceName
+        state['monitors'] = test_monitors()
         scale = (shell.u.GetDpiForWindow(shell.handle) or 96) / 96
         region = shell.g.CreateRoundRectRgn(0, 0, 1, 1, 0, 0)
         shell.g.PtInRegion.argtypes = [W.HRGN, ctypes.c_int, ctypes.c_int]

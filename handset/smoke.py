@@ -69,6 +69,8 @@ def run(output):
 
 def verify_native_window():
     """Exercise the real packaged WinForms/WebView2 renderer without any phone API."""
+    from handset.display import enable_per_monitor_dpi
+    enable_per_monitor_dpi()
     import ctypes
     from ctypes import wintypes as W
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -93,8 +95,10 @@ def verify_native_window():
             for expanded in (False,True,False):
                 state=shell.layout(expanded,390/844)
                 time.sleep(.2)
-                viewport=window.evaluate_js('({width:innerWidth,height:innerHeight,decoder:typeof VideoDecoder})')
+                viewport=window.evaluate_js('({width:innerWidth,height:innerHeight,decoder:typeof VideoDecoder,dpr:devicePixelRatio})')
                 assert viewport['width']==state['width'] and viewport['height']==state['height'], (viewport,state)
+                assert state['per_monitor_v2'], 'Packaged window must use PerMonitorV2'
+                assert abs(viewport['dpr'] - state['dpi']/96) < .01, (viewport, state)
                 assert viewport['decoder']=='function', 'WebCodecs VideoDecoder unavailable'
             shell.u.GetWindowRgn.argtypes=[W.HWND,W.HRGN]
             shell.g.PtInRegion.argtypes=[W.HRGN,ctypes.c_int,ctypes.c_int]

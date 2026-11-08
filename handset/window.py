@@ -8,6 +8,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes as W
 import math
+import logging
 import os
 import threading
 
@@ -57,6 +58,7 @@ class FloatingWindow:
         self._geometry = dimensions()
         self._clip_children = set()
         self._repair_queued = False
+        self._dpi_queued = False
         if os.name != 'nt':
             return
         self.u = ctypes.WinDLL('user32', use_last_error=True)
@@ -77,6 +79,8 @@ class FloatingWindow:
             'GetWindowRgn': ([W.HWND, W.HRGN], ctypes.c_int),
             'GetWindowRect': ([W.HWND, ctypes.POINTER(W.RECT)], W.BOOL),
             'GetDpiForWindow': ([W.HWND], W.UINT),
+            'GetWindowDpiAwarenessContext': ([W.HWND], W.HANDLE),
+            'AreDpiAwarenessContextsEqual': ([W.HANDLE, W.HANDLE], W.BOOL),
             'ShowWindow': ([W.HWND, ctypes.c_int], W.BOOL),
             'SetForegroundWindow': ([W.HWND], W.BOOL),
             'PostMessageW': ([W.HWND, W.UINT, W.WPARAM, W.LPARAM], W.BOOL),
@@ -141,7 +145,7 @@ class FloatingWindow:
             from System.Drawing import Color
             from System.Windows.Forms import Timer
             # Newly exposed pixels should match Pane while WebView2 repaints.
-            self._form.BackColor = Color.FromArgb(11, 21, 37)
+            self._form.BackColor = Color.FromArgb(24, 25, 27)
             self._form.webview.DefaultBackgroundColor = Color.Transparent
             self.layout(False, DEFAULT_ASPECT)
             # Native WebView2 child bounds can trail the form resize. Repair
@@ -149,6 +153,8 @@ class FloatingWindow:
             self._form.Resize += self._queue_region_repair
             self._form.webview.Resize += self._queue_region_repair
             self._form.webview.HandleCreated += self._queue_region_repair
+            self._attach_display_messages()
+            self._form.HandleCreated += lambda *_: self._attach_display_messages()
             # WebView2 can recreate its child renderer after navigation, DPI or
             # GPU changes. Clip its native hosts as well as the WinForms parent.
             self._shape_timer = Timer()
@@ -158,6 +164,48 @@ class FloatingWindow:
             self._form.FormClosed += lambda *_: self._shape_timer.Stop()
             return True
         return self._on_ui(configure)
+
+    def _attach_display_messages(self):
+        # The .NET Framework host may suppress Form.DpiChanged unless its own
+        # application config also opts in. Observe the actual native message;
+        # keep WinForms' window procedure and WebView2 child notifications intact.
+        self._comctl = ctypes.WinDLL('comctl32', use_last_error=True)
+        message_type = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, W.HWND, W.UINT,
+                                         W.WPARAM, W.LPARAM, ctypes.c_size_t, ctypes.c_size_t)
+        self._comctl.SetWindowSubclass.argtypes = [W.HWND, message_type, ctypes.c_size_t, ctypes.c_size_t]
+        self._comctl.SetWindowSubclass.restype = W.BOOL
+        self._comctl.RemoveWindowSubclass.argtypes = [W.HWND, message_type, ctypes.c_size_t]
+        self._comctl.RemoveWindowSubclass.restype = W.BOOL
+        self._comctl.DefSubclassProc.argtypes = [W.HWND, W.UINT, W.WPARAM, W.LPARAM]
+        self._comctl.DefSubclassProc.restype = ctypes.c_ssize_t
+        @message_type
+        def messages(hwnd, message, wparam, lparam, identifier, data):
+            result = self._comctl.DefSubclassProc(hwnd, message, wparam, lparam)
+            try:
+                if message == 0x02e0:  # WM_DPICHANGED
+                    self._queue_dpi_layout()
+                elif message == 0x0082:  # WM_NCDESTROY
+                    self._comctl.RemoveWindowSubclass(hwnd, self._display_messages, identifier)
+            except Exception:
+                # Exceptions must never escape a native window-procedure callback.
+                logging.exception('Could not update Pane for the display density change.')
+            return result
+        self._display_messages = messages  # Keep the native callback alive.
+        if not self._comctl.SetWindowSubclass(self._form.Handle.ToInt64(), messages, 0x50414e45, 0):
+            raise OSError('Windows could not attach the display-density handler.')
+
+    def _queue_dpi_layout(self):
+        if self._dpi_queued or self._form.IsDisposed or not self._form.IsHandleCreated:
+            return
+        from System import Action
+        self._dpi_queued = True
+        def relayout():
+            self._dpi_queued = False
+            if not self._form.IsDisposed:
+                self.layout(self.expanded, self.aspect)
+        # WM_DPICHANGED must finish updating GetDpiForWindow first. WebView2
+        # then follows the new monitor scale and redraws at physical resolution.
+        self._form.BeginInvoke(Action(relayout))
 
     def _queue_region_repair(self, *_):
         if self._repair_queued or self._form.IsDisposed or not self._form.IsHandleCreated:
@@ -171,7 +219,12 @@ class FloatingWindow:
         self._form.BeginInvoke(Action(repair))
 
     def status(self):
-        return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
+        density = {}
+        if self.handle:
+            density = {'dpi': self.u.GetDpiForWindow(self.handle),
+                       'per_monitor_v2': bool(self.u.AreDpiAwarenessContextsEqual(
+                           self.u.GetWindowDpiAwarenessContext(self.handle), -4))}
+        return {**self._geometry, **density, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
 
     def layout(self, expanded, aspect, *, resize_corner=None):
         if self._form is not None and self._form.InvokeRequired:
