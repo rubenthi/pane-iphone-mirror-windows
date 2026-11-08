@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,6 +7,14 @@ from handset.bluetooth import Bluetooth
 
 
 class AutomaticBluetoothTests(unittest.TestCase):
+    def test_write_failures_never_expose_file_contents(self):
+        link = Bluetooth()
+        error = RuntimeError('Could not write value private-file-bytes: Protocol Error 0xF2: Unknown')
+        with patch.object(link, '_session', new=AsyncMock(side_effect=error)), patch('handset.bluetooth.store') as fake_store:
+            fake_store.return_value.rows = []
+            link._run({})
+        self.assertEqual(link.status()['errorCode'], '0xF2')
+        self.assertNotIn('private-file-bytes', json.dumps(link.status()))
     def test_only_a_completed_saved_binding_is_reconnected(self):
         link = Bluetooth()
         for binding in ({}, {'token':'saved'}, {'token':'saved','service':'uuid','onboardingComplete':False}):

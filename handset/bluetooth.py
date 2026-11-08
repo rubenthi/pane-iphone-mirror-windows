@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import threading
 
 from handset.setup import COMMAND_UUID, RESPONSE_UUID
@@ -167,8 +168,12 @@ class Bluetooth:
         except asyncio.CancelledError:
             self._set(phase='disconnected', note='Bluetooth disconnected.', error=None)
         except Exception as error:
-            message = str(error) or type(error).__name__
-            self._set(phase='error', error=message, note=message)
+            # WinRT may include the entire GATT write (including file bytes)
+            # in its exception. Keep only the fixed protocol code for diagnosis.
+            protocol = re.search(r'Protocol Error (0x[0-9a-fA-F]{2})', str(error))
+            message = 'Bluetooth disconnected. Open Pane on your iPhone.'
+            self._set(phase='error', error=message, note=message,
+                      errorCode=protocol.group(1) if protocol else type(error).__name__)
         finally:
             self._reset_interrupted_outgoing()
             with self.lock:
