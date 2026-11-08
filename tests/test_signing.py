@@ -1,5 +1,6 @@
 import json
 import io
+import queue
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,17 @@ from unittest.mock import patch, MagicMock
 from handset import signing
 
 class SigningTests(unittest.TestCase):
+    def test_certificate_revocation_requires_listed_choice_and_explicit_confirmation(self):
+        prompt = {'id':'current', 'kind':'certificate', 'choices':[{'id':'old-pane'}]}
+        answers = queue.Queue()
+        with patch.dict(signing._STATE, phase='prompt', prompt=prompt), patch.object(signing, '_ANSWERS', answers):
+            for value, confirmation in [('old-pane', False), ('old-pane', 'true'), ('unlisted', True)]:
+                with self.assertRaises(ValueError): signing.answer('current', value, confirmation)
+            self.assertTrue(answers.empty())
+            signing.answer('current', 'old-pane', True)
+            self.assertEqual(answers.get_nowait(), {'value':'old-pane','confirmed':True})
+            self.assertEqual(signing.status()['phase'], 'working')
+            with self.assertRaises(ValueError): signing.answer('current', 'old-pane', True)
     def test_worker_error_retains_safe_diagnostics_and_clears_credentials(self):
         process = MagicMock()
         process.stdin = io.StringIO()

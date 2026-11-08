@@ -115,17 +115,22 @@ def start(udid, package, email, password):
         threading.Thread(target=_run, args=(process, package, initial), daemon=True, name='pane-signing').start()
     return status()
 
-def answer(prompt_id, value):
+def answer(prompt_id, value, confirm_revocation=False):
     with _LOCK:
         prompt = _STATE.get('prompt')
         if _STATE['phase'] != 'prompt' or not prompt or prompt.get('id') != prompt_id:
             raise ValueError('This signing prompt is no longer active.')
         if not isinstance(value, str) or not 1 <= len(value) <= 256:
             raise ValueError('Enter a verification code or choose an option.')
-        if prompt['kind'] == 'team' and value not in [c['id'] for c in prompt['choices']]:
-            raise ValueError('Choose a listed developer team.')
+        if prompt['kind'] in {'team', 'certificate'} and value not in [c['id'] for c in prompt['choices']]:
+            raise ValueError('Choose a listed developer team or certificate.')
+        if prompt['kind'] == 'certificate' and confirm_revocation is not True:
+            raise ValueError('Confirm revocation of the selected certificate. Other apps signed with it may stop opening.')
         _STATE.update(phase='working', prompt=None, note='Continuing signing…')
-        _ANSWERS.put({'value': value})
+        reply = {'value': value}
+        if prompt['kind'] == 'certificate':
+            reply['confirmed'] = True
+        _ANSWERS.put(reply)
     return status()
 
 def cancel():
@@ -166,7 +171,8 @@ def _run(process, package, initial):
                 send(_storage(account, event))
             elif kind == 'prompt':
                 event['id'] = secrets.token_hex(16)
-                _set(phase='prompt', prompt=event, note='Choose your developer team.' if event['kind'] == 'team' else 'Enter the Apple verification code.')
+                notes = {'team': 'Choose your developer team.', 'certificate': 'Apple’s certificate limit has been reached. Review the existing certificates below. Nothing is revoked until you explicitly confirm.', 'verification': 'Enter the Apple verification code.'}
+                _set(phase='prompt', prompt=event, note=notes.get(event['kind'], 'Signing needs your attention.'))
                 send(_ANSWERS.get(timeout=300))
             elif kind == 'status':
                 _set(note=event['note'])

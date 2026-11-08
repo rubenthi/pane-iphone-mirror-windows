@@ -7,6 +7,7 @@ use isideload::{
     anisette::{AnisetteProvider, remote_v3::RemoteV3AnisetteProvider},
     auth::apple_account::{AppleAccount, TwoFactorCallbackParams, TwoFactorCallbackResponse},
     dev::{developer_session::DeveloperSession, teams::DeveloperTeam},
+    dev::certificates::DevelopmentCertificate,
     sideload::{SideloaderBuilder, TeamSelection, builder::MaxCertsBehavior},
     util::{callbacks::{ExtensionsBehaviorCallbackBox, MaxCertsCallbackBox}, storage::SideloadingStorage},
 };
@@ -116,6 +117,28 @@ fn team(teams: &Vec<DeveloperTeam>) -> Option<String> {
     let id = answer["value"].as_str()?;
     teams.iter().find(|t| t.team_id == id).map(|t| t.team_id.clone())
 }
+
+fn certificate_choices(certs: &[DevelopmentCertificate]) -> Vec<Value> {
+    certs.iter().filter_map(|cert| {
+        let serial = cert.serial_number.as_ref()?;
+        Some(json!({"id":serial,"name":cert.machine_name.as_deref().or(cert.name.as_deref()).unwrap_or("Unnamed development certificate"),
+            "serial":serial,"status":cert.status,"expires":cert.expiration_date.as_ref().map(|date| date.to_xml_format())}))
+    }).collect()
+}
+
+fn approved_certificate(reply: &Value, choices: &[Value]) -> Option<Vec<String>> {
+    if reply["confirmed"].as_bool() != Some(true) { return None; }
+    let serial = reply["value"].as_str()?;
+    choices.iter().any(|choice| choice["id"].as_str() == Some(serial))
+        .then(|| vec![serial.to_string()])
+}
+
+async fn choose_certificate(certs: Vec<DevelopmentCertificate>) -> Result<Option<Vec<String>>, Report> {
+    let choices = certificate_choices(&certs);
+    if choices.is_empty() { return Ok(None); }
+    let reply = ask(json!({"event":"prompt","kind":"certificate","choices":choices}))?;
+    Ok(approved_certificate(&reply, &choices))
+}
 async fn run() -> Result<(), Report> {
     rustls::crypto::ring::default_provider().install_default().ok();
     isideload::init()?;
@@ -156,7 +179,7 @@ async fn run() -> Result<(), Report> {
     emit(json!({"event":"status","note":"Selecting Apple developer team…"}));
     let mut signer = SideloaderBuilder::<MaxCertsCallbackBox, ExtensionsBehaviorCallbackBox>::new(session, email.to_string())
         .team_selection(TeamSelection::PromptOnce(team))
-        .max_certs_behavior(MaxCertsBehavior::Error)
+        .max_certs_behavior(MaxCertsBehavior::Prompt(Box::new(|certs| Box::pin(choose_certificate(certs)))))
         .storage(Box::new(ProtectedStorage)).machine_name("Pane".into()).build();
     signer.get_team().await?;
     STAGE.store(5, Ordering::Relaxed);
@@ -251,5 +274,22 @@ mod tests {
         assert_eq!(public_failure(5, "Failed to install app on device secret").0, "device_install");
         assert_eq!(public_failure(5, "Not enough available app IDs. secret").0, "app_id_limit");
         assert_eq!(public_failure(7, "No developer teams available secret").0, "team");
+    }
+    #[test]
+    fn certificate_revocation_requires_explicit_approval_of_one_listed_serial() {
+        let choices = vec![json!({"id":"old-pane"}), json!({"id":"another-app"})];
+        assert_eq!(approved_certificate(&json!({"value":"old-pane","confirmed":true}), &choices), Some(vec!["old-pane".into()]));
+        assert_eq!(approved_certificate(&json!({"value":"old-pane"}), &choices), None);
+        assert_eq!(approved_certificate(&json!({"value":"old-pane","confirmed":false}), &choices), None);
+        assert_eq!(approved_certificate(&json!({"value":"unlisted","confirmed":true}), &choices), None);
+    }
+    #[test]
+    fn certificate_review_exposes_metadata_only() {
+        let cert: DevelopmentCertificate = serde_json::from_value(json!({"serialNumber":"known","name":"Developer","machineName":"Pane","machineId":"not-exposed"})).unwrap();
+        let choices = certificate_choices(&[cert]);
+        assert_eq!(choices[0]["id"], "known");
+        assert_eq!(choices[0]["name"], "Pane");
+        assert!(choices[0].get("certContent").is_none());
+        assert!(!choices[0].to_string().contains("not-exposed"));
     }
 }

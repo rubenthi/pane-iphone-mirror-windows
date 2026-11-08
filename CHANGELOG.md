@@ -6,6 +6,8 @@ This log explains changes to the Windows application and its iPhone companion. D
 
 The Enable step requests Developer Mode again if the setting is still hidden. Enabling it, restarting and confirming remain on the iPhone. Installation now explains how credentials are processed locally, identifies the stage of signing failures, and offers credential-free service diagnostics. Saved signing keys and pairings are preserved.
 
+When Apple reports certificate limit 7460, setup offers a certificate list and a separate **Revoke selected certificate & retry** confirmation. Selecting a certificate does not revoke it. The warning explains that revocation cannot be undone and may stop other apps signed with that certificate from opening.
+
 ## 2.4.0 - iPhone transfers and USB updates
 
 The iPhone companion has a Transfers screen with native Liquid Glass send controls on iOS 26 and later. Received files, sharing and the outgoing queue are together. Tap the laptop connection row for USB pairing and the installed version. iOS 17–18 use standard SwiftUI buttons.

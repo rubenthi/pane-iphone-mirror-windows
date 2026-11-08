@@ -113,9 +113,32 @@
     if (state.prompt && $('#signing-prompt').dataset.id !== state.prompt.id) {
       $('#signing-prompt').dataset.id = state.prompt.id;
       $('#signing-code').value = '';
-      $('#signing-answer-label').hidden = state.prompt.kind === 'team';
-      $('#signing-answer').hidden = state.prompt.kind === 'team';
+      $('#signing-answer-label').hidden = state.prompt.kind !== 'verification';
+      $('#signing-answer').hidden = state.prompt.kind !== 'verification';
       const choices = $('#signing-choices'); choices.replaceChildren();
+      if (state.prompt.kind === 'certificate') {
+        const warning = document.createElement('p');
+        warning.textContent = 'Revoke only a certificate you no longer need. Revocation cannot be undone and apps signed with it may stop opening until signed again. Cancel if you are unsure. Pane cannot determine which other apps use a certificate.';
+        choices.append(warning);
+        const confirm = document.createElement('button');
+        confirm.type='button'; confirm.className='primary primary-block'; confirm.id='signing-revoke';
+        confirm.textContent='Revoke selected certificate & retry'; confirm.disabled=true;
+        let selected = null;
+        for (const cert of state.prompt.choices) {
+          const button = document.createElement('button'); button.type='button'; button.className='secondary';
+          button.textContent = `${cert.name || 'Development certificate'} · Serial ${cert.serial || cert.id}${cert.expires ? ' · Expires '+cert.expires : ''}${cert.status ? ' · '+cert.status : ''}`;
+          button.setAttribute('aria-pressed','false'); button.dataset.certificate=cert.id;
+          button.onclick=()=>{
+            selected=cert.id;
+            for(const other of choices.querySelectorAll('[data-certificate]'))other.setAttribute('aria-pressed',String(other===button));
+            confirm.disabled=false;
+          };
+          choices.append(button);
+        }
+        confirm.onclick=()=>{if(selected){confirm.disabled=true;submitSigningAnswer(selected,true);}};
+        choices.append(confirm);
+        return;
+      }
       const items = state.prompt.kind === 'team' ? state.prompt.choices.map(c => ({value:c.id, name:c.name || c.id}))
         : [{value:'resend', name:'Resend code'}, {value:'devices', name:'Send to Apple devices'}, ...state.prompt.choices.map(c=>({value:`sms:${c.id}`,name:`Text ${c.name}`}))];
       for (const item of items) {
@@ -125,8 +148,8 @@
       if (state.prompt.kind !== 'team') $('#signing-code').focus();
     }
   }
-  async function submitSigningAnswer(value) {
-    try { renderSigning(await postJson('/api/signing/answer', {promptId:signingState.prompt?.id, value})); }
+  async function submitSigningAnswer(value, confirmRevocation = false) {
+    try { renderSigning(await postJson('/api/signing/answer', {promptId:signingState.prompt?.id, value, confirmRevocation})); }
     catch(error) { $('#signing-note').textContent=error.message; }
   }
   $('#signing-answer').onclick=()=>submitSigningAnswer($('#signing-code').value.trim());

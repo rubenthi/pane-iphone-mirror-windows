@@ -89,6 +89,22 @@ const fs = require('node:fs');
     await page.waitForTimeout(50);
     assert.equal(signRequests[1].promptId,'prompt-one');
     assert.equal(signRequests[1].value,'123456');
+    // Certificate recovery is a separate explicit approval, never a selection side effect.
+    signingView={phase:'prompt',available:true,note:'Review existing certificates',prompt:{id:'certificate-one',kind:'certificate',choices:[{id:'old-pane',serial:'ABC1234567890ABCDEF1234567890ABCDEF',name:'Pane',expires:'2026-11-12'}]}};
+    await page.locator('#signing-revoke').waitFor({state:'visible'});
+    assert.equal(await page.locator('#signing-revoke').isDisabled(),true);
+    assert.match(await page.locator('#signing-choices').innerText(),/Revocation cannot be undone/);
+    assert.equal(await page.locator('#signing-answer').isVisible(),false);
+    const beforeSelection=signRequests.length;
+    await page.locator('[data-certificate="old-pane"]').click();
+    assert.equal(signRequests.length,beforeSelection,'selection must not revoke a certificate');
+    assert.equal(await page.locator('#signing-revoke').isEnabled(),true);
+    assert.ok(await page.locator('#signing-choices').evaluate(el=>el.scrollWidth<=el.clientWidth));
+    await page.locator('#signing-choices').screenshot({path:'test-results/certificate-recovery.png'});
+    await page.locator('#signing-revoke').click();
+    await page.waitForFunction(()=>document.querySelector('#signing-prompt').dataset.id==='prompt-one');
+    assert.equal(signRequests.at(-1).value,'old-pane');
+    assert.equal(signRequests.at(-1).confirmRevocation,true);
     // First-install journey advances only after backend/device confirmation.
     await page.evaluate(()=>postJson('/api/preferences',{tour_complete:false}));
     const wizard=await browser.newPage({viewport:{width:470,height:860}});

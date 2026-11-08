@@ -197,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _companion_action(self, path, payload, udid):
         if path == '/api/signing/answer':
-            return signing.answer(payload.get('promptId'), payload.get('value'))
+            return signing.answer(payload.get('promptId'), payload.get('value'), payload.get('confirmRevocation', False))
         if path == '/api/signing/cancel':
             return signing.cancel()
         if path == '/api/signing/start':

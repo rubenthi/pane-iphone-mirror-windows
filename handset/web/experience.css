@@ -22,6 +22,8 @@
   --raised: #1a2d49;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
+#signing-choices [data-certificate] { overflow-wrap: anywhere; text-align: left; }
+#signing-choices [data-certificate][aria-pressed="true"] { border-color: var(--accent); background: var(--raised); }
 .orb {
   background: none;
   border: 0;
