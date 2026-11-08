@@ -55,6 +55,8 @@ class FloatingWindow:
         self._restore_height = self.preferred_height
         self._lock = threading.RLock()
         self._geometry = dimensions()
+        self._clip_children = set()
+        self._repair_queued = False
         if os.name != 'nt':
             return
         self.u = ctypes.WinDLL('user32', use_last_error=True)
@@ -142,6 +144,11 @@ class FloatingWindow:
             self._form.BackColor = Color.FromArgb(11, 21, 37)
             self._form.webview.DefaultBackgroundColor = Color.Transparent
             self.layout(False, DEFAULT_ASPECT)
+            # Native WebView2 child bounds can trail the form resize. Repair
+            # after its resize events instead of waiting for the watchdog.
+            self._form.Resize += self._queue_region_repair
+            self._form.webview.Resize += self._queue_region_repair
+            self._form.webview.HandleCreated += self._queue_region_repair
             # WebView2 can recreate its child renderer after navigation, DPI or
             # GPU changes. Clip its native hosts as well as the WinForms parent.
             self._shape_timer = Timer()
@@ -151,6 +158,17 @@ class FloatingWindow:
             self._form.FormClosed += lambda *_: self._shape_timer.Stop()
             return True
         return self._on_ui(configure)
+
+    def _queue_region_repair(self, *_):
+        if self._repair_queued or self._form.IsDisposed or not self._form.IsHandleCreated:
+            return
+        from System import Action
+        self._repair_queued = True
+        def repair():
+            self._repair_queued = False
+            if not self._form.IsDisposed:
+                self._repair_regions()
+        self._form.BeginInvoke(Action(repair))
 
     def status(self):
         return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
@@ -261,14 +279,21 @@ class FloatingWindow:
                 self.g.DeleteObject(actual)
         try:
             apply(self.handle)
+            seen = set()
             @self.callback
             def child(hwnd, _):
                 rect = W.RECT(); self.u.GetWindowRect(hwnd, ctypes.byref(rect))
+                seen.add(hwnd)
                 # Only full-surface browser hosts, never small controls/popups.
-                if abs((rect.right-rect.left)-(parent.right-parent.left)) <= 2 and abs((rect.bottom-rect.top)-(parent.bottom-parent.top)) <= 2:
+                full_size = abs((rect.right-rect.left)-(parent.right-parent.left)) <= 2 and abs((rect.bottom-rect.top)-(parent.bottom-parent.top)) <= 2
+                if full_size or hwnd in self._clip_children:
+                    # A previously identified surface still needs the new clip
+                    # while its asynchronous bounds lag behind the parent.
+                    self._clip_children.add(hwnd)
                     apply(hwnd, rect.left-parent.left, rect.top-parent.top)
                 return True
             self.u.EnumChildWindows(self.handle, child, 0)
+            self._clip_children.intersection_update(seen)
         finally:
             self.g.DeleteObject(expected)
 
@@ -283,7 +308,7 @@ class FloatingWindow:
             corner = payload.get('corner', 'se')
             if corner not in ('nw', 'ne', 'sw', 'se'):
                 raise ValueError('Invalid resize corner.')
-            self.preferred_height = height
+            self.preferred_height = max(PANEL_MIN_HEIGHT, height) if self.expanded else height
             self.maximized = False
             return self.layout(self.expanded, self.aspect, resize_corner=corner)
         if action == 'maximize':

@@ -30,6 +30,10 @@ class WindowLayoutTests(unittest.TestCase):
         self.assertEqual(dimensions(expanded=True, preferred_height=360)['height'], 540)
         self.assertEqual(dimensions(expanded=False, preferred_height=360)['height'], 360)
         self.assertLessEqual(dimensions(expanded=True, preferred_height=360, work_height=480)['height'], 480)
+        shell = FloatingWindow()
+        shell.layout(True, DEFAULT_ASPECT)
+        shell.command({'action': 'resize', 'height': 400})
+        self.assertEqual(shell.layout(False, DEFAULT_ASPECT)['height'], 540)
 
     def test_resize_and_maximize_preserve_aspect(self):
         shell=FloatingWindow()
