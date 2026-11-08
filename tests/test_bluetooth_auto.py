@@ -41,3 +41,19 @@ class AutomaticBluetoothTests(unittest.TestCase):
             with self.assertRaises(asyncio.CancelledError):
                 asyncio.run(link._session({'token':'saved','service':'uuid'}))
         scanner.find_device_by_filter.assert_not_awaited()
+
+    def test_reconnect_discovers_only_the_bound_service_without_stale_handles(self):
+        link = Bluetooth()
+        peer = object()
+        scanner = MagicMock(find_device_by_filter=AsyncMock(return_value=peer))
+        client = MagicMock(is_connected=False)
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+        factory = MagicMock(return_value=context)
+        client.start_notify = AsyncMock()
+        rpc = MagicMock(call=AsyncMock(return_value={'version':1}))
+        with patch.dict('sys.modules', {'bleak':MagicMock(BleakScanner=scanner, BleakClient=factory)}), patch('handset.bluetooth.Rpc', return_value=rpc), patch('handset.bluetooth.write_json'):
+            with self.assertRaises(ConnectionError):
+                asyncio.run(link._session({'token':'test-token','service':'BOUND-SERVICE','peerName':'test'}))
+        factory.assert_called_once_with(peer, pair=True, timeout=120, services=['bound-service'], winrt={'use_cached_services':False})

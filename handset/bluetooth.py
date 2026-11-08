@@ -193,7 +193,10 @@ class Bluetooth:
             timeout=20, service_uuids=[service])
         if peer is None:
             raise ValueError('Bound iPhone not found. Open Pane, activate the USB link, allow Bluetooth, and keep it in the foreground.')
-        async with BleakClient(peer, pair=True, timeout=120) as client:
+        # A reinstalled companion can recreate GATT handles. Discover only the
+        # bound service afresh instead of reusing Windows' previous handle map.
+        async with BleakClient(peer, pair=True, timeout=120, services=[service],
+                               winrt={'use_cached_services': False}) as client:
             rpc = Rpc(client)
             await client.start_notify(RESPONSE_UUID, rpc.notified)
             result = await rpc.call('hello', token=binding['token'], capabilities=['transfer-control-v1', 'chunk-32768'])
