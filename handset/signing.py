@@ -110,7 +110,7 @@ def start(udid, package, email, password):
                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         _PROCESS = process
         _ANSWERS = queue.Queue()
-        _STATE.update(phase='working', note='Starting Apple signing…', prompt=None)
+        _STATE.update(phase='working', note='Starting Apple signing…', prompt=None, code=None, stage=None)
         initial = {'email': email.strip(), 'password': password, 'udid': udid, 'ipa': str(package)}
         threading.Thread(target=_run, args=(process, package, initial), daemon=True, name='pane-signing').start()
     return status()
@@ -173,6 +173,7 @@ def _run(process, package, initial):
             elif kind == 'complete':
                 completed = True
             elif kind == 'error':
+                _set(code=event.get('code'), stage=event.get('stage'))
                 raise ValueError(event['note'])
         result = process.wait(timeout=10)
         if not completed or result != 0:
