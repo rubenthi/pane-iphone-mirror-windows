@@ -16,6 +16,11 @@ def run(output):
         from handset.version import VERSION
         import webview
         from bleak import BleakClient, BleakScanner
+        # Exercise the bundled TLS/cryptography implementation without binding
+        # a LAN socket or connecting to a phone.
+        from handset.bulk import _tls_context
+        tls_context, fingerprint = _tls_context()
+        assert len(fingerprint) == 64 and tls_context.minimum_version.value >= 771
         from pymobiledevice3.services.amfi import AmfiService
         from pymobiledevice3.services.house_arrest import HouseArrestService
         from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -53,7 +58,7 @@ def run(output):
         finally:
             server.shutdown(); server.server_close(); thread.join(5)
         verify_native_window()
-        result = {'ok': True, 'version': VERSION, 'checks': ['dependency imports', 'bundled signer and Bluetooth worker', 'bundled updater', 'HTTP UI', 'WebView2 renderer', 'native window region', 'drawer sizing', 'WebCodecs API']}
+        result = {'ok': True, 'version': VERSION, 'checks': ['dependency imports', 'ephemeral bulk TLS identity', 'bundled signer and Bluetooth worker', 'bundled updater', 'HTTP UI', 'WebView2 renderer', 'native window region', 'drawer sizing', 'WebCodecs API']}
     except Exception as error:
         import traceback
         result['error'] = str(error)
