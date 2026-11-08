@@ -10,11 +10,15 @@
   let native = false;
   function render(state) {
     native = state.native;
-    document.documentElement.style.setProperty('--rail-scale',state.rail_scale??1);
-    document.documentElement.style.setProperty('--rail-top',`${state.rail_top??240}px`);
+    const height=native?innerHeight:state.height;
+    const railScale=native?Math.min(1,Math.max(.15,(height-174)/292)):(state.rail_scale??1);
+    document.documentElement.style.setProperty('--rail-scale',railScale);
+    document.documentElement.style.setProperty('--rail-top',`${native?Math.max(166,(height-288*railScale)/2):(state.rail_top??240)}px`);
     expanded = state.expanded;
-    document.documentElement.style.setProperty('--phone-width', `${state.phone_width}px`);
-    document.documentElement.style.setProperty('--phone-height', `${state.height}px`);
+    // Bridge replies can arrive after another resize. The native viewport is
+    // authoritative; never repaint an earlier reply's dimensions over it.
+    document.documentElement.style.setProperty('--phone-width', `${native?innerWidth-60:state.phone_width}px`);
+    document.documentElement.style.setProperty('--phone-height', `${height}px`);
     document.body.classList.toggle('drawer-open', expanded);
     document.body.classList.toggle('browser-mode', !native);
     for (const id of ['pin-window','minimize-window','maximize-window','close-window']) document.querySelector('#'+id).hidden = !native;
@@ -95,9 +99,7 @@
     });
     corner.addEventListener('pointermove',event=>{
       if(!resizing)return;
-      const dy=(event.screenY-resizing.y)*(resizing.corner.includes('n')?-1:1);
-      const dx=(event.screenX-resizing.x)*(resizing.corner.includes('w')?-1:1)/aspect;
-      const size={corner:resizing.corner,height:Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)))};
+      const size={corner:resizing.corner,height:window.paneResizeHeight(resizing,event.screenX,event.screenY,aspect)};
       resize(size).catch(error=>{document.querySelector("#screen-note").textContent=window.paneNotice(error.message,'window');});
     });
     const end=()=>{resizing=null;};

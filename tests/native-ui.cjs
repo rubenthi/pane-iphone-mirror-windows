@@ -130,6 +130,20 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const grip=await page.locator('[data-resize-corner=se]').boundingBox();
     await page.mouse.move(grip.x+8,grip.y+8);await page.mouse.down();await page.mouse.move(grip.x+8,grip.y-145,{steps:6});await page.mouse.up();
     await page.waitForFunction(h=>innerHeight<h,compact.height);
+    // Real pointer drags from every corner, with the opposite corner fixed.
+    for(const corner of ['nw','ne','sw','se']){
+      const before=await page.evaluate(()=>getJson('/api/window'));
+      const grip=await page.locator(`[data-resize-corner=${corner}]`).boundingBox();
+      const x=grip.x+16,y=grip.y+16;
+      await page.mouse.move(x,y);await page.mouse.down();
+      await page.mouse.move(x+(corner.includes('w')?8:-8),y+(corner.includes('n')?17:-17),{steps:6});
+      await page.mouse.up();
+      await page.waitForFunction(h=>innerHeight<h,before.height);
+      const after=await page.evaluate(()=>getJson('/api/window'));
+      const anchorX=corner.includes('w')?2:0,anchorY=corner.includes('n')?3:1;
+      assert.equal(after.native_rect[anchorX],before.native_rect[anchorX],`${corner} moved its horizontal anchor`);
+      assert.equal(after.native_rect[anchorY],before.native_rect[anchorY],`${corner} moved its vertical anchor`);
+    }
     // Exercise the Python bridge without rendering its reply: the viewport
     // resize event must size the shell in the browser's next paint.
     const resizeLatency=await page.evaluate(async()=>{

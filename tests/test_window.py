@@ -26,6 +26,11 @@ class WindowLayoutTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dimensions(DEFAULT_ASPECT, 'yes')
 
+    def test_open_panel_has_usable_minimum_but_still_fits_small_displays(self):
+        self.assertEqual(dimensions(expanded=True, preferred_height=360)['height'], 540)
+        self.assertEqual(dimensions(expanded=False, preferred_height=360)['height'], 360)
+        self.assertLessEqual(dimensions(expanded=True, preferred_height=360, work_height=480)['height'], 480)
+
     def test_resize_and_maximize_preserve_aspect(self):
         shell=FloatingWindow()
         small=shell.command({'action':'resize','height':500})

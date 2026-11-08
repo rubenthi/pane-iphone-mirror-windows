@@ -727,7 +727,12 @@ textarea,
   font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.5px;
+  min-width: 0;
+  overflow: hidden;
 }
+.drag-handle span {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drag-handle img,.drawer-heading>button:not(.drag-handle) {flex-shrink:0}
+.drawer-heading>.header-actions {flex-shrink:0}
 .sidebar-tabs {
   border-color: #a4b6d035;
   background: #020a16b3;

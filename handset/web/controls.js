@@ -36,6 +36,14 @@ window.createPaneVolumeWheel = function(send) {
 
 // Geometry is state, unlike ordered HID input. Keep only the newest pending
 // position while a native call is in flight; never replay a long drag backlog.
+window.paneResizeHeight = function (origin, x, y, aspect) {
+  const dx=(x-origin.x)*(origin.corner.includes('w')?-1:1);
+  const dy=(y-origin.y)*(origin.corner.includes('n')?-1:1);
+  // Project onto the aspect-constrained diagonal. Switching the dominant
+  // signed axis mid-drag can reverse direction and jump by dozens of pixels.
+  return Math.max(360,Math.min(10000,origin.height+(aspect*dx+dy)/(aspect*aspect+1)));
+};
+
 window.createPaneLatestQueue = function (send, apply = () => {}, intermediate = false) {
   let pending = null, running = null;
   async function drain() {

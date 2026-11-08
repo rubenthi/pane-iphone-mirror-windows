@@ -43,6 +43,18 @@ test('geometry queue recovers from native errors', async () => {
   await assert.rejects(queue({x:1})); fail = false; await queue({x:2});
 });
 
+test('diagonal corner resizing is continuous across opposing axis deltas', () => {
+  for(const corner of ['nw','ne','sw','se']){
+    const origin={x:100,y:100,height:760,corner};
+    const sx=corner.includes('w')?-1:1,sy=corner.includes('n')?-1:1;
+    const sizes=[];
+    for(let dy=38;dy<=48;dy++)sizes.push(context.window.paneResizeHeight(origin,100-20*sx,100+dy*sy,390/844));
+    for(let i=1;i<sizes.length;i++)assert.ok(sizes[i]>sizes[i-1]&&sizes[i]-sizes[i-1]<1);
+    const grow=context.window.paneResizeHeight(origin,100+39*sx,100+84.4*sy,390/844);
+    assert.ok(Math.abs(grow-844.4)<.001);
+  }
+});
+
 test('volume wheel accumulates trackpad movement and preserves direction', async () => {
   const sent=[];
   const wheel=context.window.createPaneVolumeWheel(async name=>sent.push(name));

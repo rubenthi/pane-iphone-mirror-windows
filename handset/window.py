@@ -15,6 +15,7 @@ DRAWER = 416
 TAB = 60
 DEFAULT_ASPECT = 390 / 844
 SCREEN_CHROME = 14  # CSS: symmetric 7px bezel on all four sides
+PANEL_MIN_HEIGHT = 540
 
 
 def _native_pointer(handle):
@@ -28,6 +29,7 @@ def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_heig
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
     extra = TAB
+    preferred_height = max(PANEL_MIN_HEIGHT, preferred_height) if expanded else preferred_height
     height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - SCREEN_CHROME) / aspect + SCREEN_CHROME))
     # Derive width from the integer height Windows actually receives. Using
     # a fractional drag height here distorts wider displays after rounding.
@@ -153,9 +155,9 @@ class FloatingWindow:
     def status(self):
         return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
 
-    def layout(self, expanded, aspect):
+    def layout(self, expanded, aspect, *, resize_corner=None):
         if self._form is not None and self._form.InvokeRequired:
-            return self._on_ui(lambda: self.layout(expanded, aspect))
+            return self._on_ui(lambda: self.layout(expanded, aspect, resize_corner=resize_corner))
         with self._lock:
             if self.handle and self.u.IsIconic(self.handle):
                 return self.status()
@@ -169,11 +171,19 @@ class FloatingWindow:
                 info = MonitorInfo(); info.size = ctypes.sizeof(info)
                 if self.u.GetMonitorInfoW(self.u.MonitorFromWindow(self.handle, 2), ctypes.byref(info)):
                     work = info.work
-                geometry = dimensions(aspect, expanded, (work.right-work.left)/scale, (work.bottom-work.top)/scale, self.preferred_height)
                 rect = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(rect))
+                available_width, available_height = work.right-work.left, work.bottom-work.top
+                if resize_corner:
+                    available_width = rect.right-work.left if 'w' in resize_corner else work.right-rect.left
+                    available_height = rect.bottom-work.top if 'n' in resize_corner else work.bottom-rect.top
+                geometry = dimensions(aspect, expanded, available_width/scale, available_height/scale, self.preferred_height)
                 width, height = round(geometry['width']*scale), round(geometry['height']*scale)
-                x = min(max(rect.left, work.left), work.right-width)
-                y = min(max(rect.top, work.top), work.bottom-height)
+                if resize_corner:
+                    x = rect.right-width if 'w' in resize_corner else rect.left
+                    y = rect.bottom-height if 'n' in resize_corner else rect.top
+                else:
+                    x = min(max(rect.left, work.left), work.right-width)
+                    y = min(max(rect.top, work.top), work.bottom-height)
                 def rounded(left, top, right, bottom, radius):
                     return self.g.CreateRoundRectRgn(*(round(v*scale) for v in (left, top, right, bottom, radius*2, radius*2)))
                 pw, h = geometry['phone_width'], geometry['height']
@@ -273,17 +283,9 @@ class FloatingWindow:
             corner = payload.get('corner', 'se')
             if corner not in ('nw', 'ne', 'sw', 'se'):
                 raise ValueError('Invalid resize corner.')
-            before = W.RECT()
-            if self.handle: self.u.GetWindowRect(self.handle, ctypes.byref(before))
             self.preferred_height = height
             self.maximized = False
-            result = self.layout(self.expanded, self.aspect)
-            if self.handle:
-                after = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(after))
-                x = before.right - (after.right-after.left) if 'w' in corner else after.left
-                y = before.bottom - (after.bottom-after.top) if 'n' in corner else after.top
-                self.u.SetWindowPos(self.handle, 0, x, y, 0, 0, 0x0015)
-            return result
+            return self.layout(self.expanded, self.aspect, resize_corner=corner)
         if action == 'maximize':
             if not self.maximized:
                 self._restore_height = self.preferred_height
