@@ -2,6 +2,10 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.3 - Essential tooltips and uniform bezel (development build)
+
+Tooltips are limited to ambiguous icon controls and filenames that are actually truncated. Visible button labels and settings no longer repeat themselves in hover bubbles. The mirrored image fills the symmetric seven-pixel screen opening, preserving aspect while clipping the small rounding excess instead of adding black letterbox strips. The existing iPhone companion is unchanged.
+
 ## 2.5.2 - Four-corner resizing (development build)
 
 Diagonal resize gestures use a continuous aspect-preserving calculation, keeping direction changes smooth. Native bounds and the anchored opposite corner update together, instead of exposing an intermediate position. Late bridge replies no longer overwrite current viewport dimensions. Open panels have a usable minimum height, and their title leaves room for the header buttons. The existing 2.6.0 (6) iPhone companion is unchanged.

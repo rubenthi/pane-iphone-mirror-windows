@@ -113,7 +113,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(w=>innerWidth===w,compact.width);
     await page.locator('.handle-cluster').hover();
     await page.getByRole('button',{name:'Maximize window',exact:true}).waitFor({state:'visible'});
-    assert.equal(await page.locator('.rail-button[aria-label="Volume up"]').getAttribute('title'),'Volume up');
+    assert.equal(await page.locator('.rail-button[aria-label="Volume up"]').getAttribute('title'),null);
     await page.getByRole('button',{name:'Maximize window',exact:true}).click();
     // Resizing moves the hover menu away from the pointer on larger monitors.
     await page.waitForFunction(async () => {
@@ -195,6 +195,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       const r=canvas.getBoundingClientRect();return {width:r.width,height:r.height,viewportWidth:innerWidth,viewportHeight:innerHeight,top:r.top,bottom:r.bottom,center:touchCoords({clientX:r.left+r.width/2,clientY:r.top+r.height/2})};
     });
     console.log('Mirror geometry:',JSON.stringify(geometry));
+    assert.ok(geometry.width >= geometry.viewportWidth-.02 && geometry.height >= geometry.viewportHeight-.02,'Mirror must fill the bezel opening');
+    const bezel=await page.evaluate(()=>{
+      const outer=document.querySelector('#phone-shell').getBoundingClientRect(),inner=document.querySelector('#phone-screen').getBoundingClientRect();
+      return [inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom];
+    });
+    assert.ok(bezel.every(side=>Math.abs(side-7)<.1),`Uneven bezel: ${bezel}`);
     assert.ok(Math.abs(geometry.width/geometry.height-1170/2532)<.002);
     assert.ok(geometry.top>=-1 && geometry.bottom<=geometry.viewportHeight+1);
     assert.equal(geometry.center.x,32768);assert.equal(geometry.center.y,32768);

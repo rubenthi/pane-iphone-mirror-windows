@@ -79,7 +79,10 @@ function fitCanvas() {
   const rect = parent.getBoundingClientRect();
   const naturalW = canvas.width;
   const naturalH = canvas.height;
-  const base = Math.min(rect.width / naturalW, rect.height / naturalH);
+  // Fill the symmetric bezel opening. Integer native bounds can differ from
+  // the video's aspect by a fraction of a pixel; contain leaves black bands.
+  // Cover preserves proportions and clips only the rounding excess normally.
+  const base = Math.max(rect.width / naturalW, rect.height / naturalH);
   const scale = base * zoom;
   canvas.style.width = `${naturalW * scale}px`;
   canvas.style.height = `${naturalH * scale}px`;

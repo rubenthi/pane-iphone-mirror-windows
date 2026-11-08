@@ -248,7 +248,25 @@
       return prefs;
     });
   window.paneExperience = { ready, renderCompanion };
-  // One shared, app-styled tooltip, available to pointer and keyboard users.
+  // Only ambiguous icon controls and actually truncated filenames need tips.
+  const essentialTips = '.rail-grip,#drawer-toggle,#refresh,#pin-window,[data-gesture="switcher"],[data-gesture="control"]';
+  const tipTargets = `${essentialTips},.transfer strong`;
+  function pruneTitles(root) {
+    const titled = [...(root.matches?.('[title]') ? [root] : []), ...(root.querySelectorAll?.('[title]') || [])];
+    for (const el of titled) {
+      if (el.tagName === 'IFRAME') continue; // Keep its accessible document name.
+      if (el.matches(tipTargets)) el.dataset.tip = el.getAttribute('title');
+      else delete el.dataset.tip;
+      el.removeAttribute('title');
+    }
+  }
+  pruneTitles(document);
+  new MutationObserver(records => {
+    for (const record of records) {
+      if (record.type === 'attributes') pruneTitles(record.target);
+      else for (const node of record.addedNodes) if (node.nodeType === 1) pruneTitles(node);
+    }
+  }).observe(document.body, {subtree:true,childList:true,attributes:true,attributeFilter:['title']});
   const tip = $("pane-tooltip");
   let current = null,
     timer;
@@ -265,11 +283,10 @@
     current = null;
   }
   function show(target) {
-    const el = target?.closest?.(
-      "[title],[data-tip],button,input,select,a,summary",
-    );
+    const el = target?.closest?.(tipTargets);
     if (!el || el === current) return;
     hide();
+    if (el.disabled || (el.matches('.transfer strong') && el.scrollWidth <= el.clientWidth)) return;
     if (
       el.getAttribute("role") === "combobox" &&
       el.getAttribute("aria-expanded") === "true"
@@ -310,7 +327,7 @@
       const size = tip.getBoundingClientRect();
       tip.style.left = `${Math.max(bounds.left + 8, Math.min(r.left, bounds.right - size.width - 8)) / scale}px`;
       tip.style.top = `${Math.max(bounds.top + 8, Math.min(r.bottom + 8, bounds.bottom - size.height - 12, window.innerHeight - size.height - 12)) / scale}px`;
-    }, 450);
+    }, 650);
   }
   document.addEventListener("pointerover", (e) => show(e.target));
   document.addEventListener("pointerout", (e) => {

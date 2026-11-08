@@ -237,7 +237,8 @@ const fs = require("node:fs");
     await capture("12-notification-previews");
     await fits(".drawer-scroll");
     await page.locator("#notifications-enabled").focus();
-    await page.locator("#pane-tooltip").waitFor({ state: "visible" });
+    await page.waitForTimeout(750);
+    assert.equal(await page.locator('#pane-tooltip').isVisible(),false);
     assert.match(
       await page
         .locator("#notifications-enabled")
@@ -318,7 +319,7 @@ const fs = require("node:fs");
     await page
       .locator(".transfer strong")
       .first()
-      .evaluate((element, name) => (element.title = name), longName);
+      .evaluate((element, name) => {element.textContent=name;element.title=name;}, longName);
     await page.locator(".transfer strong").first().hover();
     await page.locator("#pane-tooltip").waitFor({ state: "visible" });
     const textBounds = await page

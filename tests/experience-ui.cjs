@@ -119,11 +119,11 @@ const fs = require("node:fs");
     await page.locator("#audio-device").selectOption("audio-phone");
     await fits("Audio");
     await page.locator("#audio-enabled").focus();
-    await page.locator("#pane-tooltip").waitFor({ state: "visible" });
-    assert.match(
-      await page.locator("#pane-tooltip").innerText(),
-      /audio receiver/,
-    );
+    await page.waitForTimeout(750);
+    assert.equal(await page.locator('#pane-tooltip').isVisible(),false,'Labeled settings must not repeat their text in tooltips');
+    await page.locator('#pin-window').focus();
+    await page.locator('#pane-tooltip').waitFor({state:'visible'});
+    assert.match(await page.locator('#pane-tooltip').innerText(),/Keep on top/);
     await page.keyboard.press("Escape");
     assert.equal(await page.locator("#pane-tooltip").isVisible(), false);
     await page.locator(".rail-grip").hover();

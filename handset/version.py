@@ -1,2 +1,2 @@
-VERSION = "2.5.2"
+VERSION = "2.5.3"
 REPOSITORY = "rubenthi/pane-iphone-mirror-windows"

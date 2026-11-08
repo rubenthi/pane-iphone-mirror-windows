@@ -22,8 +22,7 @@ body {
 
 #c {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
+  flex-shrink: 0;
   touch-action: none;
   outline: none;
   image-rendering: high-quality;
