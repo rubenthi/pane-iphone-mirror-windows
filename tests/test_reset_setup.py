@@ -53,7 +53,7 @@ class ResetTests(unittest.TestCase):
             (root/'device').mkdir(parents=True)
             (root/'device'/'remote_new.plist').write_bytes(b'current')
             common=MagicMock(_HOMEFOLDER=legacy)
-            with patch.object(state,'DATA_DIR',root), patch.dict('sys.modules',{'pymobiledevice3':MagicMock(common=common)}):
+            with patch.object(state,'DEVELOPMENT',False), patch.object(state,'DATA_DIR',root), patch.dict('sys.modules',{'pymobiledevice3':MagicMock(common=common)}):
                 prepare_state(root)
                 state.isolate_device_state()
                 self.assertEqual((root/'device'/'remote_phone.plist').read_bytes(),b'paired')

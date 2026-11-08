@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from handset.edition import STREAM_PORT
 
 from handset.device import developer_mode_enabled
 from handset.mux import MuxError, list_devices
@@ -21,7 +22,7 @@ DEVELOPER_MODE_MESSAGE = (
     "unlock it, tap Turn On, then press Show screen again."
 )
 
-VIEW_URL = "http://127.0.0.1:8766/"
+VIEW_URL = f"http://127.0.0.1:{STREAM_PORT}/"
 _LOCK = threading.Lock()
 _COMMAND_LOCK = threading.RLock()
 _WORKER = None
@@ -42,7 +43,7 @@ def restart_screen(udid: str | None = None) -> dict:
 
 
 def _restart_screen(udid: str | None = None) -> dict:
-    """Nudge the device encoder and keep the HTTP stream on 8766 alive."""
+    """Nudge the device encoder and keep the local HTTP stream alive."""
     import http.client
     from handset.server import upstream_authorization
 
@@ -52,7 +53,7 @@ def _restart_screen(udid: str | None = None) -> dict:
     chosen = (udid or "").strip() or state.get("udid") or _only_udid()
     nudged = False
     for path in ("/restart", "/pli"):
-        conn = http.client.HTTPConnection("127.0.0.1", 8766, timeout=20)
+        conn = http.client.HTTPConnection("127.0.0.1", STREAM_PORT, timeout=20)
         try:
             conn.request("POST", path, body=b"", headers={"Authorization": upstream_authorization()})
             response = conn.getresponse()
@@ -185,7 +186,7 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
     server = ScreenStreamServer(
         rsd,
         bind="127.0.0.1",
-        http_port=8766,
+        http_port=STREAM_PORT,
         audio_default_on=False,
         password=ACCESS_TOKEN,
     )
@@ -214,7 +215,7 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
                 await task
                 return
             try:
-                reader, writer = await asyncio.open_connection('127.0.0.1', 8766)
+                reader, writer = await asyncio.open_connection('127.0.0.1', STREAM_PORT)
                 writer.close()
                 await writer.wait_closed()
                 break

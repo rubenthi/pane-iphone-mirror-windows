@@ -15,12 +15,12 @@ import urllib.request
 from pathlib import Path
 
 from handset.server import HOST, PORT, Handler, SingleServer
+from handset.edition import APP_NAME
 from handset import updater, notifications
 from handset.screen import stop_screen
 from handset.state import DATA_DIR, prepare_state, isolate_device_state
 from handset.bluetooth import bluetooth
 
-PORT = int(os.environ.get("PANE_PORT", PORT))
 URL = f"http://{HOST}:{PORT}/"
 
 BROWSERS = (
@@ -124,7 +124,7 @@ def run_native_window():
             except (ValueError, OSError) as error:
                 return {'error': str(error)}
 
-    window = webview.create_window('Pane', URL, width=388, height=760,
+    window = webview.create_window(APP_NAME, URL, width=388, height=760,
                                    frameless=True, easy_drag=False, resizable=False, shadow=False, transparent=True,
                                    background_color='#122337', text_select=True, js_api=NativeBridge())
     def shown():

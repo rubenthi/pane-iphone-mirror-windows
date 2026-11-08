@@ -42,7 +42,13 @@ use windows::{
     core::{GUID, HSTRING},
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-const APP_ID: &str = "Pane.Desktop";
+fn app_identity() -> (&'static str, &'static str) {
+    if std::env::var("PANE_DEVELOPMENT").as_deref() == Ok("1") {
+        ("Pane.Desktop.Development", "Pane (Development)")
+    } else {
+        ("Pane.Desktop", "Pane")
+    }
+}
 const ANCS: GUID = GUID::from_u128(0x7905f431_b5ce_4e99_a40f_4b1e122d00d0);
 const SOURCE: GUID = GUID::from_u128(0x9fbf120d_6301_42d9_8c58_25e699a21dbd);
 const CONTROL: GUID = GUID::from_u128(0x69d1d8f3_45e1_49a8_9821_9bbdfdaad9d9);
@@ -150,6 +156,7 @@ fn register_toasts(executable: &str) -> Result<()> {
         },
     };
     use windows::core::Interface;
+    let (app_id, name) = app_identity();
     // An unpackaged desktop app needs a Start-menu shortcut carrying its AUMID.
     // Use the actual Pane executable, never the temporary PyInstaller directory.
     if !executable.is_empty() && Path::new(executable).is_file() {
@@ -171,19 +178,21 @@ fn register_toasts(executable: &str) -> Result<()> {
             };
             let mut value = PROPVARIANT::default();
             (*value.Anonymous.Anonymous).vt = VT_LPWSTR;
-            (*value.Anonymous.Anonymous).Anonymous.pwszVal =
-                SHStrDupW(windows::core::w!("Pane.Desktop"))?;
+            (*value.Anonymous.Anonymous).Anonymous.pwszVal = SHStrDupW(&HSTRING::from(app_id))?;
             store.SetValue(&key, &value)?;
             store.Commit()?;
             let file: IPersistFile = link.cast()?;
-            file.Save(&HSTRING::from(path.join("Pane.lnk").as_os_str()), true)?;
+            file.Save(
+                &HSTRING::from(path.join(format!("{name}.lnk")).as_os_str()),
+                true,
+            )?;
         }
     }
     let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
-    let (key, _) = hkcu.create_subkey(format!("Software\\Classes\\AppUserModelId\\{APP_ID}"))?;
-    key.set_value("DisplayName", &"Pane")?;
+    let (key, _) = hkcu.create_subkey(format!("Software\\Classes\\AppUserModelId\\{app_id}"))?;
+    key.set_value("DisplayName", &name)?;
     unsafe {
-        SetCurrentProcessExplicitAppUserModelID(windows::core::w!("Pane.Desktop"))?;
+        SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(app_id))?;
     }
     Ok(())
 }
@@ -193,7 +202,8 @@ fn toast(uid: u32, title: &str, body: &str) -> Result<()> {
     let n = ToastNotification::CreateToastNotification(&xml)?;
     n.SetTag(&HSTRING::from(uid.to_string()))?;
     n.SetGroup(&HSTRING::from("iPhone"))?;
-    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(APP_ID))?.Show(&n)?;
+    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_identity().0))?
+        .Show(&n)?;
     Ok(())
 }
 struct Audio {
@@ -639,7 +649,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
                         h.RemoveGroupedTagWithId(
                             &HSTRING::from(n.uid.to_string()),
                             &HSTRING::from("iPhone"),
-                            &HSTRING::from(APP_ID),
+                            &HSTRING::from(app_identity().0),
                         )
                     });
                     seen.retain(|id| *id != n.uid);
