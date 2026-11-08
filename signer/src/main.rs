@@ -22,11 +22,36 @@ fn failure_note(stage: u8) -> &'static str {
         3 => "Signed in, but Apple Developer Services could not prepare your account. Check your developer agreements at developer.apple.com/account and try again later.",
         4 => "Apple sign-in succeeded, but the selected iPhone could not be reached over USB. Unlock it, check Trust This Computer and reconnect the cable.",
         5 => "Apple sign-in succeeded, but signing or USB installation failed. Check the selected team, available developer certificates and the iPhone connection. Keep existing signing data and retry.",
+        6 => "Apple sign-in succeeded, but Pane could not open a trusted USB session. Unlock your iPhone, accept Trust This Computer if shown and reconnect USB.",
+        7 => "Apple sign-in succeeded, but the developer team could not be selected. Check your developer account agreements and retry.",
         _ => "The signing helper could not start. Restart Pane and retry.",
     }
 }
 
+fn typed_apple_error_code(error: &Report) -> Option<i64> {
+    error.iter_reports().find_map(|node| match node.downcast_current_context::<isideload::SideloadError>() {
+        Some(isideload::SideloadError::AuthWithMessage(code, _) | isideload::SideloadError::DeveloperError(code, _)) => Some(*code),
+        _ => None,
+    })
+}
+
+fn installation_failure(details: &str) -> Option<(&'static str, &'static str)> {
+    let details = details.to_ascii_lowercase();
+    [
+        ("maximum number of certificates reached", "certificate_limit", "Apple's development-certificate limit has been reached. Pane kept existing certificates. Recover the original signing key or review certificates in your developer account before choosing any revocation."),
+        ("failed to retrieve certificate identity", "certificate", "Pane could not prepare its signing certificate. Saved signing keys have been kept. Check certificate availability and use the same Apple Account and team as before."),
+        ("not enough available app ids", "app_id_limit", "Apple's available App ID limit has been reached. Reuse the same signing account and team; deleting the iPhone app does not release App IDs."),
+        ("no developer teams available", "team", "Apple returned no developer team. Review your Apple developer account registration and agreements, then retry."),
+        ("failed to start lockdown session", "usb_session", "Pane could not start a trusted USB session. Unlock the iPhone, confirm Trust This Computer if prompted and reconnect USB. Existing pairing records have been kept."),
+        ("failed to get device pairing file", "usb_pairing", "The signing helper could not read the existing USB trust record. Unlock the iPhone and reconnect it to Apple Devices, then retry Pane. No pairing records were deleted."),
+        ("failed to connect to device lockdown", "usb_lockdown", "The signing helper could not open the iPhone's USB connection. Unlock the iPhone, check the data cable and reconnect it."),
+        ("failed to install app on device", "device_install", "Signing finished, but iOS did not complete installation. Keep the iPhone unlocked and check Developer Mode, available storage and any on-device prompt."),
+        ("failed to sign app", "app_signing", "Pane could not sign the companion package. The saved signing data has been preserved."),
+    ].into_iter().find_map(|(needle, code, note)| details.contains(needle).then_some((code, note)))
+}
+
 fn public_failure(stage: u8, details: &str) -> (&'static str, &'static str) {
+    if let Some(failure) = installation_failure(details) { return failure; }
     let details = details.to_ascii_lowercase();
     // Match fixed categories only; never interpolate error strings into output.
     if details.contains("invalidcertificate") || details.contains("unknownissuer") || details.contains("certificate verify") || details.contains("invalid peer certificate") {
@@ -125,12 +150,17 @@ async fn run() -> Result<(), Report> {
     let devices = mux.get_devices().await?;
     let device = devices.iter().find(|d| d.udid == udid && matches!(d.connection_type, idevice::usbmuxd::Connection::Usb)).ok_or_else(|| report!("Selected iPhone disconnected"))?;
     let provider = device.to_provider(UsbmuxdAddr::from_env_var()?, "Pane");
-    STAGE.store(5, Ordering::Relaxed);
-    emit(json!({"event":"status","note":"Preparing certificate and installing Pane. Keep USB connected…"}));
+    STAGE.store(6, Ordering::Relaxed);
+    isideload::util::device::IdeviceInfo::from_device(&provider).await?;
+    STAGE.store(7, Ordering::Relaxed);
+    emit(json!({"event":"status","note":"Selecting Apple developer team…"}));
     let mut signer = SideloaderBuilder::<MaxCertsCallbackBox, ExtensionsBehaviorCallbackBox>::new(session, email.to_string())
         .team_selection(TeamSelection::PromptOnce(team))
         .max_certs_behavior(MaxCertsBehavior::Error)
         .storage(Box::new(ProtectedStorage)).machine_name("Pane".into()).build();
+    signer.get_team().await?;
+    STAGE.store(5, Ordering::Relaxed);
+    emit(json!({"event":"status","note":"Preparing certificate and installing Pane. Keep USB connected…"}));
     signer.install_app(&provider, path, false, None::<fn(f32) -> std::future::Ready<()>>, None).await?;
     emit(json!({"event":"complete"})); Ok(())
 }
@@ -138,6 +168,27 @@ async fn run() -> Result<(), Report> {
 async fn main() {
     rustls::crypto::ring::default_provider().install_default().ok();
     if std::env::args().any(|a| a == "--version") { println!("pane-signer 2.1.0"); return; }
+    if std::env::args().any(|a| a == "--check-device") {
+        // Read existing USB trust only: no pairing, sign-in, registration or install.
+        let result: Result<(), Report> = async {
+            let addr = UsbmuxdAddr::from_env_var()?;
+            let mut mux = addr.connect(0).await?;
+            let devices = mux.get_devices().await?;
+            let usb: Vec<_> = devices.iter().filter(|d| matches!(d.connection_type, idevice::usbmuxd::Connection::Usb)).collect();
+            if usb.len() != 1 { return Err(report!("Connect exactly one USB iPhone for diagnostics")); }
+            let provider = usb[0].to_provider(addr, "Pane");
+            isideload::util::device::IdeviceInfo::from_device(&provider).await?;
+            Ok(())
+        }.await;
+        match result {
+            Ok(()) => emit(json!({"event":"diagnostic","service":"Trusted USB session","reachable":true})),
+            Err(error) => {
+                let (code, note) = public_failure(6, &format!("{error:?}"));
+                emit(json!({"event":"diagnostic","service":"Trusted USB session","reachable":false,"code":code,"note":note}));
+            }
+        }
+        return;
+    }
     if std::env::args().any(|a| a == "--check-services") {
         // Credential-free diagnostics using the same TLS/HTTP stack as signing.
         for url in [ANISETTE_URL, "https://ani.jkcoxson.com"] {
@@ -159,7 +210,7 @@ async fn main() {
         let stage = STAGE.load(Ordering::Relaxed);
         let details = format!("{error:?}");
         let (code, note) = public_failure(stage, &details);
-        let apple_code = apple_error_code(&details);
+        let apple_code = typed_apple_error_code(&error).or_else(|| apple_error_code(&details));
         let note = match apple_code { Some(value) => format!("{note} Apple error: {value}."), None => note.to_string() };
         emit(json!({"event":"error","note":note,"code":code,"stage":stage,"appleCode":apple_code}));
         std::process::exit(1);
@@ -174,7 +225,7 @@ mod tests {
         assert!(failure_note(1).contains("has not been submitted"));
         assert!(failure_note(4).contains("sign-in succeeded"));
         assert!(failure_note(5).contains("Keep existing signing data"));
-        for stage in 0..=5 { assert!(!failure_note(stage).contains("password")); }
+        for stage in 0..=7 { assert!(!failure_note(stage).contains("password")); }
     }
     #[test]
     fn public_errors_never_echo_private_upstream_details() {
@@ -190,5 +241,15 @@ mod tests {
         assert_eq!(apple_error_code("Auth error -22406: private@example.com secret"), Some(-22406));
         assert_eq!(apple_error_code("Developer error 35: secret"), Some(35));
         assert_eq!(apple_error_code("Auth error private@example.com: secret"), None);
+    }
+    #[test]
+    fn typed_service_codes_and_installation_contexts_are_safe() {
+        let error: Report = isideload::SideloadError::DeveloperError(7460, "private@example.com secret".into()).into();
+        assert_eq!(typed_apple_error_code(&error), Some(7460));
+        assert_eq!(public_failure(5, "Maximum number of certificates reached secret").0, "certificate_limit");
+        assert_eq!(public_failure(5, "Failed to start lockdown session private@example.com").0, "usb_session");
+        assert_eq!(public_failure(5, "Failed to install app on device secret").0, "device_install");
+        assert_eq!(public_failure(5, "Not enough available app IDs. secret").0, "app_id_limit");
+        assert_eq!(public_failure(7, "No developer teams available secret").0, "team");
     }
 }
