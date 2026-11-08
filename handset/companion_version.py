@@ -2,8 +2,8 @@
 import plistlib
 import zipfile
 
-COMPANION_VERSION = "2.4.0"
-COMPANION_BUILD = "3"
+COMPANION_VERSION = "2.5.0"
+COMPANION_BUILD = "4"
 
 
 def validate_companion(path):

@@ -64,12 +64,21 @@ class NotificationPreferencesTests(unittest.TestCase):
             n.save({'notifications_enabled': True})
             helper.assert_called_once()
 
+    def test_saved_audio_starts_with_desktop_even_without_mirroring(self):
+        with patch.object(n, '_helper', return_value=None) as helper:
+            n.save({'audio_device_id':'saved-phone'})
+            n.session(desktop=True, mirroring=False)
+            helper.assert_called_once()
+            helper.reset_mock()
+            n.session(desktop=False, mirroring=False)
+            helper.assert_not_called()
+
     def test_optional_worker_failure_does_not_break_mirror_state(self):
         with patch.object(n, '_write', side_effect=OSError('test disk failure')), self.assertLogs(level='ERROR'):
             n.session(desktop=True, mirroring=True)
         self.assertIn('could not be saved', n.status()['audio'])
         with patch.object(n, '_helper', side_effect=OSError('test launch failure')), self.assertLogs(level='ERROR'):
-            n._ensure_running()
+            n._ensure_running({**n.DEFAULTS, 'audio_device_id':'saved-phone'})
         self.assertIn('could not start', n.status()['notifications'])
 
     def test_reset_disables_background_before_deleting_owned_state(self):

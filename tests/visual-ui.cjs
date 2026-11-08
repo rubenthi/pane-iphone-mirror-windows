@@ -139,6 +139,9 @@ const fs = require("node:fs");
     await page.locator('[data-transport="usb"]').click();
     await settings();
     await capture("06-settings");
+    assert.equal(await page.locator('.settings-links .settings-row-icon').count(), 7);
+    assert.equal(await page.locator('.settings-links > button > .pane-icon').count(), 7);
+    assert.equal(await page.locator('.settings-links > button > .pane-icon').first().isVisible(),true);
     await fits(".drawer-scroll");
     await page
       .locator('.settings-links [data-settings="notifications"]')
@@ -278,8 +281,8 @@ const fs = require("node:fs");
     await page.locator('[data-step="install"] > summary').click();
     await page.locator("#signing-form").scrollIntoViewIfNeeded();
     await capture("20-signing");
-    await page.locator("#settings-setup .trust-help summary").click();
-    await page.locator("#settings-setup .trust-help").scrollIntoViewIfNeeded();
+    await page.locator("#settings-setup .trust-help:not(.privacy-help) summary").click();
+    await page.locator("#settings-setup .trust-help:not(.privacy-help)").scrollIntoViewIfNeeded();
     await capture("21-trust-help");
     await page.getByRole("tab", { name: "Uploads", exact: true }).click();
     await capture("22-uploads-empty");
@@ -361,6 +364,11 @@ const fs = require("node:fs");
         expectedTitle,
       );
       await capture(`25-setup-${stage}`);
+      if (stage === 'pair') {
+        const trust = page.locator('#onboarding-bluetooth .trust-visual');
+        assert.match(await trust.innerText(), /Settings[\s\S]*General[\s\S]*VPN & Device Management[\s\S]*Developer App[\s\S]*Your Apple Account[\s\S]*Tap Trust/);
+        assert.equal(await trust.locator('.trust-action .pane-icon').isVisible(), true);
+      }
       assert.equal(
         await page.locator("#onboarding").isVisible(),
         true,

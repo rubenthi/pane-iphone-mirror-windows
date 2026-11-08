@@ -125,6 +125,40 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const grip=await page.locator('[data-resize-corner=se]').boundingBox();
     await page.mouse.move(grip.x+8,grip.y+8);await page.mouse.down();await page.mouse.move(grip.x+8,grip.y-145,{steps:6});await page.mouse.up();
     await page.waitForFunction(h=>innerHeight<h,compact.height);
+    // Exercise the Python bridge without rendering its reply: the viewport
+    // resize event must size the shell in the browser's next paint.
+    const resizeLatency=await page.evaluate(async()=>{
+      const measurements=[], initial=innerHeight;
+      for(const corner of ['se','sw','ne','nw']){
+        for(const height of [initial+24,initial]){
+          const before=(await getJson('/api/window')).native_rect;
+          const started=performance.now();
+          const state=await window.pywebview.api.window_command({action:'resize',corner,height});
+          if(state.error)throw new Error(state.error);
+          const deadline=started+1000;
+          while(innerHeight!==state.height || document.querySelector('.workspace').getBoundingClientRect().height!==innerHeight){
+            if(performance.now()>deadline)throw new Error('Native resize did not paint matching shell geometry within one second.');
+            await new Promise(resolve=>requestAnimationFrame(resolve));
+          }
+          measurements.push(performance.now()-started);
+          const after=(await getJson('/api/window')).native_rect;
+          const anchorX=corner.includes('w')?2:0, anchorY=corner.includes('n')?3:1;
+          if(before[anchorX]!==after[anchorX] || before[anchorY]!==after[anchorY])throw new Error(`Resize moved the opposite corner: ${corner}`);
+        }
+      }
+      return measurements;
+    });
+    await sleep(200);
+    const resizeState=await page.evaluate(()=>getJson('/api/window'));
+    assert.ok(resizeState.resize_timings.length>=8,'native resize timings were sampled');
+    assert.ok(resizeState.resize_paints.length>0,'desktop repaint was sampled during native resizing');
+    assert.ok(Math.max(...resizeState.resize_timings)<500,`native resize blocked: ${JSON.stringify(resizeState.resize_timings)}`);
+    assert.ok(Math.max(...resizeLatency)<1000,`resize presentation was delayed: ${JSON.stringify(resizeLatency)}`);
+    assert.ok(Math.max(...resizeState.resize_paints)<7,`white native resize surface: ${JSON.stringify(resizeState.resize_paints)}`);
+    await checkRegion();
+    await checkDesktopPixels();
+    const resizeEvidence={nativeMs:resizeState.resize_timings,presentedMs:resizeLatency.map(v=>Math.round(v)),desktopSamples:resizeState.resize_paints.length,maxWhitePoints:Math.max(...resizeState.resize_paints)};
+    console.log('Resize timing (ms):',JSON.stringify(resizeEvidence));
     await page.evaluate(async()=>renderScreen({phase:'idle'}));
     assert.deepEqual(errors,[]);
     // Exercise the real mirror document with synthetic full-size video frames.
@@ -156,7 +190,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await require('./remote-controls.cjs')(page);
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
-    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
+    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,resizeEvidence,checks:['native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','four-corner anchoring','resize latency and transient desktop pixels','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
   } catch(error) {
     console.log('Native preview diagnostics:',logs);

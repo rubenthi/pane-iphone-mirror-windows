@@ -6,17 +6,17 @@
   const tours = [
     [
       "Your iPhone. Your mouse.",
-      "Click to tap. Drag or scroll to swipe. Right-click to go Home. While the mirror is focused, your keyboard types on your iPhone.",
+      "Click to tap, drag to swipe, and type with your keyboard. Right-click for Home.",
       '<div class="mini-phone"><svg viewBox="0 0 40 40"><path d="M12 7v25l6-7 6 11 5-3-6-10 10-2z"/></svg></div><div class="mini-bubble">Click. Swipe. Type.<span>All in the phone window.</span></div>',
     ],
     [
       "A little room to move.",
-      "Drag the three bars to move Pane. Hover or focus them for the connected window controls. Resize from any phone corner, or pin Pane above your work.",
+      "Drag the three bars to move Pane. Resize from a corner, or open the window controls to pin it.",
       '<div class="mini-phone"></div><div class="mini-bubble">≡<span>One place for window controls.</span></div>',
     ],
     [
       "Stay connected, your way.",
-      "Use Uploads to send photos and files in either direction. Connect Bluetooth audio in Settings. Choose phone notifications in Notifications. Background mode is off by default; enable it in the sidebar to keep notifications coming after closing Pane.",
+      "Send files in Uploads. Choose audio and notifications in Settings, and enable background mode to keep alerts after closing Pane.",
       '<div class="mini-phone"><svg viewBox="0 0 40 40"><path d="M12 28h16l-3-5v-7a5 5 0 0 0-10 0v7zM18 33h4"/></svg></div><div class="mini-bubble">You choose.<span>Audio, alerts and background mode.</span></div>',
     ],
   ];
@@ -38,6 +38,16 @@
       .forEach((p) => (p.hidden = true));
   }
   $("settings-tab").addEventListener("click", home);
+  document.querySelector('.preferences-heading h2').textContent='Settings';
+  const settingsIcons={notifications:['bell','coral'],audio:['volume','violet'],display:['phone','blue'],setup:['settings','gray'],details:['wifi','green'],help:['alert','blue']};
+  document.querySelectorAll('.settings-links > button').forEach(row=>{
+    const [icon,color]=settingsIcons[row.dataset.settings] || ['play','blue'];
+    const label=document.createElement('span');label.className='settings-row-label';
+    label.textContent=row.firstChild.textContent;
+    const badge=document.createElement('span');badge.className='settings-row-icon '+color;badge.append(window.paneIcon(icon));
+    row.replaceChildren(badge,label,window.paneIcon('chevron'));
+  });
+  document.querySelectorAll('[data-settings-back]').forEach(button=>{button.setAttribute('aria-label','Back to Settings');button.textContent='‹ Settings';});
   document
     .querySelectorAll("[data-settings]")
     .forEach((x) =>
@@ -166,7 +176,7 @@
         renderCompanion(state.companion);
         $("preferences-note").textContent = "Saved";
       } catch (e) {
-        $("preferences-note").textContent = e.message;
+        $("preferences-note").textContent = window.paneNotice(e.message,'preferences');
         renderPreferences();
       }
     });
@@ -197,12 +207,12 @@
   );
   function renderCompanion(state = {}) {
     $("notifications-note").textContent =
-      state.notifications ||
+      window.paneBluetoothNote(state.notifications) ||
       (state.available
-        ? "Select your paired iPhone and enable sharing on the phone."
+        ? "Choose your iPhone above."
         : "Use a Windows build of Pane to connect your iPhone.");
     $("audio-note").textContent =
-      state.audio ||
+      window.paneBluetoothNote(state.audio) ||
       (state.available
         ? ""
         : "Bluetooth audio is available in the Windows release.");
@@ -212,9 +222,9 @@
     try {
       devices = await getJson("/api/bluetooth/devices");
       renderPreferences();
-      if (devices.error) $("audio-note").textContent = devices.error;
+      if (devices.error) $("audio-note").textContent = window.paneNotice(devices.error,'bluetooth');
     } catch (e) {
-      $("audio-note").textContent = e.message;
+      $("audio-note").textContent = window.paneNotice(e.message,'preferences');
     } finally {
       $("bluetooth-refresh").disabled = false;
     }
@@ -222,7 +232,7 @@
   $("bluetooth-refresh").addEventListener("click", refreshBluetooth);
   $("bluetooth-settings").addEventListener("click", () =>
     postJson("/api/bluetooth/settings", {}).catch(
-      (e) => ($("audio-note").textContent = e.message),
+      (e) => ($("audio-note").textContent = window.paneNotice(e.message,'bluetooth')),
     ),
   );
   const ready = getJson("/api/preferences")
@@ -233,7 +243,7 @@
       return prefs;
     })
     .catch((e) => {
-      $("preferences-note").textContent = e.message;
+      $("preferences-note").textContent = window.paneNotice(e.message,'preferences');
       prefs = { tour_complete: true };
       return prefs;
     });

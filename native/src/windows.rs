@@ -62,6 +62,10 @@ struct Session {
     #[serde(default)]
     helper_executable: String,
 }
+
+fn audio_requested(prefs: &Preferences, session: &Session) -> bool {
+    prefs.audio_enabled && session.desktop_pid != 0 && !prefs.audio_device_id.is_empty()
+}
 enum Event {
     Config,
     Tick,
@@ -472,10 +476,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
         if configure {
             configure = false;
             retry = None;
-            let want_audio = prefs.audio_enabled
-                && session.mirroring
-                && session.desktop_pid != 0
-                && !prefs.audio_device_id.is_empty();
+            let want_audio = audio_requested(&prefs, &session);
             let want_notifications = prefs.notifications_enabled
                 && (session.desktop_pid != 0 || prefs.background_enabled)
                 && !prefs.notification_device_id.is_empty();
@@ -484,7 +485,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
                 status.audio = if prefs.audio_device_id.is_empty() {
                     "Choose a paired iPhone for Bluetooth audio."
                 } else {
-                    "Bluetooth audio starts with mirroring."
+                    "Open Pane to connect Bluetooth audio."
                 }
                 .into();
             }
@@ -755,6 +756,25 @@ pub fn run() -> Result<()> {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn audio_follows_desktop_lifetime_and_saved_preference() {
+        let mut prefs = Preferences {
+            audio_device_id: "saved-phone".into(),
+            ..Default::default()
+        };
+        let mut session = Session {
+            desktop_pid: 1,
+            ..Default::default()
+        };
+        assert!(audio_requested(&prefs, &session));
+        session.desktop_pid = 0;
+        session.mirroring = true;
+        assert!(!audio_requested(&prefs, &session));
+        session.desktop_pid = 1;
+        prefs.audio_enabled = false;
+        assert!(!audio_requested(&prefs, &session));
+    }
 
     #[test]
     fn only_a_different_requested_helper_replaces_the_worker() {

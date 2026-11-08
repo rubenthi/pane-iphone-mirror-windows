@@ -230,6 +230,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/uploads/finish':
             item = store().finish(payload.get('id'), 'file')
             return {'ok': True, 'id': item['id']}
+        if path in {'/api/uploads/pause', '/api/uploads/resume'}:
+            return store().control(payload.get('id'), path.rsplit('/', 1)[-1])
         if path == '/api/uploads/cancel':
             return store().cancel(payload.get('id'))
         raise ValueError('Unknown action.')

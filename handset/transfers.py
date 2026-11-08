@@ -49,7 +49,7 @@ class TransferStore:
             self.rows = []
         self.rows = [r for r in self.rows if isinstance(r, dict)][-200:]
         for row in self.rows:
-            if row.get('state') in {'queued', 'sending', 'receiving'}:
+            if row.get('state') in {'queued', 'sending', 'receiving', 'paused'}:
                 row.update(state='failed', error='Pane restarted. Please send the file again.')
         # Only opaque IDs owned by this module; never paths supplied by the phone.
         for folder in ('staging', 'outbox'):
@@ -61,7 +61,7 @@ class TransferStore:
 
     def _save(self):
         # Keep all active rows, with a bounded completed history.
-        active = [r for r in self.rows if r['state'] in {'queued', 'sending', 'receiving'}]
+        active = [r for r in self.rows if r['state'] in {'queued', 'sending', 'receiving', 'paused'}]
         history = [r for r in self.rows if r not in active][-200:]
         self.rows = history + active
         write_json(self.root / 'transfers.json', self.rows)
@@ -77,7 +77,7 @@ class TransferStore:
         valid_size(size, MAX_IPA if kind == 'ipa' else MAX_FILE)
         name = safe_name(name)
         with self.lock:
-            active = [r for r in self.rows if r['state'] in {'queued', 'sending'}]
+            active = [r for r in self.rows if r['state'] in {'queued', 'sending', 'paused'}]
             if len(self.pending) + len(active) >= 8 or sum(p['size'] for p in self.pending.values()) + sum(r['size'] for r in active) + size > 4 * MAX_FILE:
                 raise ValueError('Finish or cancel queued uploads first.')
             identifier = uuid.uuid4().hex
@@ -122,23 +122,49 @@ class TransferStore:
             del self.pending[identifier]
             return item
 
+    def control(self, identifier, action):
+        if action not in {'pause', 'resume', 'cancel'} or not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+            raise ValueError('Invalid transfer control.')
+        with self.lock:
+            row = next((r for r in self.rows if r['id'] == identifier), None)
+            if row and row['state'] not in {'complete', 'failed', 'cancelled'}:
+                if action == 'pause':
+                    row['beforePause'] = row['state'] if row['state'] != 'paused' else row.get('beforePause', 'queued')
+                    row['state'] = 'paused'
+                elif action == 'resume':
+                    row['state'] = row.pop('beforePause', 'queued' if row['direction'] == 'to-phone' else 'receiving')
+                else:
+                    row['state'] = 'cancelled'
+                row['control'] = row['state']
+                self._save()
+            return {'ok': True}
+
     def cancel(self, identifier):
-        if not isinstance(identifier, str):
+        if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
             raise ValueError('Invalid upload ID.')
         with self.lock:
             item = self.pending.pop(identifier, None)
             if item:
                 item['path'].unlink(missing_ok=True)
-            row = next((r for r in self.rows if r['id'] == identifier), None)
-            if row and row['state'] == 'queued':
-                row.update(state='cancelled')
-                (self.root / 'outbox' / (identifier + '.part')).unlink(missing_ok=True)
-                self._save()
+            self.control(identifier, 'cancel')
+            # Active streams own their handles and remove their partial file at
+            # the next acknowledged batch boundary (Windows cannot unlink it open).
+            for folder in ('staging', 'outbox'):
+                try:
+                    (self.root / folder / (identifier + '.part')).unlink(missing_ok=True)
+                except PermissionError:
+                    pass
             return {'ok': True}
 
-    def next_outgoing(self):
+    def row(self, identifier):
         with self.lock:
-            row = next((r for r in self.rows if r['state'] == 'queued'), None)
+            return dict(next(r for r in self.rows if r['id'] == identifier))
+
+    def next_outgoing(self, *, preserve_legacy=False):
+        with self.lock:
+            if preserve_legacy and any(r['direction'] == 'to-phone' and r['state'] == 'paused' and r.get('started') for r in self.rows):
+                return None
+            row = next((r for r in self.rows if r['state'] in {'queued', 'sending'} and r['direction'] == 'to-phone'), None)
             if row:
                 row['state'] = 'sending'
                 return dict(row), self.root / 'outbox' / (row['id'] + '.part')
@@ -146,6 +172,8 @@ class TransferStore:
     def update(self, identifier, **values):
         with self.lock:
             row = next(r for r in self.rows if r['id'] == identifier)
+            if row['state'] == 'cancelled' and values.get('state') != 'cancelled':
+                return
             row.update(values)
             if row['state'] in {'complete', 'failed', 'cancelled'}:
                 self._save()
@@ -159,15 +187,21 @@ class TransferStore:
         with self.lock:
             if any(r.get('remote') == remote_key and r['state'] == 'complete' for r in self.rows):
                 return None
+            existing = next((r for r in self.rows if r.get('remote') == remote_key and r['state'] in {'queued', 'receiving', 'paused', 'cancelled'}), None)
+            if existing:
+                return existing['id'], self.root / 'staging' / (existing['id'] + '.part')
             identifier = uuid.uuid4().hex
-            self.rows.append(dict(id=identifier, remote=remote_key, name=name, size=remote['size'],
-                                  done=0, direction='from-phone', state='receiving', time=time.time()))
+            self.rows.append(dict(id=identifier, remoteId=remote['id'], remote=remote_key, name=name, size=remote['size'],
+                                  done=0, direction='from-phone', state='queued', time=time.time()))
             self._save()
             return identifier, self.root / 'staging' / (identifier + '.part')
 
     def deliver(self, identifier, part, expected_hash):
         with self.lock:
             row = next(r for r in self.rows if r['id'] == identifier)
+            if row['state'] == 'cancelled':
+                part.unlink(missing_ok=True)
+                return False
             if part.stat().st_size != row['size'] or digest_file(part) != expected_hash:
                 raise ValueError('File verification failed. Nothing was saved to Downloads.')
             folder = self.downloads or downloads_folder()
@@ -197,6 +231,7 @@ class TransferStore:
                 else:
                     raise ValueError('Too many files with the same name in Downloads.')
                 self.update(identifier, state='complete', done=row['size'], savedAs=name)
+                return True
             finally:
                 temporary.unlink(missing_ok=True)
                 part.unlink(missing_ok=True)

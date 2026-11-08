@@ -116,6 +116,7 @@ def main() -> None:
     isolate_device_state()
     _setup_logging()
     notifications.session(desktop=True, mirroring=False)
+    bluetooth.start_auto()
 
     fallback = None
     reset_lock = threading.Lock()
@@ -155,7 +156,7 @@ def main() -> None:
         fallback.wait()
     server.shutdown()
     stop_screen()
-    bluetooth.disconnect()
+    bluetooth.stop_auto()
     notifications.session(desktop=False, mirroring=False)
     updater.apply_on_exit()
     server.server_close()

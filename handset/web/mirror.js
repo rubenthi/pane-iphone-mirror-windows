@@ -64,6 +64,7 @@ setInterval(() => {
 
 function setStatus(text, tone) {
   if (!statusEl) return;
+  if(tone === "warn") text = window.parent.paneNotice ? window.parent.paneNotice(text) : "Connection lost. Reconnect your iPhone.";
   if (statusEl.textContent === text && statusEl.dataset.tone === String(tone)) return;
   statusEl.dataset.tone = String(tone);
   window.parent.postMessage({source:"pane-stream-status",text,tone},location.origin);

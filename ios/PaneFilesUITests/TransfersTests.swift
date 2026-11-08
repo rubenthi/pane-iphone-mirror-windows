@@ -13,8 +13,32 @@ final class TransfersTests: XCTestCase {
         add(preview)
         app.buttons["laptopConnection"].tap()
         XCTAssertTrue(app.buttons["Activate USB link"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["2.4.0"].exists || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Installed version")).count > 0)
+        XCTAssertTrue(app.staticTexts["2.5.0"].exists || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Installed version")).count > 0)
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Send files"].waitForExistence(timeout: 5))
     }
+
+    func testPauseResumeCancelInBothDirections() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-transfers"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 15))
+        for (id, name) in [(String(repeating: "1", count: 32), "Phone test file.txt"),
+                           (String(repeating: "2", count: 32), "Laptop test file.txt")] {
+            let toggle = app.buttons["transfer-toggle-\(id)"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            XCTAssertEqual(toggle.label, "Pause")
+            toggle.tap()
+            XCTAssertEqual(toggle.label, "Resume")
+            toggle.tap()
+            XCTAssertEqual(toggle.label, "Pause")
+            let cancel = app.buttons["transfer-cancel-\(id)"]
+            XCTAssertTrue(cancel.exists)
+            cancel.tap()
+            XCTAssertFalse(app.staticTexts[name].exists)
+            XCTAssertFalse(toggle.exists)
+            XCTAssertFalse(cancel.exists)
+        }
+    }
+
 }

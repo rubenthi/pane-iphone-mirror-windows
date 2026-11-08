@@ -167,6 +167,42 @@ const fs = require("node:fs");
     assert.match(await page.locator(".transfer").first().innerText(), /file-4/);
     await page.locator("#transfers-next").click();
     assert.match(await page.locator(".transfer").first().innerText(), /file-6/);
+    // Uploads remain usable with mirroring idle, in both directions.
+    const transferActions = [];
+    const activeTransfers = [
+      {id:'outgoing', name:'notes.pdf', size:200, done:100, direction:'to-phone', state:'sending'},
+      {id:'incoming', name:'photo.heic', size:200, done:80, direction:'from-phone', state:'receiving'},
+    ];
+    await page.route('**/api/uploads', r => r.fulfill({json:{bluetooth:{phase:'connected'}, destination:'Downloads', transfers:activeTransfers}}));
+    await page.route('**/api/uploads/*', r => {
+      const action = new URL(r.request().url()).pathname.split('/').pop();
+      const {id} = r.request().postDataJSON(); transferActions.push({id,action});
+      const transfer = activeTransfers.find(t => t.id === id);
+      transfer.state = action === 'pause' ? 'paused' : action === 'cancel' ? 'cancelled' : transfer.direction === 'to-phone' ? 'sending' : 'receiving';
+      return r.fulfill({json:{ok:true}});
+    });
+    await page.getByRole('button',{name:'Pause notes.pdf',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>connectionPhase),'idle');
+    for (const name of ['notes.pdf','photo.heic']) {
+      await page.getByRole('button',{name:`Pause ${name}`,exact:true}).click();
+      await page.getByRole('button',{name:`Resume ${name}`,exact:true}).click();
+      await page.getByRole('button',{name:`Pause ${name}`,exact:true}).waitFor();
+      await page.getByRole('button',{name:`Cancel ${name}`,exact:true}).click();
+    }
+    assert.deepEqual(transferActions.map(a=>a.action),['pause','resume','cancel','pause','resume','cancel']);
+    await page.getByRole('button',{name:'Cancel photo.heic',exact:true}).waitFor({state:'hidden'});
+    assert.deepEqual(await page.evaluate(() => ['File too large (limit 100)', 'SHA256 checksum mismatch', 'Queue is full'].map(error => paneNotice(error,'upload'))), ['File too large. Choose a smaller file.', 'File incomplete. Send it again.', 'Queue full. Finish or cancel a file.']);
+    assert.equal(await page.evaluate(()=>paneNotice('The bundled iPhone app is damaged or outdated.', 'signing')), 'iPhone installer unavailable. Update Pane on this PC.');
+    // Technical diagnostics stay in the API; the screen gives a short first action.
+    activeTransfers[0].state='failed'; activeTransfers[0].error='Traceback HTTP 503 socket ECONNRESET C:/private/file.py';
+    await page.getByText('Transfer stopped. Open Pane on your iPhone.',{exact:true}).waitFor();
+    assert.doesNotMatch(await page.locator('#uploads-panel').innerText(), /Traceback|ECONNRESET|file\.py/);
+    await page.getByRole('tab',{name:'Settings',exact:true}).click();
+    assert.equal(await page.locator('.settings-row-icon').count(),7);
+    assert.equal(await page.locator('.settings-links [data-settings="notifications"]').innerText(),'Phone notifications');
+    await page.locator('[data-settings="audio"]').click();
+    await page.locator('#settings-audio [data-settings-back]').click();
+    assert.equal(await page.locator('#settings-home').isVisible(),true);
     // A heavily zoomed or small window must still allow access to overflow content.
     await page.evaluate(() => {
       document.documentElement.style.zoom = "1.6";

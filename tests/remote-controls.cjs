@@ -64,7 +64,7 @@ module.exports = async function checkRemoteControls(page) {
     };
   });
   await page.locator('[data-gesture="notifications"]').click();
-  await page.waitForFunction(()=>document.querySelector('#screen-note').textContent==='Synthetic disconnect');
+  await page.waitForFunction(()=>document.querySelector('#screen-note').textContent==='Phone not connected. Unlock it and reconnect.');
   await page.evaluate(()=>window.controlEvents=[]);
   await page.locator('[data-gesture="notifications"]').click();
   await page.waitForFunction(()=>window.controlEvents.at(-1)?.type==='release');

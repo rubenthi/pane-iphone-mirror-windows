@@ -37,9 +37,14 @@
   }
   window.paneOpenDrawer = () => layout(true);
   arrow.addEventListener('click', () => layout(!expanded).catch(() => {}));
-  document.querySelector('#welcome-setup').addEventListener('click', async () => {
-    await layout(true);
-    document.querySelector('#toggle-guide').click();
+  window.addEventListener('resize', () => {
+    if (!native) return;
+    // Follow the viewport in the same paint; don't wait for the bridge reply.
+    const height=innerHeight, scale=Math.min(1,Math.max(.15,(height-174)/292));
+    document.documentElement.style.setProperty('--phone-width',`${innerWidth-60}px`);
+    document.documentElement.style.setProperty('--phone-height',`${height}px`);
+    document.documentElement.style.setProperty('--rail-scale',scale);
+    document.documentElement.style.setProperty('--rail-top',`${Math.max(166,(height-288*scale)/2)}px`);
   });
   document.querySelectorAll('#drag-handle,[data-window-drag]').forEach(handle => {
     let origin=null;
@@ -64,7 +69,7 @@
       if([s.width,s.height,s.received,s.presented].every(Number.isFinite)) document.querySelector('#video-performance').textContent=`${s.width} × ${s.height} · received ${s.received.toFixed(1)} FPS · displayed ${s.presented.toFixed(1)} FPS · target ${fpsSelect.value}`;
       return;
     }
-    if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':event.data.text;arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
+    if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':window.paneNotice(event.data.text);arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
     const { width, height } = event.data;
     if (![width, height].every(value => Number.isInteger(value) && value > 0 && value <= 16384)) return;
     const next = width / height;
@@ -93,7 +98,7 @@
       const dy=(event.screenY-resizing.y)*(resizing.corner.includes('n')?-1:1);
       const dx=(event.screenX-resizing.x)*(resizing.corner.includes('w')?-1:1)/aspect;
       const size={corner:resizing.corner,height:Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)))};
-      resize(size).catch(error=>{document.querySelector("#screen-note").textContent=error.message;});
+      resize(size).catch(error=>{document.querySelector("#screen-note").textContent=window.paneNotice(error.message,'window');});
     });
     const end=()=>{resizing=null;};
     corner.addEventListener('pointerup',end);corner.addEventListener('pointercancel',end);corner.addEventListener('lostpointercapture',end);

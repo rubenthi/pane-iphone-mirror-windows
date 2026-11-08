@@ -21,7 +21,7 @@ try {
     Run python @('-m','unittest','discover','-s','tests','-v')
     Get-ChildItem handset/web/*.js | ForEach-Object { Run node @('--check',$_.FullName) }
     Run npm.cmd @('test')
-    foreach ($suite in 'setup','experience','companion-update','visual','native') {
+    foreach ($suite in 'setup','connect','experience','companion-update','visual','native') {
         Run npm.cmd @('run',"test:$suite")
     }
     Run cargo @('fmt','--check','--manifest-path','native/Cargo.toml')

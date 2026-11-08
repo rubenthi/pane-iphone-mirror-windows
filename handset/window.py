@@ -136,6 +136,8 @@ class FloatingWindow:
             self._form.Activated += disable_backdrop
             from System.Drawing import Color
             from System.Windows.Forms import Timer
+            # Newly exposed pixels should match Pane while WebView2 repaints.
+            self._form.BackColor = Color.FromArgb(11, 21, 37)
             self._form.webview.DefaultBackgroundColor = Color.Transparent
             self.layout(False, DEFAULT_ASPECT)
             # WebView2 can recreate its child renderer after navigation, DPI or
@@ -202,7 +204,9 @@ class FloatingWindow:
                 if width != rect.right-rect.left or height != rect.bottom-rect.top:
                     self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, x, y, width, height, 0x0110)
                     self._form.webview.SetBounds(0, 0, width, height)
-                    self.u.RedrawWindow(self.handle, None, None, 0x0181)
+                    # Queue paint after the browser receives its resize event.
+                    # UPDATENOW paints the old browser surface at the new size.
+                    self.u.RedrawWindow(self.handle, None, None, 0x0081)
                 else:
                     self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, 0, 0, 0, 0, 0x0013)
             self.aspect, self.expanded, self._geometry = aspect, expanded, geometry

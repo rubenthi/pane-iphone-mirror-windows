@@ -42,3 +42,19 @@ test('geometry queue recovers from native errors', async () => {
   const queue = context.window.createPaneLatestQueue(async () => { if (fail) throw new Error('native failure'); });
   await assert.rejects(queue({x:1})); fail = false; await queue({x:2});
 });
+
+test('volume wheel accumulates trackpad movement and preserves direction', async () => {
+  const sent=[];
+  const wheel=context.window.createPaneVolumeWheel(async name=>sent.push(name));
+  await wheel(-20);await wheel(-20);await wheel(-20);assert.equal(sent.length,0);
+  await wheel(-20);await wheel(80);await wheel(-2,1);
+  assert.deepEqual(sent,['volume-up','volume-down','volume-up']);
+});
+test('volume wheel bounds a burst and recovers after a failed control', async () => {
+  let release,fail=true;const sent=[];
+  const wheel=context.window.createPaneVolumeWheel(async name=>{sent.push(name);if(sent.length===1)await new Promise(r=>release=r);if(fail)throw new Error('offline');});
+  const first=wheel(80);
+  wheel(80000);release();await assert.rejects(first);
+  assert.equal(sent.length,1);
+  fail=false;await wheel(-80);assert.equal(sent.at(-1),'volume-up');
+});

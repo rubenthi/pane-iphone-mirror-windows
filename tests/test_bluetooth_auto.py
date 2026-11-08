@@ -1,0 +1,43 @@
+import asyncio
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from handset.bluetooth import Bluetooth
+
+
+class AutomaticBluetoothTests(unittest.TestCase):
+    def test_only_a_completed_saved_binding_is_reconnected(self):
+        link = Bluetooth()
+        for binding in ({}, {'token':'saved'}, {'token':'saved','service':'uuid','onboardingComplete':False}):
+            with patch('handset.bluetooth.read_json', return_value=binding), patch.object(link, 'connect') as connect:
+                link._auto_tick()
+                connect.assert_not_called()
+        with patch('handset.bluetooth.read_json', return_value={'token':'saved','service':'uuid'}), patch.object(link, 'connect') as connect:
+            link._auto_tick()
+            connect.assert_called_once_with(automatic=True)
+
+    def test_manual_disconnect_pauses_reconnect_until_explicit_connect(self):
+        link = Bluetooth()
+        link.disconnect()
+        with patch('handset.bluetooth.read_json', return_value={'token':'saved','service':'uuid'}), patch('handset.bluetooth.threading.Thread') as worker:
+            link.connect(automatic=True)
+            worker.assert_not_called()
+            link.connect()
+            worker.return_value.start.assert_called_once()
+            self.assertFalse(link._auto_paused)
+
+    def test_shutdown_prevents_new_connections(self):
+        link = Bluetooth()
+        link.stop_auto()
+        with patch('handset.bluetooth.read_json', return_value={'token':'saved','service':'uuid'}), patch('handset.bluetooth.threading.Thread') as worker:
+            link.connect(automatic=True)
+            worker.assert_not_called()
+
+    def test_disconnect_before_session_start_never_scans(self):
+        link = Bluetooth()
+        link.disconnect()
+        scanner = MagicMock(find_device_by_filter=AsyncMock())
+        with patch.dict('sys.modules', {'bleak':MagicMock(BleakScanner=scanner)}):
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(link._session({'token':'saved','service':'uuid'}))
+        scanner.find_device_by_filter.assert_not_awaited()

@@ -122,6 +122,145 @@ class TransferTests(unittest.TestCase):
         self.assertFalse(list((self.store.root / 'staging').glob('*.part')))
         self.assertFalse(self.downloads.exists())
 
+    def test_pause_yields_queue_and_resume_keeps_acknowledged_offset(self):
+        first = self.stage(b'a' * 12000)
+        second = self.stage(b'next')
+        owner = self
+        class Peer:
+            chunk_size = 4096
+            data = {}
+            paused = False
+            async def call(peer, op, **fields):
+                identifier = fields.get('id')
+                if op == 'begin': peer.data[identifier] = bytearray()
+                if op == 'write':
+                    owner.assertEqual(fields['offset'], len(peer.data[identifier]))
+                    peer.data[identifier].extend(base64.b64decode(fields['data']))
+                    if identifier == first['id'] and not peer.paused:
+                        peer.paused = True
+                        owner.store.control(identifier, 'pause')
+                    return {'offset': len(peer.data[identifier])}
+                return {'ok': True}
+        peer = Peer()
+        with patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(Bluetooth()._send(peer, *self.store.next_outgoing()))
+            self.assertEqual(self.store.row(first['id'])['state'], 'paused')
+            self.assertEqual(self.store.row(first['id'])['done'], 4096)
+            self.assertTrue(first['path'].exists())
+            row, path = self.store.next_outgoing()
+            self.assertEqual(row['id'], second['id'])
+            asyncio.run(Bluetooth()._send(peer, row, path))
+            self.store.control(first['id'], 'resume')
+            asyncio.run(Bluetooth()._send(peer, *self.store.next_outgoing()))
+        self.assertEqual(peer.data[first['id']], b'a' * 12000)
+        self.assertEqual(self.store.row(first['id'])['state'], 'complete')
+        self.assertFalse(first['path'].exists())
+
+    def test_pause_receive_then_resume_or_cancel_never_publishes_partial(self):
+        data = b'a' * 9000
+        remote = self.remote(data)
+        owner = self
+        class Peer:
+            pause = True
+            acked = False
+            offsets = []
+            async def call(peer, op, **fields):
+                if op == 'read':
+                    peer.offsets.append(fields['offset'])
+                    if peer.pause:
+                        peer.pause = False
+                        owner.store.control(owner.store.rows[-1]['id'], 'pause')
+                    return {'data': base64.b64encode(data[fields['offset']:fields['offset'] + fields['length']]).decode()}
+                if op == 'received': peer.acked = True
+                return {'ok': True}
+        peer = Peer()
+        with patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(Bluetooth()._receive(peer, remote, 'phone'))
+            row = self.store.rows[-1]
+            self.assertEqual(row['state'], 'paused')
+            self.assertEqual(row['done'], 4096)
+            self.assertFalse(self.downloads.exists())
+            self.store.control(row['id'], 'resume')
+            asyncio.run(Bluetooth()._receive(peer, remote, 'phone'))
+            self.assertEqual(peer.offsets, [0, 4096, 8192])
+            self.assertTrue(peer.acked)
+            self.assertEqual((self.downloads / 'photo.jpg').read_bytes(), data)
+            # A new transfer cancelled while a read is in flight gets no ACK.
+            remote = {**remote, 'id': '2' * 32}
+            class CancelPeer(Peer):
+                acked = False
+                async def call(peer, op, **fields):
+                    if op == 'read': owner.store.cancel(owner.store.rows[-1]['id'])
+                    return await super().call(op, **fields)
+            cancelled = CancelPeer(); cancelled.pause = False
+            asyncio.run(Bluetooth()._receive(cancelled, remote, 'phone'))
+            self.assertFalse(cancelled.acked)
+            self.assertEqual(self.store.rows[-1]['state'], 'cancelled')
+            self.assertFalse(list((self.store.root / 'staging').glob('*.part')))
+            self.assertEqual(len(list(self.downloads.iterdir())), 1)
+
+    def test_remote_controls_cancel_queued_file_and_pause_does_not_drop_budget(self):
+        item = self.stage(b'cancel')
+        class Peer:
+            controls = True
+            async def call(peer, op, **fields):
+                self.assertEqual(op, 'controls')
+                return {'transfers': [{'id': item['id'], 'state': 'cancelled'}]}
+        with patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(Bluetooth()._sync_controls(Peer()))
+        self.assertEqual(self.store.row(item['id'])['state'], 'cancelled')
+        self.assertFalse(item['path'].exists())
+        for _ in range(8):
+            item = self.stage(b'x')
+            self.store.control(item['id'], 'pause')
+        with self.assertRaises(ValueError): self.store.begin('overflow', 1)
+
+    def test_legacy_pause_reserves_single_phone_inbound_slot(self):
+        first = self.stage(b'first')
+        second = self.stage(b'second')
+        row, _ = self.store.next_outgoing(preserve_legacy=True)
+        self.store.update(row['id'], started=True, done=2)
+        self.store.control(row['id'], 'pause')
+        self.assertIsNone(self.store.next_outgoing(preserve_legacy=True))
+        self.store.control(row['id'], 'resume')
+        resumed, _ = self.store.next_outgoing(preserve_legacy=True)
+        self.assertEqual(resumed['id'], first['id'])
+        self.assertEqual(resumed['done'], 2)
+        self.store.cancel(first['id'])
+        self.assertEqual(self.store.next_outgoing(preserve_legacy=True)[0]['id'], second['id'])
+
+    def test_acknowledged_cancelled_history_is_not_retransmitted(self):
+        self.store.rows = [dict(id=f'{index:032x}', name='x'*180, size=1, done=0,
+                               direction='to-phone', state='cancelled') for index in range(220)]
+        owner = self
+        class Peer:
+            controls = True
+            async def call(peer, op, **fields):
+                owner.assertEqual(fields['transfers'], [])
+                return {'transfers': []}
+        with patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(Bluetooth()._sync_controls(Peer()))
+
+    def test_reconnect_restarts_phone_partial_without_losing_paused_source(self):
+        item = self.stage(b'source')
+        row, _ = self.store.next_outgoing()
+        self.store.update(row['id'], started=True, done=3)
+        self.store.control(row['id'], 'pause')
+        with patch('handset.bluetooth.store', return_value=self.store):
+            Bluetooth()._reset_interrupted_outgoing()
+        row = self.store.row(row['id'])
+        self.assertEqual((row['state'], row['done'], row['started']), ('paused', 0, False))
+        self.assertTrue(item['path'].exists())
+
+    def test_cancelled_before_delivery_does_not_publish_or_report_success(self):
+        metadata = self.remote(b'complete bytes')
+        identifier, part = self.store.incoming(metadata, 'phone')
+        part.write_bytes(b'complete bytes')
+        self.store.cancel(identifier)
+        self.assertFalse(self.store.deliver(identifier, part, metadata['sha256']))
+        self.assertFalse(self.downloads.exists())
+        with self.assertRaises(ValueError): self.store.cancel('../../outside')
+
 
 class RpcTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_finds_bound_service_when_ios_omits_its_name(self):
@@ -151,3 +290,27 @@ class RpcTests(unittest.IsolatedAsyncioTestCase):
         result = await rpc.call('hello', token='a'*64)
         self.assertTrue(result['ok'])
         self.assertGreater(len(client.writes), 1)
+
+    async def test_negotiated_mtu_uses_more_than_legacy_180_byte_cap(self):
+        class Client:
+            mtu_size = 247
+            writes = []
+            async def write_gatt_char(client, characteristic, data, response):
+                self.assertTrue(response)
+                self.assertLessEqual(len(data), 244)
+                client.writes.append(data)
+                if data.endswith(b'\n'): rpc.notified(None, b'{"request":1,"ok":true}\n')
+        client = Client(); rpc = Rpc(client)
+        await rpc.call('begin', name='x' * 800)
+        self.assertEqual(len(client.writes[0]), 244)
+
+    async def test_fast_batch_is_bounded_by_negotiated_mtu_and_capability(self):
+        from types import SimpleNamespace
+        for mtu, expected in ((23, 4096), (67, 4096), (185, 16384), (247, 32768)):
+            rpc = Rpc(SimpleNamespace(mtu_size=mtu))
+            rpc.negotiate(['transfer-control-v1', 'chunk-32768'])
+            self.assertEqual(rpc.chunk_size, expected)
+            self.assertTrue(rpc.controls)
+            rpc.negotiate([])
+            self.assertEqual(rpc.chunk_size, 4096)
+            self.assertFalse(rpc.controls)

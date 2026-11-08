@@ -56,8 +56,14 @@ struct ContentView: View {
                     }.accessibilityIdentifier("laptopConnection")
                 }
                 Section {
-                    if let progress = companion.receiveProgress {
-                        ProgressView("Receiving from laptop", value: progress)
+                    ForEach(companion.laptopFiles) { file in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(file.name).font(.headline)
+                            if let progress = companion.receiveProgresses[file.id] {
+                                ProgressView(value: progress)
+                            }
+                            transferButtons(file.id)
+                        }
                     }
                     if companion.received.isEmpty && companion.receiveProgress == nil {
                         ContentUnavailableView("No received files", systemImage: "tray",
@@ -86,8 +92,9 @@ struct ContentView: View {
                                 if let progress = companion.sendProgress[file.id] {
                                     ProgressView(value: progress).accessibilityLabel("Sending \(file.name)")
                                 } else {
-                                    Text("Queued").font(.caption).foregroundStyle(.secondary)
+                                    Text(companion.transferState(file.id).capitalized).font(.caption).foregroundStyle(.secondary)
                                 }
+                                transferButtons(file.id)
                             }.padding(.vertical, 3)
                         }.onDelete { companion.removeOutgoing(at: $0) }
                     }
@@ -110,7 +117,7 @@ struct ContentView: View {
                             Text(companion.status)
                         }
                         Section("USB pairing") {
-                            Text("Connect and unlock your iPhone. In Pane on your laptop, choose Bind USB & Wi-Fi. Then activate the link here and allow Bluetooth.")
+                            Text("Connect and unlock your iPhone, then complete setup on your laptop. If needed, activate the USB link here and allow Bluetooth.")
                             Button("Activate USB link") { companion.activateUSB() }
                             if !companion.activity.isEmpty { Text(companion.activity).font(.footnote) }
                         }
@@ -136,7 +143,7 @@ struct ContentView: View {
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): importFiles(urls)
-                case .failure(let error): companion.activity = error.localizedDescription
+                case .failure: companion.activity = "Couldn't open that file. Choose it again."
                 }
             }
             .onChange(of: photos) { _, selection in
@@ -150,12 +157,29 @@ struct ContentView: View {
                                 try await companion.queueFile(file.url)
                             }
                         }
-                    } catch { companion.activity = error.localizedDescription }
+                    } catch { companion.filePreparationFailed(error) }
                     photos = []; importing = false
                 }
             }
 
         }
+    }
+
+    @ViewBuilder private func transferButtons(_ id: String) -> some View {
+        HStack {
+            if companion.controlsAvailable || !companion.isConnected {
+                let paused = companion.transferState(id) == "paused"
+                Button(paused ? "Resume" : "Pause", systemImage: paused ? "play.fill" : "pause.fill") {
+                    companion.controlTransfer(id, action: paused ? "resume" : "pause")
+                }.buttonStyle(.bordered)
+                    .accessibilityIdentifier("transfer-toggle-\(id)")
+            }
+            Button("Cancel", systemImage: "xmark", role: .destructive) {
+                companion.controlTransfer(id, action: "cancel")
+            }.buttonStyle(.bordered)
+                .accessibilityIdentifier("transfer-cancel-\(id)")
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var sendButtons: some View {
@@ -189,7 +213,7 @@ struct ContentView: View {
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     try await companion.queueFile(url)
                 }
-            } catch { companion.activity = error.localizedDescription }
+            } catch { companion.filePreparationFailed(error) }
             importing = false
         }
     }

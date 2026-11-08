@@ -1289,3 +1289,55 @@ body:not(.browser-mode) :is(#companion-update-dialog, #development-reset-dialog)
 .onboarding .trust-help { margin: 12px 0; }
 .onboarding > footer { border-top: 1px solid var(--line); padding: 8px 24px 16px; }
 .onboarding > footer button { color: var(--muted); }
+/* iPhone-style navigation, carried in Pane's blue surfaces. */
+.settings-links { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #20365366; }
+.settings-links > button { display: flex; align-items: center; gap: 11px; min-height: 49px; padding: 9px 11px; color: var(--ink); }
+.settings-links > button:nth-child(3), .settings-links > button:nth-child(6) { border-bottom: 7px solid #0d1b30; }
+.settings-links > button:last-child { border-bottom: 0; }
+.settings-links > button:before, .settings-links > button:after { display: none; }
+.settings-links > button:hover, .settings-links > button:focus-visible { padding-left: 11px; background: #98b9e21a; }
+.settings-links > button > .settings-row-label { display: block; margin: 0; flex: 1; font-size: 12px; color: var(--ink); }
+.settings-links > button > .settings-row-icon { display: grid; place-items: center; flex: none; width: 27px; height: 27px; margin: 0; border-radius: 7px; color: #fff; background: #427dcc; }
+.settings-row-icon .pane-icon { width: 17px; height: 17px; }
+.settings-links > button > .settings-row-icon.coral { background: #c25469; }
+.settings-links > button > .settings-row-icon.violet { background: #8062bd; }
+.settings-links > button > .settings-row-icon.green { background: #347e75; }
+.settings-links > button > .settings-row-icon.gray { background: #64748e; }
+.settings-links > button > .pane-icon { width: 13px; height: 13px; color: var(--quiet); }
+.settings-page > [data-settings-back] { display: inline-flex; align-items: center; padding: 5px 0; font-size: 13px; }
+.settings-page .switch-row { margin: 6px 0; border: 1px solid var(--line); background: #20365366; border-radius: 11px; padding: 8px 10px; }
+.settings-page .switch-row input { right: 10px; }
+.switch-row input:checked + i { background: #4d947d; border-color: #66b59b; }
+.setup-visual { margin: 15px 0; padding: 12px; border: 1px solid var(--line); border-radius: 15px; background: #07142688; text-align: left; }
+.setup-path { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 11px; color: var(--muted); font-size: 11px; }
+.setup-path > [data-icon] { display: grid; place-items: center; color: var(--accent); }
+.setup-path .pane-icon { width: 17px; height: 17px; }
+.setup-path > span + span + span:before { content: '›'; margin-right: 6px; color: var(--quiet); }
+.settings-preview { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 41px; padding: 10px; background: #213a5d88; border-bottom: 1px solid var(--line); font-size: 12px; }
+.settings-preview:nth-child(2) { border-radius: 9px 9px 0 0; }
+.settings-preview strong { font-weight: 560; overflow-wrap: anywhere; }
+.settings-preview > span:first-child { color: var(--muted); }
+.settings-preview .preview-switch { flex: none; position: relative; width: 33px; height: 20px; border-radius: 12px; background: #4d947d; }
+.preview-switch:after { content: ''; position: absolute; height: 14px; width: 14px; background: #f3f7ff; border-radius: 50%; top: 3px; right: 3px; }
+.trust-action { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 8px; background: #335d9738; color: #a9ceff; font-size: 12px; border-radius: 0 0 9px 9px; }
+.trust-action .pane-icon { width: 17px; height: 17px; }
+.onboarding .visual-caption, .trust-help .visual-caption { font-size: 11px; line-height: 1.5; margin: 11px 0 0; text-align: center; }
+.setup-finish { display: flex; align-items: center; gap: 12px; margin: 17px 0; text-align: left; }
+.setup-finish img { flex: none; border-radius: 9px; }
+.setup-finish strong { font-size: 13px; font-weight: 580; }
+.onboarding .setup-finish p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; }
+#onboarding-bluetooth > h3 { font-size: 14px; font-weight: 580; text-align: left; margin: 18px 0 -5px; }
+.certificate-help { display: flex; gap: 9px; align-items: center; font-size: 13px; line-height: 1.5; }
+.certificate-help .pane-icon { color: var(--accent); flex: none; }
+#signing-choices [data-certificate] { display: grid; grid-template-columns: 18px 1fr; column-gap: 8px; align-items: center; width: 100%; padding: 11px; }
+#signing-choices [data-certificate] > .pane-icon { width: 17px; height: 17px; opacity: .3; }
+#signing-choices [data-certificate][aria-pressed='true'] > .pane-icon { opacity: 1; color: var(--accent); }
+#signing-choices [data-certificate] small { display: block; grid-column: 2; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.transfer-actions { display: flex; justify-content: flex-end; gap: 17px; margin-top: 5px; }
+.transfer-actions .transfer-control { font-size: 11px; padding: 4px 0; }
+.transfer[data-state='paused'] progress { opacity: .5; }
+@media (max-height: 620px) { .settings-links > button { min-height: 43px; padding-top: 7px; padding-bottom: 7px; } .setup-visual { margin: 11px 0; } }
+.setup-path > .pane-icon { color: var(--accent); }
+
+.settings-page .switch-row:has(input:checked) small { font-size: 11px; }
+.settings-links > button > .pane-icon { display: inline-flex; flex: none; }

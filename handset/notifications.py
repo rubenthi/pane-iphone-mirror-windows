@@ -126,7 +126,7 @@ def _write_session(helper=None):
 def _ensure_running(prefs=None):
     global _PROCESS, _ERROR, _NEXT_START
     prefs = prefs or preferences()
-    needed = (prefs['notifications_enabled'] and (_DESKTOP_ACTIVE or prefs['background_enabled'])) or (prefs['audio_enabled'] and _MIRRORING)
+    needed = (prefs['notifications_enabled'] and (_DESKTOP_ACTIVE or prefs['background_enabled'])) or (prefs['audio_enabled'] and _DESKTOP_ACTIVE and bool(prefs['audio_device_id']))
     if not needed or (_PROCESS is not None and _PROCESS.poll() is None):
         return
     try:
