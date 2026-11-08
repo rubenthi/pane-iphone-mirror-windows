@@ -14,6 +14,7 @@ os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SHIMS), os.environ.
 
 datas = [(str(ROOT / "handset" / "web"), "handset/web"), (str(ROOT / "handset" / "install_update.ps1"), "handset")]
 datas += [(str(ROOT / "ios" / "Pane-unsigned.ipa"), "ios")]
+datas += [(str(ROOT / "packaging" / "pane.ico"), "packaging")]
 binaries = [(str(ROOT / "signer" / "pane-signer.exe"), "signer"),
             (str(ROOT / "native" / "target" / "release" / "pane-companion.exe"), "native")]
 datas += [(str(ROOT / "signer" / "ISIDELOAD-LICENSE"), "signer")]

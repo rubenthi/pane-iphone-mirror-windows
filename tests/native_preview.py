@@ -77,6 +77,7 @@ def checked_status():
     def inspect():
         # Read geometry and its native region in the same UI-thread turn.
         state = original_status()
+        state['windows_identity'] = getattr(shell, '_test_identity', None)
         state['resize_timings'] = resize_timings.copy()
         state['resize_paints'] = resize_paints.copy()
         state['menu_open'] = shell.menu_open
@@ -125,8 +126,38 @@ original_attach = shell.attach
 def attach_with_backdrop(window):
     result = original_attach(window)
     def create_backdrop():
-        from System.Drawing import Color
+        from System.Drawing import Color, Icon
+        from System.IO import MemoryStream
         from System.Windows.Forms import Form, FormBorderStyle, Screen, FormStartPosition
+        shell32 = ctypes.WinDLL('shell32')
+        shell32.GetCurrentProcessExplicitAppUserModelID.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        shell32.GetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long
+        ole32 = ctypes.WinDLL('ole32')
+        ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+        pointer = ctypes.c_void_p()
+        result = shell32.GetCurrentProcessExplicitAppUserModelID(ctypes.byref(pointer))
+        try:
+            app_id = ctypes.wstring_at(pointer.value) if result == 0 else None
+        finally:
+            if pointer.value:
+                ole32.CoTaskMemFree(pointer)
+        def icon_bytes(icon):
+            stream = MemoryStream()
+            try:
+                icon.Save(stream)
+                return bytes(stream.ToArray())
+            finally:
+                stream.Dispose()
+        expected_icon = Icon(str(app.APP_ICON))
+        try:
+            matches = icon_bytes(window.native.Icon) == icon_bytes(expected_icon)
+        finally:
+            expected_icon.Dispose()
+        shell.u.SendMessageW.argtypes = [W.HWND, W.UINT, W.WPARAM, W.LPARAM]
+        shell.u.SendMessageW.restype = ctypes.c_ssize_t
+        shell._test_identity = {'app_id': app_id, 'form_icon_matches': matches,
+                                'small_icon': bool(shell.u.SendMessageW(shell.handle, 0x007f, 0, 0)),
+                                'large_icon': bool(shell.u.SendMessageW(shell.handle, 0x007f, 1, 0))}
         backdrop = Form()
         backdrop.FormBorderStyle = getattr(FormBorderStyle, 'None')
         backdrop.StartPosition = FormStartPosition.Manual

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import ctypes
 import os
 import socket
 import subprocess
@@ -15,13 +16,26 @@ import urllib.request
 from pathlib import Path
 
 from handset.server import HOST, PORT, Handler, SingleServer
-from handset.edition import APP_NAME
+from handset.edition import APP_NAME, DEVELOPMENT
 from handset import updater, notifications, setup
 from handset.screen import stop_screen
 from handset.state import DATA_DIR, RESET_REQUEST, can_reset_development, prepare_state, isolate_device_state
 from handset.bluetooth import bluetooth
 
 URL = f"http://{HOST}:{PORT}/"
+WINDOWS_APP_ID = 'Pane.Desktop.Development' if DEVELOPMENT else 'Pane.Desktop'
+APP_ICON = Path(__file__).resolve().parents[1] / 'packaging' / 'pane.ico'
+
+
+def _set_windows_identity():
+    if os.name != 'nt':
+        return
+    shell = ctypes.WinDLL('shell32', use_last_error=True)
+    shell.SetCurrentProcessExplicitAppUserModelID.argtypes = [ctypes.c_wchar_p]
+    shell.SetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long
+    result = shell.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    if result < 0:
+        raise OSError(f'Windows could not set the Pane application identity ({result:#x}).')
 
 BROWSERS = (
     Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe",
@@ -161,7 +175,10 @@ def main() -> None:
     updater.apply_on_exit()
     server.server_close()
     if can_reset_development() and marker.exists():
-        subprocess.Popen([sys.executable, '-m', 'handset.app'], cwd=Path(__file__).resolve().parents[1],
+        frozen = getattr(sys, 'frozen', False)
+        command = [sys.executable, '--development'] if frozen else [sys.executable, '-m', 'handset.app']
+        restart_folder = Path(sys.executable).resolve().parent if frozen else Path(__file__).resolve().parents[1]
+        subprocess.Popen(command, cwd=restart_folder,
                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), close_fds=True)
     os._exit(0)
 
@@ -169,6 +186,7 @@ def main() -> None:
 def run_native_window():
     import webview
     from handset.window import shell
+    _set_windows_identity()
     webview.settings['ALLOW_FILE_URLS'] = False
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
     class NativeBridge:
@@ -189,7 +207,7 @@ def run_native_window():
         if not shell.attach(window):
             logging.error('Could not attach the native window region.')
     window.events.shown += shown
-    webview.start(gui='edgechromium', private_mode=False, storage_path=str(DATA_DIR / 'webview'))
+    webview.start(gui='edgechromium', private_mode=False, storage_path=str(DATA_DIR / 'webview'), icon=str(APP_ICON))
 
 
 if __name__ == "__main__":

@@ -33,8 +33,10 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(async () => {
       const auth = await fetch('/api/auth').then(r=>r.json());
       const state = await fetch('/api/window',{headers:{'X-Pane-Token':auth.token}}).then(r=>r.json());
-      return state.native && innerWidth === state.width && innerHeight === state.height;
+      return state.native && state.windows_identity && innerWidth === state.width && innerHeight === state.height;
     });
+    const windowsIdentity=(await page.evaluate(()=>getJson('/api/window'))).windows_identity;
+    assert.deepEqual(windowsIdentity,{app_id:'Pane.Desktop.Development',form_icon_matches:true,small_icon:true,large_icon:true});
     await page.evaluate(()=>load());
     await page.getByText('No iPhone detected.',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.locator('#connection-drawer').isVisible(),false);
@@ -190,7 +192,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await require('./remote-controls.cjs')(page);
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
-    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,resizeEvidence,checks:['native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','four-corner anchoring','resize latency and transient desktop pixels','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
+    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,windowsIdentity,resizeEvidence,checks:['Windows application identity and Pane icons','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','four-corner anchoring','resize latency and transient desktop pixels','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
   } catch(error) {
     console.log('Native preview diagnostics:',logs);

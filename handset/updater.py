@@ -14,6 +14,7 @@ import threading
 import urllib.request
 
 from handset.version import REPOSITORY, VERSION
+from handset.edition import is_development
 
 BASE = f'https://github.com/{REPOSITORY}/releases'
 MANIFEST_URL = f'{BASE}/latest/download/update.json'
@@ -63,8 +64,8 @@ def monitor(stop=None):
 
 def check():
     global _STAGED
-    if not getattr(sys, 'frozen', False) or os.name != 'nt':
-        _set(phase='source', note='Automatic updates apply to the Windows executable.')
+    if is_development() or os.name != 'nt':
+        _set(phase='source', note='Automatic updates apply to the production Windows app.')
         return
     try:
         _set(phase='checking')
@@ -109,7 +110,7 @@ def check():
 
 
 def apply_on_exit():
-    if _STAGED is None:
+    if is_development() or _STAGED is None:
         return
     helper, exe, checksum = _STAGED
     # Do not inherit PowerShell 7's module search path into Windows PowerShell 5.
