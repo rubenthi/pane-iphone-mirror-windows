@@ -306,12 +306,14 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
           const before=await page.evaluate(()=>getJson('/api/window'));
           const reply=await page.evaluate(payload=>window.pywebview.api.window_command(payload),{action:'resize',corner,height});
           assert.equal(reply.error,undefined);
+          assert.equal(reply.height,height,'The density fixture must leave enough work-area space for its requested resize');
           await page.waitForFunction(async expected=>{
             const s=await getJson('/api/window');
             return s.height===expected && innerWidth===s.width && innerHeight===s.height &&
               document.querySelector('.workspace').getBoundingClientRect().height===innerHeight;
           },height);
           const after=await page.evaluate(async()=>({state:await getJson('/api/window'),dpr:devicePixelRatio,viewport:[innerWidth,innerHeight]}));
+          assert.equal(after.state.height,height,'Density resize must retain its requested logical height');
           const anchorX=corner.includes('w')?2:0,anchorY=corner.includes('n')?3:1;
           assert.equal(after.state.native_rect[anchorX],before.native_rect[anchorX],`${monitor.dpi}-DPI ${corner} resize moved its horizontal anchor`);
           assert.equal(after.state.native_rect[anchorY],before.native_rect[anchorY],`${monitor.dpi}-DPI ${corner} resize moved its vertical anchor`);
@@ -338,7 +340,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   } catch(error) {
     console.log('Native preview diagnostics:',logs);
     if(page){
-      console.log('Native desktop sample diagnostics:',await page.evaluate(async()=>{const s=await getJson('/api/window');return {native_rect:s.native_rect,pixels:s.pixels,resize_samples:s.resize_samples,web_offset:s.web_offset,dpi:s.dpi,dpr:devicePixelRatio,viewport:[innerWidth,innerHeight],geometry:[s.width,s.height],monitor:s.monitor};}).catch(()=>({})));
+      console.log('Native desktop sample diagnostics:',await page.evaluate(async()=>{const s=await getJson('/api/window');return {native_rect:s.native_rect,pixels:s.pixels,resize_samples:s.resize_samples,web_offset:s.web_offset,dpi:s.dpi,dpr:devicePixelRatio,viewport:[innerWidth,innerHeight],geometry:[s.width,s.height],monitor:s.monitor,history:s.command_history};}).catch(()=>({})));
       await page.screenshot({path:path.join(output,'native-failure.png')}).catch(()=>{});
     }
     if(page) console.log(await page.evaluate(()=>({status:document.querySelector('#status-note')?.textContent,devices:document.querySelector('#devices')?.textContent,setup:document.querySelector('#onboarding-note')?.textContent})).catch(()=>({})));

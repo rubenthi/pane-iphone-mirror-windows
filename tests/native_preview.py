@@ -5,6 +5,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import deque
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ['PANE_PORT'] = '18776'
@@ -29,6 +30,7 @@ resize_paints = []
 resize_samples = []
 sample_until = 0
 original_command = shell.command
+command_history = deque(maxlen=120)
 
 
 def test_monitors():
@@ -53,6 +55,11 @@ def test_monitors():
 
 def timed_command(payload):
     global sample_until
+    if shell._form is None or shell._form.InvokeRequired:
+        command_history.append({'action': payload.get('action'),
+                                'height': payload.get('height'),
+                                'corner': payload.get('corner'),
+                                'timestamp': round(time.monotonic(), 6)})
     if payload.get('action') == 'test-monitor':
         # This route exists only in the disposable fixture. It can move only
         # this fixture's own HWND and its known-color test backdrop.
@@ -134,6 +141,7 @@ def checked_status():
         state['resize_samples'] = resize_samples[-3:]
         state['resize_invalid_samples'] = sum(0xffffffff in sample['colors'] for sample in resize_samples)
         state['menu_open'] = shell.menu_open
+        state['command_history'] = list(command_history)
         origin, view = W.POINT(), W.RECT()
         shell.u.ClientToScreen(shell.handle, ctypes.byref(origin))
         shell.u.GetWindowRect(shell._form.webview.Handle.ToInt64(), ctypes.byref(view))

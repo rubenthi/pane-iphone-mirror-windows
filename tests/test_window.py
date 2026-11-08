@@ -4,6 +4,19 @@ from handset.window import dimensions, DRAWER, TAB, DEFAULT_ASPECT, FloatingWind
 
 
 class WindowLayoutTests(unittest.TestCase):
+    def test_anchored_resize_uses_space_to_edge_without_a_second_gutter(self):
+        before = dimensions(preferred_height=563)
+        # The high-density monitor fixture starts 48 physical / 24 CSS px
+        # from the top/left. Growing 20 CSS px must use that available space.
+        grown = dimensions(work_width=before['width']+24, work_height=before['height']+24,
+                           preferred_height=583, work_margin=0)
+        self.assertEqual(grown['height'], 583)
+        self.assertLessEqual(grown['width'], before['width']+24)
+        limited = dimensions(work_width=before['width'], work_height=before['height'],
+                             preferred_height=583, work_margin=0)
+        # Reversing an integer-rounded width can lose at most one logical px.
+        self.assertAlmostEqual(limited['height'], before['height'], delta=1)
+
     def test_panel_overlays_without_changing_native_dimensions(self):
         compact = dimensions()
         expanded = dimensions(expanded=True)

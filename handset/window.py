@@ -26,12 +26,12 @@ def _native_pointer(handle):
     return IntPtr(Int64(ctypes.c_ssize_t(handle).value))
 
 
-def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
+def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760, *, work_margin=48):
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
     extra = TAB
     preferred_height = max(PANEL_MIN_HEIGHT, preferred_height) if expanded else preferred_height
-    height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - SCREEN_CHROME) / aspect + SCREEN_CHROME))
+    height = max(120, min(preferred_height, work_height - work_margin, (work_width - extra - work_margin - SCREEN_CHROME) / aspect + SCREEN_CHROME))
     # Derive width from the integer height Windows actually receives. Using
     # a fractional drag height here distorts wider displays after rounding.
     height = round(height)
@@ -247,7 +247,11 @@ class FloatingWindow:
                 if resize_corner:
                     available_width = rect.right-work.left if 'w' in resize_corner else work.right-rect.left
                     available_height = rect.bottom-work.top if 'n' in resize_corner else work.bottom-rect.top
-                geometry = dimensions(aspect, expanded, available_width/scale, available_height/scale, self.preferred_height)
+                # A placement gutter is useful for normal layout. Applying it
+                # again inside an anchored resize budget can shrink an existing
+                # window while the user is trying to grow it near a screen edge.
+                geometry = dimensions(aspect, expanded, available_width/scale, available_height/scale,
+                                      self.preferred_height, work_margin=0 if resize_corner else 48)
                 width, height = round(geometry['width']*scale), round(geometry['height']*scale)
                 if resize_corner:
                     x = rect.right-width if 'w' in resize_corner else rect.left

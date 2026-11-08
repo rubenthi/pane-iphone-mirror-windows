@@ -4,7 +4,7 @@ This log explains changes to the Windows application and its iPhone companion. D
 
 ## 2.5.6 - Native display density and flat colors (development build)
 
-Pane renders at each monitor's own pixel density instead of letting Windows stretch a 100%-scale bitmap on a 200%-scale laptop screen. The packaged executable declares PerMonitorV2, source runs enable the same mode before opening the window, and moving between monitors updates the physical window shape and browser surface together. The three-pixel black bezel stays consistent.
+Pane renders at each monitor's own pixel density instead of letting Windows stretch a 100%-scale bitmap on a 200%-scale laptop screen. The packaged executable declares PerMonitorV2, source runs enable the same mode before opening the window, and moving between monitors updates the physical window shape and browser surface together. Resizing near a monitor edge uses the available space without subtracting a second placement gutter. The three-pixel black bezel stays consistent.
 
 Flat Slate surfaces and Blue action colors from [Radix Colors](https://www.radix-ui.com/colors/docs/palette-composition/composing-a-palette) replace the layered blue gradients, glossy highlights and hover glows. Controls keep their existing layout and behavior. The iPhone companion is unchanged.
 
