@@ -2,27 +2,13 @@
 import argparse
 import hashlib
 import json
-import plistlib
-import zipfile
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from handset.version import REPOSITORY, VERSION
-from handset.companion_version import COMPANION_VERSION
-
-
-def validate_companion(path):
-    with zipfile.ZipFile(path) as archive:
-        info = plistlib.loads(archive.read('Payload/PaneFiles.app/Info.plist'))
-    if (info.get('CFBundleIdentifier') != 'io.github.rubenthi.PaneFiles'
-            or info.get('CFBundleExecutable') != 'PaneFiles'
-            or info.get('PaneProtocolVersion') != 1):
-        raise ValueError('Unexpected iPhone companion identity')
-    if info.get('CFBundleShortVersionString') != COMPANION_VERSION:
-        raise ValueError('iPhone companion version mismatch')
-    return info
+from handset.companion_version import validate_companion
 
 
 def main():

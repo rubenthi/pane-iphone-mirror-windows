@@ -4,7 +4,10 @@ import asyncio
 import re
 import threading
 import time
-from handset.companion_version import COMPANION_VERSION
+import plistlib
+import zipfile
+from handset.companion_version import COMPANION_VERSION, validate_companion
+from handset.signing import bundled_package
 from handset.mux import list_devices
 from handset.state import DATA_DIR, read_json, write_json
 
@@ -44,6 +47,11 @@ async def _read(udid, bundle):
 def check():
     # Serialize concurrent requests and throttle even failed USB reads.
     with _LOCK:
+        try:
+            validate_companion(bundled_package())
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile, plistlib.InvalidFileException):
+            return {'availableVersion': None, 'installedVersion': None, 'updateAvailable': False,
+                    'connected': False, 'cached': False, 'packageUnavailable': True}
         cache_path = DATA_DIR / 'companion-version.json'
         saved = read_json(cache_path, {})
         binding = read_json(DATA_DIR / 'binding.json', {})

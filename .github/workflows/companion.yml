@@ -6,9 +6,15 @@ permissions:
   contents: read
 jobs:
   ios:
-    runs-on: macos-15-intel
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Apple SDK supports Liquid Glass
+        run: |
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iPhoneOS SDK $sdk"
+          test "${sdk%%.*}" -ge 26
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -29,3 +35,13 @@ jobs:
         with:
           name: Pane-unsigned
           path: ios/Pane-unsigned.ipa
+      - name: Exercise transfers and USB setup on an iPhone simulator
+        working-directory: ios
+        run: |
+          phone=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for runtime,ds in sorted(devices.items(),reverse=True) if ".iOS-" in runtime and int(runtime.split(".iOS-")[1].split("-")[0]) >= 26 for d in ds if d["name"].startswith("iPhone")))')
+          xcodebuild test -project PaneFiles.xcodeproj -scheme PaneFiles -destination "id=$phone" -parallel-testing-enabled NO -derivedDataPath sim-build -resultBundlePath transfers.xcresult CODE_SIGNING_ALLOWED=NO
+          xcrun xcresulttool export attachments --path transfers.xcresult --output-path previews
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pane-iPhone-preview
+          path: ios/previews

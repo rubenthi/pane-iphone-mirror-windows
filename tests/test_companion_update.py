@@ -14,6 +14,9 @@ class CompanionUpdateTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.data = patch.object(update, 'DATA_DIR', self.root); self.data.start()
         self.devices = patch.object(update, 'list_devices', return_value=[]); self.mock_devices = self.devices.start()
+        self.package = patch.object(update, 'validate_companion')
+        self.validate = self.package.start()
+        self.addCleanup(self.package.stop)
         update._LAST.clear(); update._RESULTS.clear(); update._INVALIDATED.clear()
         write_json(self.root / 'binding.json', {'udid': 'phone', 'bundle': 'app'})
     def tearDown(self):
@@ -22,8 +25,13 @@ class CompanionUpdateTests(unittest.TestCase):
         write_json(self.root / 'companion-version.json', {'udid': udid, 'bundle': bundle, 'version': version})
     def test_unknown_disconnected_does_not_prompt(self):
         self.assertFalse(update.check()['updateAvailable'])
+    def test_old_cached_phone_requires_a_matching_local_package(self):
+        self.saved()
+        self.validate.side_effect = ValueError('wrong package')
+        self.assertTrue(update.check()['packageUnavailable'])
+        self.assertFalse(update.check()['updateAvailable'])
     def test_cached_older_prompts_and_current_or_newer_does_not(self):
-        for value, expected in [('2.2.0', True), ('2.3', False), ('2.3.0', False), ('3.0', False), ('invalid', False)]:
+        for value, expected in [('2.2.0', True), ('2.3.0', True), (update.COMPANION_VERSION, False), ('3.0', False), ('invalid', False)]:
             self.saved(value)
             self.assertEqual(update.check()['updateAvailable'], expected)
     def test_other_phone_or_bundle_cannot_supply_baseline(self):
@@ -64,7 +72,7 @@ class CompanionUpdateTests(unittest.TestCase):
     def test_failed_disk_write_keeps_verified_result_in_memory(self):
         self.saved()
         self.mock_devices.return_value = [{'udid': 'phone', 'connection': 'USB'}]
-        with patch.object(update, '_read', AsyncMock(return_value={'version':'2.3.0', 'bundle':'app'})), patch.object(update, 'write_json', side_effect=OSError()):
+        with patch.object(update, '_read', AsyncMock(return_value={'version':update.COMPANION_VERSION, 'bundle':'app'})), patch.object(update, 'write_json', side_effect=OSError()):
             self.assertFalse(update.check()['updateAvailable'])
             self.assertFalse(update.check()['updateAvailable'])
     def test_ambiguous_devices_without_binding_do_not_use_cached_identity(self):

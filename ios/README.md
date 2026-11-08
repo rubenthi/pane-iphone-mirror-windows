@@ -4,6 +4,8 @@ SwiftUI iPhone/iPad app, iOS 17+. It exposes Photos/Files pickers and an encrypt
 
 Generate the Xcode project with `cd ios && xcodegen generate`. Use Xcode with your signing team for device builds. The companion workflow produces an unsigned IPA for the integrated Pane signer or optional AltStore signing. Full setup, signing and transfer instructions are in [the setup guide](../docs/companion-setup.md).
 
+The Transfers screen uses Apple's SwiftUI Liquid Glass button style on iOS 26 and later, with standard controls on iOS 17 and 18. Tap the laptop row for USB setup. The macOS workflow builds the device IPA and exercises the transfer controls and pairing sheet on an iPhone simulator.
+
 ## Protocol v1
 
 USB provisioning assigns a random 128-bit BLE service UUID per binding. Discovery uses that UUID, because iOS may truncate or omit the advertised name. The write-with-response command characteristic is `8a5d1001-7b44-4b1b-9bb6-a42e447a0001`; the encrypted notify characteristic is `8a5d1002-7b44-4b1b-9bb6-a42e447a0001`. Requests and replies are UTF-8 JSON followed by LF, fragmented at the negotiated ATT MTU. Frames are limited to 64 KiB and file data chunks to 4096 bytes. Writes use responses; notifications use CoreBluetooth readiness backpressure. One request is in flight at a time, correlated by integer `request`.
