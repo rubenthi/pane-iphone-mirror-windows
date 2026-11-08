@@ -2,6 +2,10 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.4 - Bounded Wi-Fi reconnection (development build)
+
+Wi-Fi discovery waits for the complete address list, tries IPv4 first and returns on the first verified connection. Full pairing handshakes and tunnel startup have deadlines; failed candidates close promptly. A rejected saved pairing now asks for USB repair instead of another unlock. Connection attempts do not change pairing records. The iPhone companion is unchanged.
+
 ## 2.5.3 - Essential tooltips and uniform bezel (development build)
 
 Tooltips are limited to ambiguous icon controls and filenames that are actually truncated. Visible button labels and settings no longer repeat themselves in hover bubbles. The mirrored image fills the symmetric seven-pixel screen opening, preserving aspect while clipping the small rounding excess instead of adding black letterbox strips. The existing iPhone companion is unchanged.

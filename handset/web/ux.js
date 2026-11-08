@@ -6,6 +6,8 @@ window.paneNotice = function(error, context = 'connection', code = '') {
   if (code === 'rate_limited' || /too many requests|rate.limit/.test(text)) return 'Too many attempts. Try again later.';
   if (code === 'tls' || code === 'service_unavailable') return 'Apple is unavailable. Try again later.';
   if (/developer mode|reveal/.test(text)) return 'Developer Mode is off. Turn it on in Settings.';
+  if (/wi.?fi pairing rejected/.test(text)) return 'Reconnect USB to restore Wi-Fi.';
+  if (/wi.?fi connection timed out/.test(text)) return 'Wi-Fi timed out. Try again.';
   if (/trust|pairing file|lockdown/.test(text)) return 'iPhone needs trust. Unlock it and tap Trust.';
   if (context === 'upload') {
     if (/too large|size limit|exceeds.*limit|maximum.*size/.test(text)) return 'File too large. Choose a smaller file.';

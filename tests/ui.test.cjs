@@ -4,6 +4,12 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const context = { window: {} };
 vm.runInNewContext(fs.readFileSync('handset/web/controls.js', 'utf8'), context);
+vm.runInNewContext(fs.readFileSync('handset/web/ux.js', 'utf8'), context);
+
+test('rejected Wi-Fi pairing asks for USB repair rather than another unlock', () => {
+  assert.equal(context.window.paneNotice('Wi-Fi pairing rejected. Reconnect USB once to repair Wi-Fi.'),'Reconnect USB to restore Wi-Fi.');
+  assert.equal(context.window.paneNotice('Wi-Fi connection timed out. Retry.'),'Wi-Fi timed out. Try again.');
+});
 test('control queue preserves order, snapshots payloads, and recovers after failure', async () => {
   const seen = [];
   const queue = context.window.createPaneControlQueue(async (path, data) => {

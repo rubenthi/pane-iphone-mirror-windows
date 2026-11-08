@@ -147,7 +147,8 @@ def _run(udid: str, transport: str) -> None:
     except asyncio.CancelledError:
         _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None)
     except Exception as error:
-        _set(phase="error", udid=udid, url=None, error=_plain(error))
+        message = 'Wi-Fi connection timed out. Retry.' if transport == 'wifi' and isinstance(error, TimeoutError) else _plain(error)
+        _set(phase="error", udid=udid, url=None, error=message, note=None)
 
 
 DISPLAY_SERVICE = "com.apple.coredevice.displayservice"
