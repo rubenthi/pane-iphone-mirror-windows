@@ -71,7 +71,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             }
             refreshReceived()
         } catch { activity = error.localizedDescription }
-        manager = CBPeripheralManager(delegate: self, queue: .main)
+        if isPaired { manager = CBPeripheralManager(delegate: self, queue: .main) }
     }
 
     func activatePendingUSB() {
@@ -96,7 +96,11 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             authorized = nil
             buffers.removeAll(); notifications.removeAll()
             discardIncoming()
-            advertise()
+            if manager == nil {
+                manager = CBPeripheralManager(delegate: self, queue: .main)
+            } else {
+                advertise()
+            }
             activity = "USB pairing loaded. Connect Bluetooth from Pane on your laptop. Wi-Fi mirroring is controlled there."
         } catch {
             activity = "Keep USB connected and choose Bind USB & Wi-Fi on the laptop first. \(error.localizedDescription)"

@@ -28,151 +28,111 @@ struct ContentView: View {
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var importing = false
-    @State private var showConnectionSetup = false
+    @State private var showConnection = false
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private let accent = Color(red: 0.12, green: 0.48, blue: 0.9)
+    private var linkTitle: String {
+        if companion.isConnected { return "Connected to laptop" }
+        return companion.isPaired ? "Laptop paired" : "Connect your laptop"
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 12) {
+                    Button { showConnection = true } label: {
+                        HStack(spacing: 14) {
                             Image(systemName: "laptopcomputer.and.iphone")
-                                .font(.system(size: 24, weight: .light))
-                                .symbolEffect(.bounce, value: reduceMotion ? false : companion.isConnected)
-                                .foregroundStyle(accent)
-                                .frame(width: 42, height: 42)
-                                .background(accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Your laptop").font(.subheadline.weight(.semibold))
-                                HStack(spacing: 5) {
-                                    Circle().fill(companion.isConnected ? Color.green : Color.secondary.opacity(0.5)).frame(width: 5, height: 5)
-                                    Text(companion.isConnected ? "Connected over Bluetooth" : companion.isPaired ? "Ready to connect" : "Set up a connection")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
+                                .font(.title).foregroundStyle(.tint).accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(linkTitle).font(.headline).foregroundStyle(.primary)
+                                Text(companion.isConnected ? "Bluetooth file transfers" : companion.isPaired ? "Open Pane on your laptop to transfer files." : "Pair with Pane over USB.")
+                                    .font(.subheadline).foregroundStyle(.secondary)
                             }
-                            Spacer(minLength: 0)
-                        }
-                        if !companion.isConnected {
-                            Text(companion.status).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }
-                        DisclosureGroup("USB setup", isExpanded: $showConnectionSetup) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Connect the cable and choose Bind USB & Wi-Fi in Pane on your laptop. Then activate here and allow Bluetooth.")
-                                    .font(.footnote).foregroundStyle(.secondary)
-                                Button("Activate USB link") { companion.activateUSB() }
-                                    .buttonStyle(.borderedProminent).controlSize(.regular)
-                            }.padding(.top, 8)
-                        }.font(.footnote.weight(.medium))
-                    }.padding(.vertical, 6)
-                        .listRowBackground(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
+                        }.padding(.vertical, 6)
+                    }.accessibilityIdentifier("laptopConnection")
                 }
                 Section {
-                    HStack(spacing: 12) {
-                        PhotosPicker(selection: $photos, maxSelectionCount: 8, matching: .any(of: [.images, .videos]), preferredItemEncoding: .current) {
-                            VStack(spacing: 9) {
-                                Image(systemName: "photo.on.rectangle").font(.system(size: 21, weight: .regular))
-                                Text("Photos & videos").font(.caption.weight(.medium))
-                            }.frame(maxWidth: .infinity, minHeight: 72)
-                        }.disabled(importing).buttonStyle(.borderless)
-                        Divider().frame(height: 40)
-                        Button { showFiles = true } label: {
-                            VStack(spacing: 9) {
-                                Image(systemName: "folder").font(.system(size: 21, weight: .regular))
-                                Text("Browse files").font(.caption.weight(.medium))
-                            }.frame(maxWidth: .infinity, minHeight: 72)
-                        }.disabled(importing).buttonStyle(.borderless)
+                    if let progress = companion.receiveProgress {
+                        ProgressView("Receiving from laptop", value: progress)
                     }
-                    if importing { ProgressView("Preparing files…").font(.footnote) }
-                } header: { Text("Send to laptop") } footer: {
-                    Text("Files arrive in your laptop's Downloads folder. Keep Pane open during transfers.")
-                }
-                if !companion.outgoing.isEmpty {
-                    Section("Sending") {
-                        ForEach(companion.outgoing) { file in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "doc").font(.title3).foregroundStyle(.secondary)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(file.name).font(.subheadline).lineLimit(1).truncationMode(.middle)
-                                        Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
-                                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                                    }
-                                    Spacer(minLength: 8)
-                                    Text(companion.sendProgress[file.id] == nil ? "Queued" : "Sending").font(.caption2).foregroundStyle(.secondary)
-                                }
-                                if let progress = companion.sendProgress[file.id] {
-                                    ProgressView(value: progress).tint(accent)
-                                        .accessibilityLabel("Sending \(file.name)")
-                                }
-                            }.padding(.vertical, 4)
-                        }.onDelete { companion.removeOutgoing(at: $0) }
-                    }
-                }
-                Section {
-                    if companion.received.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "tray").font(.system(size: 26, weight: .light)).foregroundStyle(.tertiary)
-                            Text("No received files yet").font(.subheadline.weight(.medium))
-                            Text("Send a file from the Uploads tab on your laptop.").font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        }.frame(maxWidth: .infinity).padding(.vertical, 18)
+                    if companion.received.isEmpty && companion.receiveProgress == nil {
+                        ContentUnavailableView("No received files", systemImage: "tray",
+                            description: Text("Send a file from Uploads in Pane on your laptop."))
                     }
                     ForEach(companion.received, id: \.self) { url in
                         ShareLink(item: url) {
                             HStack(spacing: 12) {
-                                Image(systemName: "doc").foregroundStyle(.secondary)
-                                Text(url.lastPathComponent).font(.subheadline).foregroundStyle(.primary).lineLimit(1).truncationMode(.middle)
-                                Spacer(minLength: 8)
-                                Image(systemName: "square.and.arrow.up").font(.footnote).foregroundStyle(.secondary)
-                            }.padding(.vertical, 4)
-                        }
-                    }
-                    if let progress = companion.receiveProgress {
-                        ProgressView("Receiving from laptop", value: progress).font(.footnote).tint(accent)
+                                Image(systemName: "doc").foregroundStyle(.tint)
+                                Text(url.lastPathComponent).foregroundStyle(.primary).lineLimit(2).truncationMode(.middle)
+                                Spacer()
+                                Image(systemName: "square.and.arrow.up").foregroundStyle(.secondary)
+                            }
+                        }.accessibilityHint("Share or save this file")
                     }
                 } header: { Text("Received") } footer: {
-                    Text("Also in Files → On My iPhone → Pane → Received. Tap a file to share or save it elsewhere.")
+                    if !companion.received.isEmpty { Text("Also in Files → On My iPhone → Pane → Received.") }
                 }
-                if !companion.activity.isEmpty {
-                    Section {
-                        Label(companion.activity, systemImage: "arrow.left.arrow.right")
-                            .font(.footnote).foregroundStyle(.secondary)
-                            .accessibilityAddTraits(.updatesFrequently)
+                if !companion.outgoing.isEmpty {
+                    Section("Sending to laptop") {
+                        ForEach(companion.outgoing) { file in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(file.name).font(.headline).lineLimit(2).truncationMode(.middle)
+                                Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
+                                    .font(.caption).foregroundStyle(.secondary)
+                                if let progress = companion.sendProgress[file.id] {
+                                    ProgressView(value: progress).accessibilityLabel("Sending \(file.name)")
+                                } else {
+                                    Text("Queued").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.padding(.vertical, 3)
+                        }.onDelete { companion.removeOutgoing(at: $0) }
                     }
                 }
+                if importing { ProgressView("Preparing files…") }
+                if !companion.activity.isEmpty {
+                    Text(companion.activity).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
+            .navigationTitle("Transfers")
+            .safeAreaInset(edge: .bottom) {
+                sendControls.padding(.horizontal).padding(.vertical, 8)
+            }
+            .sheet(isPresented: $showConnection) {
+                NavigationStack {
+                    Form {
+                        Section("Your laptop") {
+                            Label(linkTitle, systemImage: "laptopcomputer")
+                            Text(companion.status)
+                        }
+                        Section("USB pairing") {
+                            Text("Connect and unlock your iPhone. In Pane on your laptop, choose Bind USB & Wi-Fi. Then activate the link here and allow Bluetooth.")
+                            Button("Activate USB link") { companion.activateUSB() }
+                            if !companion.activity.isEmpty { Text(companion.activity).font(.footnote) }
+                        }
+                        Section("App updates") {
+                            Text("To update Pane, connect by USB and follow the update prompt on your laptop. Use the same Apple Account and developer team.")
+                            LabeledContent("Installed version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown")
+                        }
+                    }
+                    .navigationTitle("Laptop connection")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { showConnection = false } }
+                    }
+                }.presentationDragIndicator(.visible)
             }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
+                companion.refreshReceived()
                 while !Task.isCancelled {
                     companion.activatePendingUSB()
                     try? await Task.sleep(for: .seconds(2))
                 }
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background {
-                LinearGradient(colors: [accent.opacity(0.14), Color(uiColor: .systemGroupedBackground), accent.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
-            }
-            .onAppear { showConnectionSetup = !companion.isPaired }
-            .onChange(of: companion.isPaired) { _, paired in
-                if paired { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showConnectionSetup = false } }
-            }
-            .navigationTitle("Pane")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: 8) {
-                        Image("PaneMark").resizable().frame(width: 25, height: 25).accessibilityHidden(true)
-                        Text("Pane").font(.headline)
-                    }
-                }
-            }
-            .tint(accent)
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): importFiles(urls)
@@ -194,9 +154,29 @@ struct ContentView: View {
                     photos = []; importing = false
                 }
             }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active { companion.refreshReceived() }
+
+        }
+    }
+
+    private var sendButtons: some View {
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
+            PhotosPicker(selection: $photos, maxSelectionCount: 8, matching: .any(of: [.images, .videos]), preferredItemEncoding: .current) {
+                Label("Photos", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity)
+            }.accessibilityLabel("Send photos and videos")
+            Button { showFiles = true } label: {
+                Label("Files", systemImage: "folder").frame(maxWidth: .infinity)
+            }.accessibilityLabel("Send files")
+        }.controlSize(.large).disabled(importing)
+    }
+
+    @ViewBuilder private var sendControls: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 10) {
+                sendButtons.buttonStyle(.glass)
             }
+        } else {
+            sendButtons.buttonStyle(.bordered).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         }
     }
 
