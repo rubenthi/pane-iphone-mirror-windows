@@ -4,6 +4,8 @@ This log explains changes to the Windows application and its iPhone companion. D
 
 ## 2.5.0 - Visual setup and independent transfers (local test build)
 
+Local follow-up: phone uploads use independent 32 KiB receive batches when supported, omit redundant incoming metadata and rate-limit unchanged control snapshots. Local Pause/Cancel and changed queues bypass the limit; completion forces a final remote control check. This desktop-only optimization retains the existing companion and has not been pushed or published.
+
 Prepared locally; this version has not been published. The packaged development edition runs as Pane.exe with its own taskbar identity and reuses the development profile via `--development`.
 
 Setup uses short illustrated Settings paths, compact certificate recovery and brief failure messages with a next action. Settings uses grouped icon rows and Back navigation. Connect your iPhone immediately attempts Wi-Fi. Scroll over the side volume buttons to adjust volume while connected.

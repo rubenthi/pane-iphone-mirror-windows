@@ -25,4 +25,6 @@ Mac run [42526219415](https://github.com/rubenthi/pane-iphone-mirror-windows/act
 
 ## Windows application
 
+Local upload follow-up: the receive batch is independent of acknowledged Windows write size. A capable companion can provide 32 KiB per read even at low ATT MTU; legacy companions remain at 4 KiB. Unchanged full control snapshots are polled at most once per 750 ms during a file, while local actions, queue changes and the final pre-publication check bypass throttling. Incoming control rows omit redundant names/sizes; outgoing rows remain complete for compatibility. A deterministic 1 MiB test uses 32 reads and two control exchanges, validates exact received bytes, and exercises final cancellation. This measures application exchanges, not radio throughput. The iPhone source and bundled IPA are unchanged.
+
 The local executable is version 2.5.0. `Pane.exe --development` uses the existing development profile and ports, has its own Windows application identity and Pane icon, and cannot apply production updates. The standard executable mode retains the production identity. Builds use a fresh temporary work directory so a locked previous cache is not deleted or reused. Installer, rollback and packaged smoke checks remain required before installation.

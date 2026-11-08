@@ -261,6 +261,110 @@ class TransferTests(unittest.TestCase):
         self.assertFalse(self.downloads.exists())
         with self.assertRaises(ValueError): self.store.cancel('../../outside')
 
+    def test_receive_batches_avoid_per_chunk_control_roundtrips(self):
+        data = bytes(range(256)) * 4096
+        owner = self
+        class Peer:
+            controls = True
+            receive_chunk_size = 32768
+            reads = []
+            controls_count = 0
+            acked = False
+            async def call(peer, op, **fields):
+                if op == 'controls':
+                    peer.controls_count += 1
+                    for row in fields['transfers']:
+                        if row['direction'] == 'from-phone':
+                            owner.assertNotIn('name', row)
+                            owner.assertNotIn('size', row)
+                    return {'transfers': []}
+                if op == 'read':
+                    peer.reads.append(fields['length'])
+                    return {'data': base64.b64encode(data[fields['offset']:fields['offset'] + fields['length']]).decode()}
+                if op == 'received': peer.acked = True
+                return {'ok': True}
+        peer = Peer()
+        with patch('handset.bluetooth.store', return_value=self.store), patch('handset.bluetooth.time.monotonic', return_value=100):
+            asyncio.run(Bluetooth()._receive(peer, self.remote(data), 'phone'))
+        self.assertEqual(peer.reads, [32768] * 32)
+        self.assertLessEqual(peer.controls_count, 2)
+        self.assertTrue(peer.acked)
+        self.assertEqual((self.downloads / 'photo.jpg').read_bytes(), data)
+
+    def test_control_throttle_expires_and_local_actions_bypass_it(self):
+        item = self.stage(b'source')
+        class Peer:
+            controls = True
+            calls = []
+            async def call(peer, op, **fields):
+                peer.calls.append(fields['transfers'])
+                return {'transfers': []}
+        peer = Peer()
+        async def exercise():
+            bluetooth = Bluetooth()
+            with patch('handset.bluetooth.time.monotonic', return_value=100):
+                await bluetooth._sync_controls(peer, force=False)
+                await bluetooth._sync_controls(peer, force=False)
+                self.assertEqual(len(peer.calls), 1)
+                self.store.control(item['id'], 'pause')
+                await bluetooth._sync_controls(peer, force=False)
+                self.assertEqual(len(peer.calls), 2)
+                self.assertEqual(peer.calls[-1][0]['control'], 'paused')
+                await bluetooth._sync_controls(peer, force=False)
+                before = len(peer.calls)
+            with patch('handset.bluetooth.time.monotonic', return_value=101):
+                await bluetooth._sync_controls(peer, force=False)
+                self.assertEqual(len(peer.calls), before + 1)
+                await bluetooth._sync_controls(peer, force=True)
+                self.assertEqual(len(peer.calls), before + 2)
+        with patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(exercise())
+
+    def test_new_queue_metadata_bypasses_control_throttle(self):
+        first = self.stage(b'first')
+        class Peer:
+            controls = True
+            calls = []
+            async def call(peer, op, **fields):
+                peer.calls.append(fields['transfers'])
+                return {'transfers': []}
+        peer = Peer()
+        async def exercise():
+            bluetooth = Bluetooth()
+            await bluetooth._sync_controls(peer, force=False)
+            second = self.stage(b'second')
+            await bluetooth._sync_controls(peer, force=False)
+            self.assertEqual(len(peer.calls), 2)
+            self.assertEqual({row['id'] for row in peer.calls[-1]}, {first['id'], second['id']})
+            self.assertTrue(all('name' in row and 'size' in row for row in peer.calls[-1]))
+        with patch('handset.bluetooth.store', return_value=self.store), patch('handset.bluetooth.time.monotonic', return_value=100):
+            asyncio.run(exercise())
+
+    def test_final_forced_remote_cancel_prevents_publication(self):
+        data = b'private complete data'
+        remote = self.remote(data)
+        class Peer:
+            controls = True
+            read_finished = False
+            controls_count = 0
+            async def call(peer, op, **fields):
+                if op == 'controls':
+                    peer.controls_count += 1
+                    return {'transfers': [{'id': remote['id'], 'state': 'cancelled'}] if peer.read_finished else []}
+                if op == 'read':
+                    peer.read_finished = True
+                    return {'data': base64.b64encode(data).decode()}
+                if op == 'received':
+                    raise AssertionError('Cancelled file must not be acknowledged')
+                return {'ok': True}
+        peer = Peer()
+        with patch('handset.bluetooth.store', return_value=self.store), patch('handset.bluetooth.time.monotonic', return_value=100):
+            asyncio.run(Bluetooth()._receive(peer, remote, 'phone'))
+        self.assertEqual(peer.controls_count, 2)
+        self.assertEqual(self.store.rows[-1]['state'], 'cancelled')
+        self.assertFalse(self.downloads.exists())
+        self.assertFalse(list((self.store.root / 'staging').glob('*.part')))
+
 
 class RpcTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_finds_bound_service_when_ios_omits_its_name(self):
@@ -310,7 +414,9 @@ class RpcTests(unittest.IsolatedAsyncioTestCase):
             rpc = Rpc(SimpleNamespace(mtu_size=mtu))
             rpc.negotiate(['transfer-control-v1', 'chunk-32768'])
             self.assertEqual(rpc.chunk_size, expected)
+            self.assertEqual(rpc.receive_chunk_size, 32768)
             self.assertTrue(rpc.controls)
             rpc.negotiate([])
             self.assertEqual(rpc.chunk_size, 4096)
+            self.assertEqual(rpc.receive_chunk_size, 4096)
             self.assertFalse(rpc.controls)

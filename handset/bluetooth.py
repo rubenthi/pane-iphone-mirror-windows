@@ -6,6 +6,7 @@ import base64
 import json
 import re
 import threading
+import time
 
 from handset.setup import COMMAND_UUID, RESPONSE_UUID
 from handset.state import DATA_DIR, read_json, write_json
@@ -14,6 +15,7 @@ from handset.transfers import store, digest_file
 WIRE_CHUNK = 4096
 MAX_FRAME = 65536
 FAST_CHUNK = 32768
+CONTROL_INTERVAL = 0.75
 
 
 class TransferCancelled(Exception):
@@ -32,6 +34,7 @@ class Rpc:
         self.sequence = 0
         self.controls = False
         self.chunk_size = WIRE_CHUNK
+        self.receive_chunk_size = WIRE_CHUNK
 
     def negotiate(self, capabilities):
         if not isinstance(capabilities, list):
@@ -42,6 +45,10 @@ class Rpc:
         # writes per request. The same 45-second bound still applies per RPC.
         batch = WIRE_CHUNK if payload <= 64 else 16384 if payload <= 185 else FAST_CHUNK
         self.chunk_size = batch if 'chunk-32768' in capabilities else WIRE_CHUNK
+        # Read requests contain only a range. The phone fragments the reply
+        # using its own notification size/backpressure; Windows write MTU
+        # must not restrict this application-level receive batch.
+        self.receive_chunk_size = FAST_CHUNK if 'chunk-32768' in capabilities else WIRE_CHUNK
 
     def notified(self, sender, data):
         self.buffer.extend(data)
@@ -95,6 +102,9 @@ class Bluetooth:
         self._cancel_session = threading.Event()
         self._auto_paused = False
         self._auto_worker = None
+        self._control_rpc = None
+        self._control_payload = None
+        self._control_time = 0.0
 
     def start_auto(self):
         with self.lock:
@@ -236,7 +246,7 @@ class Bluetooth:
                 await asyncio.sleep(1)
             raise ConnectionError('Bluetooth disconnected. Reconnect to continue transferring files.')
 
-    async def _sync_controls(self, rpc):
+    async def _sync_controls(self, rpc, *, force=True):
         if not getattr(rpc, 'controls', False):
             return
         rows = store().status()['transfers']
@@ -244,8 +254,15 @@ class Bluetooth:
         for row in rows:
             if row['state'] in {'complete', 'failed'} or (row['state'] == 'cancelled' and not row.get('control')):
                 continue
-            keys = ('id', 'direction', 'state', 'control', 'remoteId') if row['state'] == 'cancelled' else ('id', 'name', 'size', 'direction', 'state', 'control', 'remoteId')
+            keys = ('id', 'direction', 'state', 'control', 'remoteId') if row['state'] == 'cancelled' or row['direction'] == 'from-phone' else ('id', 'name', 'size', 'direction', 'state', 'control', 'remoteId')
             payload.append({key: row[key] for key in keys if key in row})
+        # Acknowledged ATT writes make a full manifest expensive. Poll remote
+        # actions periodically, but never delay a changed queue or local action.
+        now = time.monotonic()
+        if (not force and self._control_rpc is rpc and payload == self._control_payload
+                and not any('control' in row for row in payload)
+                and now - self._control_time < CONTROL_INTERVAL):
+            return
         reply = await rpc.call('controls', transfers=payload)
         states = reply.get('transfers', [])
         if not isinstance(states, list) or len(states) > 256:
@@ -270,9 +287,12 @@ class Bluetooth:
                         store().update(row['id'], state=state)
                     elif current['state'] == 'paused':
                         store().update(row['id'], state='sending' if row['direction'] == 'to-phone' else 'receiving')
+        self._control_rpc = rpc
+        self._control_payload = payload
+        self._control_time = time.monotonic()
 
-    async def _checkpoint(self, rpc, identifier):
-        await self._sync_controls(rpc)
+    async def _checkpoint(self, rpc, identifier, *, force=False):
+        await self._sync_controls(rpc, force=force)
         state = store().row(identifier)['state']
         if state == 'cancelled':
             raise TransferCancelled()
@@ -306,7 +326,7 @@ class Bluetooth:
                     if reply.get('offset') != offset:
                         raise ValueError('The iPhone did not acknowledge the file chunk.')
                     store().update(identifier, done=offset)
-            await self._checkpoint(rpc, identifier)
+            await self._checkpoint(rpc, identifier, force=True)
             reply = await rpc.call('finish', id=identifier)
             if reply.get('state') in {'paused', 'cancelled'}:
                 store().update(identifier, state=reply['state'])
@@ -339,7 +359,7 @@ class Bluetooth:
             with path.open('ab') as stream:
                 while offset < remote['size']:
                     await self._checkpoint(rpc, identifier)
-                    length = min(getattr(rpc, 'chunk_size', WIRE_CHUNK), remote['size'] - offset)
+                    length = min(getattr(rpc, 'receive_chunk_size', getattr(rpc, 'chunk_size', WIRE_CHUNK)), remote['size'] - offset)
                     result = await rpc.call('read', id=remote['id'], offset=offset, length=length)
                     if result.get('state') in {'paused', 'cancelled'}:
                         store().update(identifier, state=result['state'])
@@ -350,7 +370,7 @@ class Bluetooth:
                     stream.write(data)
                     offset += len(data)
                     store().update(identifier, done=offset)
-            await self._checkpoint(rpc, identifier)
+            await self._checkpoint(rpc, identifier, force=True)
             delivered = await asyncio.to_thread(store().deliver, identifier, path, remote['sha256'])
             if not delivered:
                 raise TransferCancelled()
