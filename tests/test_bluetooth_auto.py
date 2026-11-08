@@ -33,6 +33,14 @@ class AutomaticBluetoothTests(unittest.TestCase):
             link.connect(automatic=True)
             worker.assert_not_called()
 
+    def test_shutdown_waits_for_subscription_cleanup_before_process_exit(self):
+        link = Bluetooth()
+        link.worker = MagicMock()
+        link._auto_worker = MagicMock()
+        link.stop_auto()
+        link.worker.join.assert_called_once_with(timeout=5)
+        link._auto_worker.join.assert_called_once_with(timeout=1)
+
     def test_disconnect_before_session_start_never_scans(self):
         link = Bluetooth()
         link.disconnect()

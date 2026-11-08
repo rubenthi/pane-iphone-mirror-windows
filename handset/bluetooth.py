@@ -121,6 +121,11 @@ class Bluetooth:
     def stop_auto(self):
         self._auto_stop.set()
         self.disconnect(manual=False)
+        # The launcher exits the process after this returns. Allow WinRT's
+        # async context manager to release the GATT subscription first.
+        for worker, timeout in ((self._auto_worker, 1), (self.worker, 5)):
+            if worker is not None and worker is not threading.current_thread():
+                worker.join(timeout=timeout)
 
     def status(self):
         with self.lock:
