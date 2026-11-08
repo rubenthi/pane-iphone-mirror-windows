@@ -4,7 +4,7 @@ import hashlib
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from handset.bluetooth import Bluetooth, Rpc
 from handset.transfers import TransferStore, safe_name, CHUNK, MAX_FILE
@@ -364,6 +364,90 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(self.store.rows[-1]['state'], 'cancelled')
         self.assertFalse(self.downloads.exists())
         self.assertFalse(list((self.store.root / 'staging').glob('*.part')))
+
+    def bulk_peer(self, data):
+        class Peer:
+            wifi_upload = True
+            receive_chunk_size = 32768
+            ble_offsets = []
+            acked = False
+            async def call(peer, op, **fields):
+                if op == 'read':
+                    peer.ble_offsets.append(fields['offset'])
+                    return {'data': base64.b64encode(data[fields['offset']:fields['offset'] + fields['length']]).decode()}
+                if op == 'received': peer.acked = True
+                return {'ok': True}
+        return Peer()
+
+    def test_wifi_receive_delivers_verified_file_without_ble_reads(self):
+        data = bytes(range(256)) * 3072
+        peer = self.bulk_peer(data)
+        receiver = MagicMock()
+        receiver.accept = AsyncMock()
+        receiver.read = AsyncMock(side_effect=[data[i:i + 262144] for i in range(0, len(data), 262144)])
+        with patch('handset.bulk.BulkReceiver', return_value=receiver) as factory, patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(Bluetooth()._receive(peer, self.remote(data), 'phone'))
+        factory.assert_called_once_with(len(data))
+        receiver.accept.assert_awaited_once()
+        self.assertEqual(receiver.read.await_count, 3)
+        receiver.close.assert_called_once()
+        self.assertEqual(peer.ble_offsets, [])
+        self.assertTrue(peer.acked)
+        self.assertEqual(self.store.rows[-1]['transport'], 'wifi')
+        self.assertEqual((self.downloads / 'photo.jpg').read_bytes(), data)
+
+    def test_wifi_connection_failure_falls_back_without_losing_bytes(self):
+        data = b'fallback' * 11000
+        for stage in ('start', 'accept'):
+            with self.subTest(stage=stage):
+                peer = self.bulk_peer(data)
+                receiver = MagicMock()
+                receiver.accept = AsyncMock(side_effect=OSError('unavailable') if stage == 'accept' else None)
+                if stage == 'start': receiver.start.side_effect = OSError('unavailable')
+                remote = {**self.remote(data), 'id': ('3' if stage == 'start' else '4') * 32, 'name': stage + '.dat'}
+                with patch('handset.bulk.BulkReceiver', return_value=receiver), patch('handset.bluetooth.store', return_value=self.store):
+                    asyncio.run(Bluetooth()._receive(peer, remote, 'phone'))
+                receiver.close.assert_called_once()
+                self.assertEqual(peer.ble_offsets[0], 0)
+                self.assertTrue(peer.acked)
+                self.assertEqual((self.downloads / remote['name']).read_bytes(), data)
+
+    def test_wifi_partial_failure_resumes_ble_from_written_offset(self):
+        data = bytes(range(256)) * 2400
+        peer = self.bulk_peer(data)
+        receiver = MagicMock()
+        receiver.accept = AsyncMock()
+        receiver.read = AsyncMock(side_effect=[data[:262144], OSError('link interrupted')])
+        with patch('handset.bulk.BulkReceiver', return_value=receiver), patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(Bluetooth()._receive(peer, self.remote(data), 'phone'))
+        self.assertEqual(peer.ble_offsets[0], 262144)
+        receiver.close.assert_called_once()
+        self.assertTrue(peer.acked)
+        self.assertEqual(self.store.rows[-1]['transport'], 'bluetooth')
+        self.assertEqual((self.downloads / 'photo.jpg').read_bytes(), data)
+
+    def test_wifi_pause_retains_partial_and_cancel_removes_it_without_publish(self):
+        from handset.bulk import BulkPaused, BulkCancelled
+        data = b'x' * 524288
+        for event, expected in ((BulkPaused, 'paused'), (BulkCancelled, 'cancelled')):
+            with self.subTest(event=expected):
+                peer = self.bulk_peer(data)
+                receiver = MagicMock()
+                receiver.accept = AsyncMock()
+                receiver.read = AsyncMock(side_effect=[data[:262144], event()])
+                remote = {**self.remote(data), 'id': ('5' if expected == 'paused' else '6') * 32}
+                with patch('handset.bulk.BulkReceiver', return_value=receiver), patch('handset.bluetooth.store', return_value=self.store):
+                    asyncio.run(Bluetooth()._receive(peer, remote, 'phone'))
+                row = next(row for row in self.store.rows if row.get('remoteId') == remote['id'])
+                receiver.close.assert_called_once()
+                self.assertEqual(row['state'], expected)
+                self.assertEqual(row['done'], 262144)
+                self.assertFalse(peer.acked)
+                self.assertEqual(peer.ble_offsets, [])
+                self.assertFalse(self.downloads.exists())
+                part = self.store.root / 'staging' / (row['id'] + '.part')
+                self.assertEqual(part.exists(), expected == 'paused')
+                if part.exists(): self.assertEqual(part.read_bytes(), data[:262144])
 
 
 class RpcTests(unittest.IsolatedAsyncioTestCase):

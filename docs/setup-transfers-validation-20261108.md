@@ -1,5 +1,13 @@
 # Setup, connections and transfers — November 8, 2026
 
+## Direct Wi-Fi upload follow-up
+
+Desktop 2.5.1 and companion 2.6.0 (6) add `wifi-upload-v1` for phone-to-laptop data. Bluetooth remains the control channel; its authenticated, encrypted handshake conveys a temporary TLS certificate fingerprint, one-time channel secret and private LAN endpoints. The phone pins the exact leaf certificate and authenticates inside TLS. The desktop listener exists only for the active file and closes on completion, cancellation or failure. The UI server remains loopback-only; this is a separate temporary TLS socket.
+
+Bulk requests are 12-byte big-endian offset/length frames and replies contain a status byte, four-byte length and at most 256 KiB of raw data. No base64 or per-block Bluetooth file requests are required. Local controls, remote controls, final checksum and atomic delivery still apply. Wi-Fi interruption resumes over Bluetooth from the last fully written offset. Older companions retain the existing BLE path. This requires reachable local networking, iPhone Local Network permission and Windows firewall permission; no firewall policy is changed automatically.
+
+Real loopback TLS tests exercise certificate fingerprints, channel authentication, malformed frames, cancellation, timeouts, bounds and an 8 MiB hash-verified transfer. Transfer integration tests cover Wi-Fi success, fallback before data, fallback after a completed block at the exact offset, and pause/cancel without publishing partial files. Host loopback speed is not evidence of iPhone radio throughput or a measured tenfold improvement. The updated companion must be built and installed before physical acceptance.
+
 ## Behavior
 
 - Short illustrated iPhone Settings paths replace the longer trust and Developer Mode instructions. Detailed credential handling remains available under Password & privacy.

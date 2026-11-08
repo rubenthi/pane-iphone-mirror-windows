@@ -1,3 +1,4 @@
 pymobiledevice3==11.49.4
 pywebview==6.2.1; sys_platform == "win32"
 bleak==2.0.0
+cryptography==50.0.2

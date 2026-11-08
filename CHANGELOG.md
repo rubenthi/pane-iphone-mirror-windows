@@ -2,6 +2,10 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.1 - Direct Wi-Fi phone uploads (development build)
+
+Phone-to-laptop files can use a direct local TLS connection instead of Bluetooth for bulk data. The existing USB-bound, encrypted Bluetooth link conveys a temporary certificate pin and channel secret. Transfers retain bounded buffers, Pause/Cancel, checksums and atomic delivery; interrupted Wi-Fi resumes at the last written offset over Bluetooth. Requires companion 2.6.0 (6), local-network permission and a reachable local network. No cloud relay or public release. Actual radio speed must be measured on the devices.
+
 ## 2.5.0 - Visual setup and independent transfers (local test build)
 
 Local follow-up: phone uploads use independent 32 KiB receive batches when supported, omit redundant incoming metadata and rate-limit unchanged control snapshots. Local Pause/Cancel and changed queues bypass the limit; completion forces a final remote control check. This desktop-only optimization retains the existing companion and has not been pushed or published.

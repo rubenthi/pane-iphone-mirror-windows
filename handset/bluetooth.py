@@ -35,6 +35,7 @@ class Rpc:
         self.controls = False
         self.chunk_size = WIRE_CHUNK
         self.receive_chunk_size = WIRE_CHUNK
+        self.wifi_upload = False
 
     def negotiate(self, capabilities):
         if not isinstance(capabilities, list):
@@ -49,6 +50,7 @@ class Rpc:
         # using its own notification size/backpressure; Windows write MTU
         # must not restrict this application-level receive batch.
         self.receive_chunk_size = FAST_CHUNK if 'chunk-32768' in capabilities else WIRE_CHUNK
+        self.wifi_upload = 'wifi-upload-v1' in capabilities
 
     def notified(self, sender, data):
         self.buffer.extend(data)
@@ -219,7 +221,7 @@ class Bluetooth:
                                winrt={'use_cached_services': False}) as client:
             rpc = Rpc(client)
             await client.start_notify(RESPONSE_UUID, rpc.notified)
-            result = await rpc.call('hello', token=binding['token'], capabilities=['transfer-control-v1', 'chunk-32768'])
+            result = await rpc.call('hello', token=binding['token'], capabilities=['transfer-control-v1', 'chunk-32768', 'wifi-upload-v1'])
             if result.get('version') != 1:
                 raise ValueError('The companion uses an unsupported protocol version.')
             rpc.negotiate(result.get('capabilities', []))
@@ -354,11 +356,47 @@ class Bluetooth:
         if store().row(identifier)['state'] == 'queued':
             store().update(identifier, state='receiving')
         retain = False
+        bulk = None
         try:
             offset = path.stat().st_size if path.exists() else 0
+            await self._checkpoint(rpc, identifier)
+            if getattr(rpc, 'wifi_upload', False) and offset < remote['size']:
+                from handset.bulk import BulkReceiver
+                try:
+                    bulk = BulkReceiver(remote['size'])
+                    endpoint = await asyncio.to_thread(bulk.start)
+                    result = await rpc.call('bulk-read', id=remote['id'], endpoint=endpoint)
+                    if not result.get('ok'):
+                        raise OSError('Wi-Fi transfer unavailable.')
+                    await bulk.accept()
+                    store().update(identifier, transport='wifi')
+                except (OSError, ValueError, TimeoutError):
+                    if bulk is not None:
+                        bulk.close()
+                        bulk = None
             with path.open('ab') as stream:
                 while offset < remote['size']:
                     await self._checkpoint(rpc, identifier)
+                    if bulk is not None:
+                        from handset.bulk import BulkPaused, BulkCancelled
+                        try:
+                            data = await bulk.read(offset, min(256 * 1024, remote['size'] - offset))
+                        except BulkPaused:
+                            store().update(identifier, state='paused')
+                            raise TransferPaused()
+                        except BulkCancelled:
+                            raise TransferCancelled()
+                        except (OSError, ValueError, TimeoutError):
+                            # Resume from the last locally written offset; final
+                            # size/hash verification is unchanged on either path.
+                            bulk.close()
+                            bulk = None
+                            store().update(identifier, transport='bluetooth')
+                            continue
+                        stream.write(data)
+                        offset += len(data)
+                        store().update(identifier, done=offset)
+                        continue
                     length = min(getattr(rpc, 'receive_chunk_size', getattr(rpc, 'chunk_size', WIRE_CHUNK)), remote['size'] - offset)
                     result = await rpc.call('read', id=remote['id'], offset=offset, length=length)
                     if result.get('state') in {'paused', 'cancelled'}:
@@ -384,6 +422,8 @@ class Bluetooth:
             store().update(identifier, state='failed', error=str(error) or 'Transfer disconnected. Reconnect to retry.')
             raise
         finally:
+            if bulk is not None:
+                bulk.close()
             if not retain:
                 path.unlink(missing_ok=True)
         # Completion is durable before acknowledging. A lost ACK cannot duplicate it.

@@ -55,6 +55,8 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     private var buffers: [UUID: Data] = [:]
     private var notifications: [(Data, CBCentral)] = []
     private var incoming: [String: Incoming] = [:]
+    private var bulkUpload: BulkUpload?
+    private var bulkUploadID: String?
     @Published var receiveProgresses: [String: Double] = [:]
     private let documents = paneFileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
     private let support = paneFileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -62,6 +64,15 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     private var sentFolder: URL { (fixtureRoot ?? support).appendingPathComponent("Outbox") }
     private var inbox: URL { (fixtureRoot ?? documents).appendingPathComponent("Received") }
     private var queueManifest: URL { (fixtureRoot ?? support).appendingPathComponent("queue.json") }
+
+    deinit { bulkUpload?.cancel() }
+
+    private func stopBulkUpload(_ id: String? = nil) {
+        guard id == nil || bulkUploadID == id else { return }
+        bulkUpload?.cancel()
+        bulkUpload = nil
+        bulkUploadID = nil
+    }
 
     override init() {
         super.init()
@@ -129,6 +140,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             pairing = newPairing
             isPaired = true
             isConnected = false
+            stopBulkUpload()
             authorized = nil
             buffers.removeAll(); notifications.removeAll()
             discardIncoming()
@@ -183,6 +195,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
         let state = action == "pause" ? "paused" : action == "cancel" ? "cancelled" : "queued"
         transferStates[id] = state
         if action == "cancel" {
+            stopBulkUpload(id)
             discardIncoming(id)
             if outgoing.contains(where: { $0.id == id }) {
                 outgoing.removeAll { $0.id == id }
@@ -235,6 +248,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     }
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
+        stopBulkUpload()
         authorized = nil; isConnected = false; buffers.removeAll(); notifications.removeAll(); discardIncoming()
         if peripheral.state == .poweredOn { advertise() }
         else { status = "Bluetooth unavailable. Enable it and allow Pane in Settings." }
@@ -253,7 +267,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
         buffers.removeValue(forKey: central.identifier)
         notifications.removeAll { $0.1.identifier == central.identifier }
-        if authorized == central.identifier { authorized = nil; isConnected = false; discardIncoming(); status = "Laptop disconnected. Reconnect from Pane." }
+        if authorized == central.identifier { stopBulkUpload(); authorized = nil; isConnected = false; discardIncoming(); status = "Laptop disconnected. Reconnect from Pane." }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
@@ -328,10 +342,40 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             let capabilities = body["capabilities"] as? [String] ?? []
             controlsAvailable = capabilities.contains("transfer-control-v1")
             chunkLimit = capabilities.contains("chunk-32768") ? 32768 : 4096
-            return ["version": 1, "capabilities": ["transfer-control-v1", "chunk-32768"]]
+            return ["version": 1, "capabilities": ["transfer-control-v1", "chunk-32768", "wifi-upload-v1"]]
         }
         guard authorized == central.identifier else { throw TransferError(message: "Pair over USB first.") }
         switch op {
+        case "bulk-read":
+            guard let id = body["id"] as? String,
+                  let file = outgoing.first(where: { $0.id == id }),
+                  let rawEndpoint = body["endpoint"] as? [String: Any],
+                  let endpoint = BulkUpload.Endpoint(rawEndpoint) else {
+                throw TransferError(message: "Fast transfer unavailable. Try again.")
+            }
+            if ["paused", "cancelled"].contains(transferState(id)) { return ["state": transferState(id)] }
+            stopBulkUpload()
+            bulkUploadID = id
+            let upload = BulkUpload(endpoint: endpoint, file: sentFolder.appendingPathComponent(file.id), size: file.size,
+                state: { [weak self] complete in
+                    DispatchQueue.main.async {
+                        guard let self, self.bulkUploadID == id,
+                              self.outgoing.contains(where: { $0.id == id }) else { complete(2); return }
+                        let state = self.transferState(id)
+                        complete(state == "paused" ? 1 : state == "cancelled" ? 2 : 0)
+                    }
+                }, progress: { [weak self] offset in
+                    DispatchQueue.main.async {
+                        guard let self, self.bulkUploadID == id,
+                              !["paused", "cancelled"].contains(self.transferState(id)) else { return }
+                        self.transferStates[id] = "sending"
+                        self.sendProgress[id] = file.size == 0 ? 1 : Double(offset) / Double(file.size)
+                        self.activity = "Sending \(file.name): \(file.size == 0 ? 100 : offset * 100 / file.size)%"
+                    }
+                })
+            bulkUpload = upload
+            upload.start()
+            return ["ok": true]
         case "controls":
             guard controlsAvailable, let transfers = body["transfers"] as? [[String: Any]], transfers.count <= 256 else {
                 throw TransferError(message: "Invalid transfer controls.")
@@ -349,6 +393,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
                     // Explicit Windows actions supersede an older local action.
                     transferStates[key] = desired
                     if desired == "cancelled" {
+                        stopBulkUpload(key)
                         discardIncoming(key)
                         if outgoing.contains(where: { $0.id == key }) {
                             outgoing.removeAll { $0.id == key }
@@ -388,6 +433,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             return ["data": data.base64EncodedString()]
         case "received":
             guard let id = body["id"] as? String else { throw TransferError(message: "Missing file ID.") }
+            stopBulkUpload(id)
             if let index = outgoing.firstIndex(where: { $0.id == id }) {
                 let file = outgoing.remove(at: index)
                 sendProgress.removeValue(forKey: file.id)
