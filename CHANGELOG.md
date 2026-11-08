@@ -2,7 +2,9 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
-## 2.5.4 - Bounded Wi-Fi reconnection (development build)
+## 2.5.4 - Thin uniform bezel and Wi-Fi reconnection (development build)
+
+The bezel is a single uniform three-pixel ring. Screen rendering uses the integrated display dimensions reported by the iPhone to remove small encoder padding at the right and bottom, rather than treating that padding as part of the display. It does not guess from black app content or hardcode phone models. Normalized touch coordinates cover the complete real display.
 
 Wi-Fi discovery waits for the complete address list, tries IPv4 first and returns on the first verified connection. Full pairing handshakes and tunnel startup have deadlines; failed candidates close promptly. A rejected saved pairing now asks for USB repair instead of another unlock. Connection attempts do not change pairing records. The iPhone companion is unchanged.
 

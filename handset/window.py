@@ -14,7 +14,7 @@ import threading
 DRAWER = 416
 TAB = 60
 DEFAULT_ASPECT = 390 / 844
-SCREEN_CHROME = 14  # CSS: symmetric 7px bezel on all four sides
+SCREEN_CHROME = 6  # CSS: one symmetric 3px bezel on all four sides
 PANEL_MIN_HEIGHT = 540
 
 

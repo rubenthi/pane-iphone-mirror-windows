@@ -26,6 +26,7 @@ from ctypes import wintypes as W
 original_status = shell.status
 resize_timings = []
 resize_paints = []
+resize_samples = []
 sample_until = 0
 original_command = shell.command
 
@@ -56,6 +57,11 @@ def sample_resize_paints():
     user.ReleaseDC.argtypes = [W.HWND, W.HDC]
     gdi.GetPixel.argtypes = [W.HDC, ctypes.c_int, ctypes.c_int]
     gdi.GetPixel.restype = W.DWORD
+    user.GetForegroundWindow.argtypes=[];user.GetForegroundWindow.restype=W.HWND
+    user.GetSystemMetrics.argtypes=[ctypes.c_int];user.GetSystemMetrics.restype=ctypes.c_int
+    user.GetThreadDpiAwarenessContext.argtypes=[];user.GetThreadDpiAwarenessContext.restype=W.HANDLE
+    user.GetWindowDpiAwarenessContext.argtypes=[W.HWND];user.GetWindowDpiAwarenessContext.restype=W.HANDLE
+    user.GetAwarenessFromDpiAwarenessContext.argtypes=[W.HANDLE];user.GetAwarenessFromDpiAwarenessContext.restype=ctypes.c_int
     while not shell._form.IsDisposed:
         if time.perf_counter() < sample_until and not user.IsIconic(shell.handle):
             bounds = W.RECT(); user.GetWindowRect(shell.handle, ctypes.byref(bounds))
@@ -67,6 +73,12 @@ def sample_resize_paints():
                           for x in (.2, .5, .8) for y in (.2, .5, .8)]
                 white = sum(all((color >> shift & 255) > 245 for shift in (0, 8, 16)) for color in colors)
                 resize_paints.append(white)
+                resize_samples.append({'rect':[bounds.left,bounds.top,bounds.right,bounds.bottom],
+                    'colors':colors,'dc':int(dc or 0),'foreground':int(user.GetForegroundWindow() or 0),
+                    'window':int(shell.handle),'dpi':round(scale*96),
+                    'virtualScreen':[user.GetSystemMetrics(i) for i in (76,77,78,79)],
+                    'threadAwareness':user.GetAwarenessFromDpiAwarenessContext(user.GetThreadDpiAwarenessContext()),
+                    'windowAwareness':user.GetAwarenessFromDpiAwarenessContext(user.GetWindowDpiAwarenessContext(shell.handle))})
             finally:
                 user.ReleaseDC(None, dc)
         time.sleep(.01)
@@ -80,6 +92,8 @@ def checked_status():
         state['windows_identity'] = getattr(shell, '_test_identity', None)
         state['resize_timings'] = resize_timings.copy()
         state['resize_paints'] = resize_paints.copy()
+        state['resize_samples'] = resize_samples[-3:]
+        state['resize_invalid_samples'] = sum(0xffffffff in sample['colors'] for sample in resize_samples)
         state['menu_open'] = shell.menu_open
         origin, view = W.POINT(), W.RECT()
         shell.u.ClientToScreen(shell.handle, ctypes.byref(origin))

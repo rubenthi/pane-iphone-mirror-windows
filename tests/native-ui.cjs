@@ -104,7 +104,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     // A same-origin message from the mirror iframe represents a decoded display size.
     const mirror = page.frames().find(frame=>frame.parentFrame()===page.mainFrame());
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:932,height:430},parent.location.origin));
-    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-14)/(parseFloat(css.getPropertyValue('--phone-height'))-14)>2;});
+    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-6)/(parseFloat(css.getPropertyValue('--phone-height'))-6)>2;});
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:390,height:844},parent.location.origin));
     await page.waitForFunction(w=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--phone-width'))===w-60,compact.width);
     await page.screenshot({path:path.join(output,'pane-expanded.png')});
@@ -173,10 +173,8 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.ok(resizeState.resize_paints.length>0,'desktop repaint was sampled during native resizing');
     assert.ok(Math.max(...resizeState.resize_timings)<500,`native resize blocked: ${JSON.stringify(resizeState.resize_timings)}`);
     assert.ok(Math.max(...resizeLatency)<1000,`resize presentation was delayed: ${JSON.stringify(resizeLatency)}`);
-    assert.ok(Math.max(...resizeState.resize_paints)<7,`white native resize surface: ${JSON.stringify(resizeState.resize_paints)}`);
     await checkRegion();
-    await checkDesktopPixels();
-    const resizeEvidence={nativeMs:resizeState.resize_timings,presentedMs:resizeLatency.map(v=>Math.round(v)),desktopSamples:resizeState.resize_paints.length,maxWhitePoints:Math.max(...resizeState.resize_paints)};
+    const resizeEvidence={nativeMs:resizeState.resize_timings,presentedMs:resizeLatency.map(v=>Math.round(v)),desktopSamples:resizeState.resize_paints.length,maxWhitePoints:Math.max(...resizeState.resize_paints),invalidDesktopSamples:resizeState.resize_invalid_samples};
     console.log('Resize timing (ms):',JSON.stringify(resizeEvidence));
     await page.evaluate(async()=>renderScreen({phase:'idle'}));
     assert.deepEqual(errors,[]);
@@ -200,7 +198,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       const outer=document.querySelector('#phone-shell').getBoundingClientRect(),inner=document.querySelector('#phone-screen').getBoundingClientRect();
       return [inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom];
     });
-    assert.ok(bezel.every(side=>Math.abs(side-7)<.1),`Uneven bezel: ${bezel}`);
+    assert.ok(bezel.every(side=>Math.abs(side-3)<.1),`Uneven bezel: ${bezel}`);
     assert.ok(Math.abs(geometry.width/geometry.height-1170/2532)<.002);
     assert.ok(geometry.top>=-1 && geometry.bottom<=geometry.viewportHeight+1);
     assert.equal(geometry.center.x,32768);assert.equal(geometry.center.y,32768);
@@ -213,12 +211,55 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(await page.locator('#phone-shell .phone-status').count(),0);
     await page.evaluate(()=>{window.paneControl=window.originalPaneControl;});
     await require('./remote-controls.cjs')(page);
+    // Exercise actual decoded-frame drawing, not only CSS opening geometry:
+    // the phone's known native display occupies the top-left of a padded
+    // capture. Bright padding makes accidental inclusion unambiguous.
+    const apertureEvidence=await picture.evaluate(()=>{
+      const previousSize=nativeDisplaySize,previousRotation=visualRotation;
+      const source=document.createElement('canvas');source.width=1328;source.height=2896;
+      const brush=source.getContext('2d');
+      brush.fillStyle='#ff00ff';brush.fillRect(0,0,source.width,source.height);
+      brush.fillStyle='#00ff00';brush.fillRect(0,0,1320,2868);
+      const frame=new VideoFrame(source,{timestamp:1});
+      try{
+        visualRotation=0;
+        nativeDisplaySize=null;drawFrame(frame);
+        const uncropped={width:canvas.width,height:canvas.height,
+          bottomRight:Array.from(ctx.getImageData(canvas.width-1,canvas.height-1,1,1).data)};
+        nativeDisplaySize={width:1320,height:2868};drawFrame(frame);
+        const r=canvas.getBoundingClientRect();
+        return {uncropped,width:canvas.width,height:canvas.height,
+          bottomRight:Array.from(ctx.getImageData(canvas.width-1,canvas.height-1,1,1).data),
+          touchBottomRight:touchCoords({clientX:r.right,clientY:r.bottom}),
+          touchCenter:touchCoords({clientX:r.left+r.width/2,clientY:r.top+r.height/2})};
+      }finally{
+        frame.close();nativeDisplaySize=previousSize;visualRotation=previousRotation;
+        if(lastFrame)drawFrame(lastFrame);
+      }
+    });
+    assert.deepEqual([apertureEvidence.uncropped.width,apertureEvidence.uncropped.height],[1328,2896]);
+    assert.deepEqual(apertureEvidence.uncropped.bottomRight,[255,0,255,255],'Synthetic padding must be visible without native metadata');
+    assert.deepEqual([apertureEvidence.width,apertureEvidence.height],[1320,2868]);
+    assert.deepEqual(apertureEvidence.bottomRight,[0,255,0,255],'Real bottom-right display pixel must remain green; encoder padding must be excluded');
+    assert.deepEqual(apertureEvidence.touchBottomRight,{x:65535,y:65535});
+    assert.deepEqual(apertureEvidence.touchCenter,{x:32768,y:32768});
+    fs.writeFileSync(path.join(output,'native-aperture.json'),JSON.stringify(apertureEvidence,null,2));
+    console.log('Display aperture:',JSON.stringify(apertureEvidence));
+    // Keep the physical-desktop gate intact, but report independent WebView2
+    // frame-pixel results even if desktop capture is unavailable in this session.
+    assert.equal(resizeState.resize_invalid_samples,0,`Desktop pixel samples were invalid (CLR_INVALID): ${JSON.stringify(resizeState.resize_samples)}`);
+    assert.ok(Math.max(...resizeState.resize_paints)<7,`white native resize surface: ${JSON.stringify(resizeState.resize_paints)}`);
+    await checkDesktopPixels();
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
     fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,windowsIdentity,resizeEvidence,checks:['Windows application identity and Pane icons','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','four-corner anchoring','resize latency and transient desktop pixels','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
   } catch(error) {
     console.log('Native preview diagnostics:',logs);
+    if(page){
+      console.log('Native desktop sample diagnostics:',await page.evaluate(async()=>{const s=await getJson('/api/window');return {native_rect:s.native_rect,pixels:s.pixels,resize_samples:s.resize_samples,web_offset:s.web_offset};}).catch(()=>({})));
+      await page.screenshot({path:path.join(output,'native-failure.png')}).catch(()=>{});
+    }
     if(page) console.log(await page.evaluate(()=>({status:document.querySelector('#status-note')?.textContent,devices:document.querySelector('#devices')?.textContent,setup:document.querySelector('#onboarding-note')?.textContent})).catch(()=>({})));
     throw error;
   } finally {

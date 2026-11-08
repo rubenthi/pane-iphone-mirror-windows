@@ -35,6 +35,18 @@
       this.started=now;this.received=0;this.presented=0;this.skipped=0;return result;
     }
   }
-  root.PanePackets=PanePackets;root.PaneFrameStats=PaneFrameStats;
-  if(typeof module!=='undefined')module.exports={PanePackets,PaneFrameStats};
+  function PaneDisplayAperture(frameW,frameH,displaySize){
+    const full={width:frameW,height:frameH};
+    if(!displaySize)return full;
+    let {width,height}=displaySize;
+    if(![frameW,frameH,width,height].every(v=>Number.isInteger(v)&&v>0&&v<=16384))return full;
+    // DeviceInfo reports the physical display, while the encoder can rotate
+    // and align its capture buffer. Trim only a small, known padding margin;
+    // downscaled frames and unknown geometry retain their entire picture.
+    if((frameW>frameH)!==(width>height))[width,height]=[height,width];
+    const padW=frameW-width,padH=frameH-height;
+    return padW>=0&&padH>=0&&padW<=32&&padH<=32?{width,height}:full;
+  }
+  root.PanePackets=PanePackets;root.PaneFrameStats=PaneFrameStats;root.PaneDisplayAperture=PaneDisplayAperture;
+  if(typeof module!=='undefined')module.exports={PanePackets,PaneFrameStats,PaneDisplayAperture};
 })(typeof window!=='undefined'?window:globalThis);

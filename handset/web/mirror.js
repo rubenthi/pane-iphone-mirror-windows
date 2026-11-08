@@ -40,6 +40,7 @@ let pendingFrame = null;
 let rafScheduled = false;
 let lastFrame = null;
 let lastFrameLandscape = null;
+let nativeDisplaySize = null;
 let frameCount = 0;
 let frameStats = new PaneFrameStats();
 let decodeDepth = 0;
@@ -337,7 +338,15 @@ async function fetchCodecWithRetry() {
         continue;
       }
       const description = Uint8Array.from(atob(info.description), (c) => c.charCodeAt(0));
-      return { codec: info.codec.trim(), description, geometry: PaneHEVC.dimensions(description) };
+      const geometry=PaneHEVC.dimensions(description);
+      let displaySize=null;
+      try {
+        const response=await fetch('/api/screen',{
+          cache:'no-store',headers:{'X-Pane-Token':await paneToken()},signal:AbortSignal.timeout(2000)
+        });
+        if(response.ok)displaySize=(await response.json()).displaySize;
+      } catch (_) { /* Missing metadata must not prevent a full-frame stream. */ }
+      return { codec: info.codec.trim(), description, geometry, displaySize };
     } catch (err) {
       lastErr = err.message || String(err);
     }
@@ -347,8 +356,9 @@ async function fetchCodecWithRetry() {
 
 function drawFrame(f) {
   const sideways = Math.abs(visualRotation % 180) === 90;
-  const fw = f.displayWidth;
-  const fh = f.displayHeight;
+  const aperture=PaneDisplayAperture(f.displayWidth,f.displayHeight,nativeDisplaySize);
+  const fw = aperture.width;
+  const fh = aperture.height;
   const targetW = sideways ? fh : fw;
   const targetH = sideways ? fw : fh;
   if (targetW !== canvas.width || targetH !== canvas.height) {
@@ -364,7 +374,7 @@ function drawFrame(f) {
   ctx.save();
   ctx.translate(dstW / 2, dstH / 2);
   if (visualRotation) ctx.rotate((visualRotation * Math.PI) / 180);
-  ctx.drawImage(f, -fpW / 2, -fpH / 2, fpW, fpH);
+  ctx.drawImage(f, 0, 0, fw, fh, -fpW / 2, -fpH / 2, fpW, fpH);
   ctx.restore();
 }
 
@@ -418,8 +428,9 @@ async function run(generation) {
     }
   }, 1000);
 
-  const { codec, description, geometry } = await fetchCodecWithRetry();
+  const { codec, description, geometry, displaySize } = await fetchCodecWithRetry();
   if (generation !== runGeneration) return;
+  nativeDisplaySize=displaySize??null;
 
   let decoderConfig = { codec, description, codedWidth: geometry.width, codedHeight: geometry.height, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' };
   let support = await VideoDecoder.isConfigSupported(decoderConfig);

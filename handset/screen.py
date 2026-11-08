@@ -29,7 +29,7 @@ _WORKER = None
 _LOOP = None
 _TASK = None
 _READY = threading.Event()
-_STATE = {"phase": "idle", "udid": None, "url": None, "error": None, "note": None, "transport": None}
+_STATE = {"phase": "idle", "udid": None, "url": None, "error": None, "note": None, "transport": None, "displaySize": None}
 
 
 def screen_status() -> dict:
@@ -112,7 +112,7 @@ def _start_screen(udid: str | None, transport: str) -> dict:
             return {**screen_status(), "error": "Previous stream is still closing. Try again shortly."}
     with _LOCK:
         note = "Looking for the iPhone on Wi-Fi…" if transport == "wifi" else None
-        _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport)
+        _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport, displaySize=None)
     _READY.clear()
     _WORKER = threading.Thread(target=_run, args=(chosen, transport), name="handset-screen", daemon=True)
     _WORKER.start()
@@ -145,13 +145,27 @@ def _run(udid: str, transport: str) -> None:
         asyncio.run(run())
         _set(phase="idle", udid=udid, url=None, error="The screen stream stopped.")
     except asyncio.CancelledError:
-        _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None)
+        _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None, displaySize=None)
     except Exception as error:
         message = 'Wi-Fi connection timed out. Retry.' if transport == 'wifi' and isinstance(error, TimeoutError) else _plain(error)
         _set(phase="error", udid=udid, url=None, error=message, note=None)
 
 
 DISPLAY_SERVICE = "com.apple.coredevice.displayservice"
+
+
+def primary_display_size(info):
+    """Use the integrated display, not a padded virtual wireless framebuffer."""
+    if not isinstance(info, dict) or not isinstance(info.get('displays'), list):
+        return None
+    for display in info['displays']:
+        if not isinstance(display, dict) or display.get('primary') is not True or display.get('external') is not False:
+            continue
+        size = display.get('nativeSize')
+        if (isinstance(size, list) and len(size) == 2
+                and all(type(n) in (int, float) and 0 < n <= 16384 and float(n).is_integer() for n in size)):
+            return dict(width=int(size[0]), height=int(size[1]))
+    return None
 
 
 def _open_tunnel(udid: str, transport: str):
@@ -183,6 +197,16 @@ async def _serve(udid: str, transport: str) -> None:
 async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
     from pymobiledevice3.remote.core_device.display_service import is_media_in_use_error
     from handset.security import ACCESS_TOKEN
+    from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+
+    display_size = None
+    try:
+        async with asyncio.timeout(4):
+            async with DeviceInfoService(rsd) as info:
+                display_size = primary_display_size(await info.get_display_info())
+    except Exception:
+        pass  # Never guess a crop if the device cannot report its aperture.
+    _set(displaySize=display_size)
 
     server = ScreenStreamServer(
         rsd,
