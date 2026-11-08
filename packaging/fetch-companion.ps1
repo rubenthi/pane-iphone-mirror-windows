@@ -1,8 +1,8 @@
 # Restore the matching, previously released iOS binary on a Windows checkout.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$tag = 'v2.3.1'
-$sha256 = '79c1f7aad36688cc9eba5eb65f24c41cb48dbd332239923f10a9a858b68e4618'
+$tag = 'v2.4.0'
+$sha256 = '28fbbc850e2367b551a7cb05f7c8350de1ae599a0a70ce961b20ce9e3751e720'
 $destination = Join-Path $root 'ios/Pane-unsigned.ipa'
 git -C $root diff --quiet $tag -- ios ':(exclude,icase)ios/*.md' handset/companion_version.py
 if ($LASTEXITCODE -ne 0) { throw "Cannot reuse the $tag companion. Check the tag and build changed iOS source with Xcode." }

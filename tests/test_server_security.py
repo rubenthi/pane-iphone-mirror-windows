@@ -77,7 +77,9 @@ class ServerSecurityTests(unittest.TestCase):
 
     def test_companion_actions_require_auth_and_reject_bad_identifiers(self):
         for path in ('/api/signing/start', '/api/signing/answer', '/api/signing/cancel', '/api/setup/start', '/api/uploads/start', '/api/bluetooth/connect'):
-            self.assertEqual(self.request('POST', path, body=b'{}')[0], 403)
+            # Authorization is checked before the body. Sending a later body
+            # packet can reset an already-closed HTTP/1.0 socket on Windows.
+            self.assertEqual(self.request('POST', path)[0], 403)
         self.assertEqual(self.request('GET', '/api/setup')[0], 403)
         self.assertEqual(self.request('GET', '/api/signing')[0], 403)
         self.assertEqual(self.request('GET', '/api/uploads')[0], 403)

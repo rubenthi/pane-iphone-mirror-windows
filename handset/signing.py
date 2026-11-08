@@ -14,6 +14,9 @@ import subprocess
 import sys
 import threading
 import time
+import zipfile
+import plistlib
+from handset.companion_version import validate_companion
 from handset.state import DATA_DIR
 
 _LOCK = threading.RLock()
@@ -36,6 +39,11 @@ def stage_bundled():
     destination = DATA_DIR / 'staging' / (uuid.uuid4().hex + '.part')
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, destination)
+    try:
+        validate_companion(destination)
+    except (KeyError, ValueError, OSError, plistlib.InvalidFileException, zipfile.BadZipFile) as error:
+        destination.unlink(missing_ok=True)
+        raise ValueError('The bundled iPhone app is damaged or outdated. Restore the matching Pane IPA before signing.') from error
     return destination
 
 def status():

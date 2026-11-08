@@ -36,6 +36,19 @@ const assert = require('node:assert/strict');
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('pane-status',{detail:{}})));
       assert.equal(await dialog.isVisible(),false,'status poll must not reopen popup');
     }
+    state={availableVersion:'2.4.0',installedVersion:null,updateAvailable:false,connected:false};
+    await page.goto(url);
+    await page.waitForFunction(() => document.querySelector('#companion-version-note').textContent.includes('unknown'));
+    state={availableVersion:'2.4.0',installedVersion:'2.3.0',updateAvailable:true,connected:true};
+    const plugCable = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('pane-status',{
+      detail:{devices:[{connection:'USB',udid:'phone'}]}
+    })));
+    await plugCable();
+    await page.locator('#companion-update-dialog').waitFor({state:'visible'});
+    assert.match(await page.locator('#companion-update-copy').innerText(), /2\.4\.0/);
+    await page.locator('#companion-update-later').click();
+    await plugCable();
+    assert.equal(await page.locator('#companion-update-dialog').isVisible(),false);
     await page.goto(url); await page.locator('#companion-update-dialog').waitFor({state:'visible'});
     await page.locator('#companion-update-open').click();
     assert.equal(await page.locator('#companion-update-dialog').isVisible(),false);

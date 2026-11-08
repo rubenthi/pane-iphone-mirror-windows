@@ -2,6 +2,12 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.4.0 - iPhone transfers and USB updates
+
+The iPhone companion has a Transfers screen with native Liquid Glass send controls on iOS 26 and later. Received files, sharing and the outgoing queue are together. Tap the laptop connection row for USB pairing and the installed version. iOS 17–18 use standard SwiftUI buttons.
+
+Windows checks the bundled companion before offering an update. A verified older installation triggers a prompt at startup or when the phone connects by USB. Choose **Update via USB** and sign with the same Apple Account and team to update the existing app.
+
 ## 2.3.2 - Local Windows development and releases
 
 Pane now runs from the developer's Windows checkout. The Windows executable and native helpers are compiled and tested on the laptop before the finished files are uploaded to GitHub Releases. The installer and updater still use the published release. Shorter notification setup text keeps the status visible at the default window size. This desktop release includes the same 2.3.0 iPhone companion as 2.3.1.
