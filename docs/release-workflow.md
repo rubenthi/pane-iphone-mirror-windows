@@ -22,7 +22,7 @@ The fetch script restores the exact unsigned iPhone companion used by the previo
 
 Use a local feature branch. Close any other copy of Pane and run `.\.venv\Scripts\python.exe -m handset.app`. Restart it after Python, HTML, CSS or JavaScript edits. Rebuild the corresponding helper after Rust edits. A Windows shortcut can target `.venv\Scripts\pythonw.exe` with arguments `-m handset.app` and its **Start in** folder set to the checkout.
 
-Source runs use the existing Windows Pane data directory and skip the desktop release updater. For isolated development, set `PANE_DATA_DIR` to a separate test folder and `PANE_PORT` to an unused port before launching. The installed release executable remains available separately.
+Source runs appear as **Pane (Development)**. They store settings, pairing records, and the browser profile in `%LOCALAPPDATA%\Pane (Development)` and use ports 8775 and 8776 for the UI and mirror. The downloaded **Pane** release uses `%LOCALAPPDATA%\Pane` and ports 8765 and 8766. Only the packaged release checks for desktop updates. For a disposable instance, set `PANE_DATA_DIR`, `PANE_PORT`, and `PANE_STREAM_PORT` before launching.
 
 ## Build and upload a release
 

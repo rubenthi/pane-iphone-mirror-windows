@@ -20,13 +20,12 @@ from handset import setup, signing, notifications
 from handset.bluetooth import bluetooth
 from handset.transfers import store
 from handset.state import prepare_state, isolate_device_state
+from handset.edition import APP_NAME, PORT, STREAM_PORT
 
 ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
-PORT = 8765
 MIRROR_PREFIX = "/mirror"
 STREAM_HOST = "127.0.0.1"
-STREAM_PORT = 8766
 _HOP_BY_HOP = frozenset(
     {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "upgrade"}
 )
@@ -344,6 +343,8 @@ class Handler(BaseHTTPRequestHandler):
             ".svg": "image/svg+xml",
         }.get(target.suffix, "application/octet-stream")
         body = target.read_bytes()
+        if target == root / "index.html":
+            body = body.replace(b"{{pane_name}}", APP_NAME.encode())
         self.send_response(200)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+from handset.edition import DEVELOPMENT, data_dir
 
 _LOCK = threading.RLock()
 _PROCESS = None
@@ -26,10 +27,6 @@ DEFAULTS = dict(background_enabled=False, notifications_enabled=False, show_prev
                 audio_enabled=True, audio_device_id='', notification_device_id='',
                 categories=['calls', 'messages'], tour_complete=False)
 CATEGORIES = {'calls', 'messages', 'mail', 'calendar', 'other'}
-
-
-def data_dir():
-    return Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Pane')))
 
 
 def _read(path, fallback):
@@ -147,7 +144,8 @@ def _ensure_running(prefs=None):
             _NEXT_START = time.monotonic() + 45
             _PROCESS = subprocess.Popen([str(helper), '--run', str(data_dir())], stdin=subprocess.DEVNULL,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                        creationflags=subprocess.CREATE_NO_WINDOW, close_fds=True)
+                                        creationflags=subprocess.CREATE_NO_WINDOW, close_fds=True,
+                                        env={**os.environ, 'PANE_DEVELOPMENT': '1' if DEVELOPMENT else '0'})
         _ERROR = None
     except OSError:
         _ERROR = 'Bluetooth services could not start. Check the Pane installation and try again.'

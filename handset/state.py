@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 import shutil
 
-DATA_DIR = Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Pane')))
+from handset.edition import DEVELOPMENT, data_dir
+
+DATA_DIR = data_dir()
 SCHEMA = 2
 # Never erase arbitrary PANE_DATA_DIR contents or shared Apple trust records.
 OWNED = ('signing', 'window', 'webview', 'device', 'staging', 'outbox', 'settings.json',
@@ -37,7 +39,7 @@ def prepare_state(root: Path = DATA_DIR, *, force: bool = False) -> bool:
     if not force:
         # Missing/old markers are migrations, never permission to erase user data.
         if not isinstance(marker, dict) or marker.get('schema') != SCHEMA:
-            write_json(root / 'state-version.json', {'schema': SCHEMA, 'legacyPairingPending': True})
+            write_json(root / 'state-version.json', {'schema': SCHEMA, 'legacyPairingPending': not DEVELOPMENT})
         return False
     for name in OWNED:
         item = root / name
