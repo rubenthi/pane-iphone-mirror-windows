@@ -13,7 +13,8 @@ final class TransfersTests: XCTestCase {
         add(preview)
         app.buttons["laptopConnection"].tap()
         XCTAssertTrue(app.buttons["Activate USB link"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["2.5.0"].exists || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Installed version")).count > 0)
+        XCTAssertTrue(app.switches["keepScreenAwake"].exists)
+        XCTAssertTrue(app.staticTexts["2.5.1"].exists || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Installed version")).count > 0)
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Send files"].waitForExistence(timeout: 5))
     }
@@ -39,6 +40,28 @@ final class TransfersTests: XCTestCase {
             XCTAssertFalse(toggle.exists)
             XCTAssertFalse(cancel.exists)
         }
+    }
+
+    func testKeepAwakePreferencePersistsInIsolatedFixture() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-transfers"]
+        app.launch()
+        XCTAssertTrue(app.buttons["laptopConnection"].waitForExistence(timeout: 15))
+        app.buttons["laptopConnection"].tap()
+        let toggle = app.switches["keepScreenAwake"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        let original = toggle.value as? String
+        toggle.tap()
+        let changed = toggle.value as? String
+        XCTAssertNotEqual(changed, original)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["laptopConnection"].waitForExistence(timeout: 15))
+        app.buttons["laptopConnection"].tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, changed)
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, original)
     }
 
 }

@@ -8,7 +8,7 @@ Setup uses short illustrated Settings paths, compact certificate recovery and br
 
 Saved Bluetooth file pairing reconnects while Pane is open, independently of screen mirroring. A manually disconnected file link stays disconnected until explicitly reconnected or Pane restarts. The saved audio receiver also follows the desktop app's lifetime while honoring its existing switch and selected device.
 
-The iPhone companion source is now 2.5.0, build 4. It adds Pause, Resume and Cancel for transfers in both directions and negotiates larger acknowledged batches with Windows. Existing companions retain the legacy transfer protocol. Actual Bluetooth speed depends on the devices and connection; no hardware throughput improvement is claimed from automated tests.
+The iPhone companion source is now 2.5.1, build 5. It adds Pause, Resume and Cancel for transfers in both directions and negotiates larger acknowledged batches with Windows. Keep iPhone awake prevents idle screen locking while Pane is visible and restores normal behavior when leaving the app. Existing companions retain the legacy transfer protocol. Actual Bluetooth speed depends on the devices and connection; no hardware throughput improvement is claimed from automated tests.
 
 The Enable step requests Developer Mode again if the setting is still hidden. Enabling it, restarting and confirming remain on the iPhone. Installation now explains how credentials are processed locally, identifies the stage of signing failures, and offers credential-free service diagnostics. Saved signing keys and pairings are preserved.
 

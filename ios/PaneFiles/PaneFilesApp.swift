@@ -1,6 +1,18 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import UIKit
+
+private enum PanePreferences {
+    static let store: UserDefaults = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-transfers") {
+            return UserDefaults(suiteName: "Pane.TransferUITests")!
+        }
+        #endif
+        return .standard
+    }()
+}
 
 @main
 struct PaneFilesApp: App {
@@ -29,6 +41,7 @@ struct ContentView: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var showConnection = false
+    @AppStorage("keepScreenAwake", store: PanePreferences.store) private var keepScreenAwake = true
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -115,6 +128,12 @@ struct ContentView: View {
                         Section("Your laptop") {
                             Label(linkTitle, systemImage: "laptopcomputer")
                             Text(companion.status)
+                            Toggle(isOn: $keepScreenAwake) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Keep iPhone awake")
+                                    Text("While Pane is open").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.accessibilityIdentifier("keepScreenAwake")
                         }
                         Section("USB pairing") {
                             Text("Connect and unlock your iPhone, then complete setup on your laptop. If needed, activate the USB link here and allow Bluetooth.")
@@ -133,6 +152,7 @@ struct ContentView: View {
                 }.presentationDragIndicator(.visible)
             }
             .task(id: scenePhase) {
+                UIApplication.shared.isIdleTimerDisabled = scenePhase == .active && keepScreenAwake
                 guard scenePhase == .active else { return }
                 companion.refreshReceived()
                 while !Task.isCancelled {
@@ -140,6 +160,10 @@ struct ContentView: View {
                     try? await Task.sleep(for: .seconds(2))
                 }
             }
+            .onChange(of: keepScreenAwake) { _, enabled in
+                UIApplication.shared.isIdleTimerDisabled = scenePhase == .active && enabled
+            }
+            .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): importFiles(urls)
