@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import platform
 from pathlib import Path
 import subprocess
 import sys
@@ -73,10 +74,46 @@ def preferences():
 
 def save(patch):
     with _LOCK:
-        value = {**preferences(), **validate(patch)}
+        current = preferences()
+        value = {**current, **validate(patch)}
+        if (patch.get('notifications_enabled') is True and not current['notification_device_id']
+                and 'notification_device_id' not in patch):
+            identifier = _unique_iphone()
+            if identifier:
+                value['notification_device_id'] = identifier
         _write(data_dir() / 'preferences.json', value)
         _ensure_running(value)
         return {'preferences': value, 'companion': status()}
+
+
+def _unique_iphone():
+    """Suggest only an unambiguous paired iPhone during explicit opt-in."""
+    try:
+        listing = devices()
+        if not isinstance(listing, dict) or listing.get('error'):
+            return None
+        rows = listing.get('notifications')
+        if not isinstance(rows, list):
+            return None
+        identifiers = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name, identifier = row.get('name'), row.get('id')
+            if (not isinstance(name, str) or 'iphone' not in name.casefold()
+                    or name.strip().casefold().startswith('pane-')
+                    or not isinstance(identifier, str) or not identifier.strip()):
+                continue
+            try:
+                validate({'notification_device_id': identifier})
+            except ValueError:
+                continue
+            identifiers.add(identifier)
+        return next(iter(identifiers)) if len(identifiers) == 1 else None
+    except Exception:
+        # Device enumeration is optional. Still persist the user's explicit
+        # opt-in and let them choose a device if discovery is unavailable.
+        return None
 
 
 def _source_helper():
@@ -200,17 +237,52 @@ def _alive(pid):
         kernel.CloseHandle(handle)
 
 
+def _notification_phase(prefs, state, *, available, running, fresh, error):
+    if not prefs['notifications_enabled']:
+        return 'off'
+    if error:
+        return 'error'
+    if not available:
+        return 'unavailable'
+    if not prefs['notification_device_id']:
+        return 'needs_device'
+    if not running or not fresh:
+        return 'connecting'
+    text = state.get('notifications', '')
+    if not isinstance(text, str):
+        return 'connecting'
+    if text.startswith('Connected.'):
+        return 'ready'
+    lowered = text.casefold()
+    if 'windows' in lowered and ('permission' in lowered or 'could not show' in lowered):
+        return 'needs_windows_permission'
+    if any(phrase in lowered for phrase in ('share system notifications', 'notification access', 'notification permission')):
+        return 'needs_permission'
+    if any(phrase in lowered for phrase in ('could not', 'failed', 'error')):
+        return 'error'
+    return 'connecting'
+
+
 def status():
     available = os.name == 'nt' and _source_helper().is_file()
-    state = _read(data_dir() / 'companion-status.json', {})
-    if not _alive(state.get('pid')):
+    root = data_dir()
+    state = _read(root / 'companion-status.json', {})
+    running = _alive(state.get('pid'))
+    try:
+        fresh = (root / 'companion-status.json').stat().st_mtime_ns >= (root / 'preferences.json').stat().st_mtime_ns
+    except OSError:
+        fresh = False
+    if not running:
         state = {}
-    if _PROCESS is not None and _PROCESS.poll() not in (None, 0):
+    failed = _PROCESS is not None and _PROCESS.poll() not in (None, 0)
+    if failed:
         state = {'audio': 'Bluetooth services could not restart. Close and reopen Pane to retry.',
                  'notifications': 'Bluetooth services could not restart. Close and reopen Pane to retry.'}
     if _ERROR:
         state = {'audio': _ERROR, 'notifications': _ERROR}
-    return {'available': available, **state}
+    phase = _notification_phase(preferences(), state, available=available,
+                                running=running, fresh=fresh, error=bool(_ERROR or failed))
+    return {'available': available, **state, 'computerName': platform.node(), 'notificationPhase': phase}
 
 
 def devices():
@@ -234,3 +306,9 @@ def open_bluetooth_settings():
     if os.name != 'nt':
         raise ValueError('Bluetooth settings are available on Windows.')
     os.startfile('ms-settings:bluetooth')
+
+
+def open_notification_settings():
+    if os.name != 'nt':
+        raise ValueError('Notification settings are available on Windows.')
+    os.startfile('ms-settings:notifications')

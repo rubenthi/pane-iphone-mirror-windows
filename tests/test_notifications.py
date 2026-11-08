@@ -21,6 +21,9 @@ class NotificationPreferencesTests(unittest.TestCase):
         flag = patch.object(n.subprocess, 'CREATE_NO_WINDOW', 0, create=True)
         flag.start()
         self.addCleanup(flag.stop)
+        listing = patch.object(n, 'devices', return_value={'audio': [], 'notifications': []})
+        self.devices = listing.start()
+        self.addCleanup(listing.stop)
         for name, value in [('_PROCESS', None), ('_NEXT_START', 0.0), ('_CACHED_HELPER', None), ('_ERROR', None), ('_DESKTOP_ACTIVE', False), ('_MIRRORING', False)]:
             mock = patch.object(n, name, value)
             mock.start()
@@ -149,3 +152,112 @@ class NotificationPreferencesTests(unittest.TestCase):
             n._PROCESS = SimpleNamespace(poll=lambda: 0)
             n._ensure_running(prefs)
             spawn.assert_called_once()
+
+    def test_explicit_enable_selects_only_the_unique_paired_iphone(self):
+        self.devices.return_value = {'notifications': [
+            {'id': 'pane', 'name': 'Pane-baf8'}, {'id': 'xbox', 'name': 'Xbox'},
+            {'id': 'phone', 'name': 'iPhone'}, {'id': 'mouse', 'name': 'MX Master'},
+            {'id': 'companion', 'name': 'Pane-iPhone'},
+        ]}
+        n.save({'categories': ['mail'], 'audio_device_id': 'audio-phone'})
+        self.devices.assert_not_called()
+        result = n.save({'notifications_enabled': True})['preferences']
+        self.assertEqual(result['notification_device_id'], 'phone')
+        self.assertTrue(result['notifications_enabled'])
+        self.assertFalse(result['show_previews'])
+        self.assertFalse(result['background_enabled'])
+        self.assertEqual(result['categories'], ['mail'])
+        self.assertEqual(result['audio_device_id'], 'audio-phone')
+
+    def test_ambiguous_or_custom_phone_names_require_explicit_selection(self):
+        for rows in ([{'id': 'one', 'name': 'iPhone'}, {'id': 'two', 'name': "Alice's IPHONE"}],
+                     [{'id': 'one', 'name': "Alice's phone"}],
+                     [{'id': 'companion', 'name': 'Pane-iPhone'}]):
+            with self.subTest(rows=rows):
+                self.devices.return_value = {'notifications': rows}
+                result = n.save({'notifications_enabled': True})['preferences']
+                self.assertEqual(result['notification_device_id'], '')
+                self.assertTrue(result['notifications_enabled'])
+
+    def test_device_suggestions_ignore_malformed_rows_and_deduplicate_ids(self):
+        self.devices.return_value = {'notifications': [
+            None, [], 'iPhone', {'name': 'iPhone'}, {'id': 123, 'name': 'iPhone'},
+            {'id': '', 'name': 'iPhone'}, {'id': '   ', 'name': 'iPhone'},
+            {'id': 'broken\nid', 'name': 'iPhone'}, {'id': 'x' * 2049, 'name': 'iPhone'},
+            {'id': 'invalid-name', 'name': None},
+            {'id': 'phone', 'name': 'My iPhone'}, {'id': 'phone', 'name': 'iPhone'},
+        ]}
+        self.assertEqual(n.save({'notifications_enabled': True})['preferences']['notification_device_id'], 'phone')
+
+    def test_saved_or_explicit_device_selection_is_never_replaced(self):
+        n.save({'notification_device_id': 'offline-phone'})
+        self.assertEqual(n.save({'notifications_enabled': True})['preferences']['notification_device_id'], 'offline-phone')
+        self.devices.assert_not_called()
+        result = n.save({'notifications_enabled': True, 'notification_device_id': ''})['preferences']
+        self.assertEqual(result['notification_device_id'], '')
+        self.devices.assert_not_called()
+        n.save({'notifications_enabled': True, 'notification_device_id': 'chosen-phone'})
+        self.devices.assert_not_called()
+
+    def test_device_enumeration_errors_do_not_prevent_the_explicit_opt_in(self):
+        for listing in (None, [], {'error': 'unavailable', 'notifications': [{'id': 'phone', 'name': 'iPhone'}]},
+                        {'notifications': None}):
+            with self.subTest(listing=listing):
+                self.devices.return_value = listing
+                result = n.save({'notifications_enabled': True})['preferences']
+                self.assertEqual(result['notification_device_id'], '')
+                self.assertTrue(result['notifications_enabled'])
+        self.devices.side_effect = OSError('device enumeration failed')
+        self.assertTrue(n.save({'notifications_enabled': True})['preferences']['notifications_enabled'])
+
+    def test_auto_selection_never_runs_for_implicit_or_disabled_preferences(self):
+        n.save({'notifications_enabled': False})
+        n.save({'show_previews': True})
+        n.save({'categories': ['calls']})
+        self.devices.assert_not_called()
+
+    def test_structured_notification_phase_and_computer_name(self):
+        root = Path(self.directory.name)
+        helper = root / 'test-helper.exe'
+        helper.write_bytes(b'test helper, never launched')
+        def phase(prefs, message='', *, running=True, available=True, error=None, fresh=True):
+            n._write(root / 'preferences.json', {**n.DEFAULTS, **prefs})
+            n._write(root / 'companion-status.json', {'pid': 42, 'notifications': message})
+            # Freshness follows applied preferences, not an arbitrary clock TTL.
+            os.utime(root / 'preferences.json', ns=(100_000_000_000, 100_000_000_000))
+            stamp = 101_000_000_000 if fresh else 99_000_000_000
+            os.utime(root / 'companion-status.json', ns=(stamp, stamp))
+            with (patch.object(n, 'os', SimpleNamespace(name='nt')),
+                 patch.object(n, '_source_helper', return_value=helper if available else root / 'missing.exe'),
+                 patch.object(n, '_alive', return_value=running), patch.object(n, '_ERROR', error),
+                 patch.object(n.platform, 'node', return_value='My laptop')):
+                state = n.status()
+            self.assertEqual(state['computerName'], 'My laptop')
+            return state['notificationPhase']
+        enabled = {'notifications_enabled': True, 'notification_device_id': 'phone'}
+        connected = 'Connected. Selected notifications will appear on this PC.'
+        self.assertEqual(phase({}, connected), 'off')
+        self.assertEqual(phase(enabled, connected, available=False), 'unavailable')
+        self.assertEqual(phase({'notifications_enabled': True}), 'needs_device')
+        self.assertEqual(phase(enabled, 'Connecting to iPhone notifications…'), 'connecting')
+        self.assertEqual(phase(enabled, connected), 'ready')
+        self.assertEqual(phase(enabled, connected, running=False), 'connecting')
+        self.assertEqual(phase(enabled, connected, fresh=False), 'connecting')
+        self.assertEqual(phase(enabled, 'Waiting for iPhone. Enable Share System Notifications in its Bluetooth settings.'), 'needs_permission')
+        self.assertEqual(phase(enabled, 'Check Windows notification permissions for Pane.'), 'needs_windows_permission')
+        self.assertEqual(phase(enabled, 'Windows could not show notifications. Check notification permissions for Pane.'), 'needs_windows_permission')
+        self.assertEqual(phase(enabled, 'iPhone disconnected. Waiting for Bluetooth to reconnect.'), 'connecting')
+        self.assertEqual(phase(enabled, 'Bluetooth services could not restart.'), 'error')
+        self.assertEqual(phase(enabled, connected, error='worker failed'), 'error')
+
+    def test_notification_settings_only_opens_windows_settings(self):
+        from unittest.mock import Mock
+        launch = Mock()
+        with patch.object(n, 'os', SimpleNamespace(name='nt', startfile=launch)):
+            n.open_notification_settings()
+        launch.assert_called_once_with('ms-settings:notifications')
+        launch.reset_mock()
+        with patch.object(n, 'os', SimpleNamespace(name='posix', startfile=launch)):
+            with self.assertRaises(ValueError):
+                n.open_notification_settings()
+        launch.assert_not_called()

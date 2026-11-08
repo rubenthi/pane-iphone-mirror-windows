@@ -3,6 +3,41 @@
   let prefs = {},
     devices = { audio: [], notifications: [] },
     tour = 0;
+  let companionState = {};
+  let preferencesLoaded = false;
+  let notificationSetupGeneration = 0;
+  function iphoneCandidates() {
+    return [...new Map((devices.notifications||[]).filter(d=>d&&typeof d.id==='string'&&d.id.trim()&&d.id.length<=2048&&!/[\x00-\x1f]/.test(d.id)&&typeof d.name==='string'&&/iphone/i.test(d.name)&&!/^pane-/i.test(d.name.trim())).map(d=>[d.id,d])).values()];
+  }
+  function notificationPatch() {
+    const patch={notifications_enabled:true}, phones=iphoneCandidates();
+    if(preferencesLoaded&&!prefs.notification_device_id&&phones.length===1)patch.notification_device_id=phones[0].id;
+    return patch;
+  }
+  function renderNotificationSetup() {
+    const enabled=!!prefs.notifications_enabled, phase=companionState.notificationPhase;
+    const ready=enabled&&phase==='ready', phones=iphoneCandidates();
+    const selected=(devices.notifications||[]).find(d=>d.id===prefs.notification_device_id);
+    $('notifications-toggle-hint').textContent=enabled?(ready?'On':'Setting up…'):'Off';
+    const detail=$('notification-setup-help');
+    detail.hidden=ready;
+    detail.dataset.expanded=String(enabled&&!ready);
+    detail.querySelector('.action-summary').hidden=enabled&&!ready;
+    detail.querySelector('.action-summary').textContent=ready?'Ready. iPhone alerts will appear here.':'Turn on to get iPhone alerts here.';
+    detail.querySelector('.action-expanded').hidden=!enabled||ready;
+    $('notification-phone-steps').hidden=phase==='needs_windows_permission';
+    $('notification-windows-help').hidden=phase!=='needs_windows_permission';
+    $('notification-pc-name').textContent=companionState.computerName||'This PC';
+    $('notification-device-field').hidden=!enabled||(phones.length===1&&phones[0].id===prefs.notification_device_id);
+    $('notification-selected-phone').hidden=!enabled||ready||!prefs.notification_device_id||!$('notification-device-field').hidden;
+    $('notification-selected-phone').textContent=selected?`${selected.name} selected`:'Saved iPhone';
+    $('notification-actions').hidden=!enabled||ready;
+    $('notification-pair').hidden=!!prefs.notification_device_id;
+    $('notification-options').hidden=!enabled;
+    const descriptions={off:'',ready:'Connected',needs_device:'Choose your iPhone, or pair it first.',connecting:'Connecting…',needs_permission:'Allow sharing on your iPhone.',needs_windows_permission:'Allow notifications for Pane in Windows.',error:'Connection paused. Check again.',unavailable:'Use the Windows app to receive alerts.'};
+    $('notifications-note').textContent=descriptions[enabled?phase:'off']??(enabled?'Allow sharing on your iPhone.':'');
+    $('notifications-note').dataset.phase=enabled?phase||'connecting':'off';
+  }
   const tours = [
     [
       "Your iPhone. Your mouse.",
@@ -116,9 +151,6 @@
   });
   window.paneView = { open };
   function renderPreferences() {
-    $("notifications-toggle-hint").textContent = prefs.notifications_enabled
-      ? "Complete the iPhone step below."
-      : "Off until you choose to enable it.";
     $("previews-toggle-hint").textContent = prefs.show_previews
       ? "Titles and messages appear on this PC."
       : "Keep content private when this is off.";
@@ -130,7 +162,6 @@
     $("background-next").hidden =
       !prefs.background_enabled || !!prefs.notifications_enabled;
     for (const [id, key] of [
-      ["notification-setup-help", "notifications_enabled"],
       ["audio-setup-help", "audio_enabled"],
     ]) {
       const detail = $(id),
@@ -164,6 +195,7 @@
       select.value = prefs[key] || "";
     }
     window.paneSelects?.sync();
+    renderNotificationSetup();
   }
   // Preference writes are ordered. A quick second change cannot resurrect stale state.
   let saveChain = Promise.resolve();
@@ -172,6 +204,7 @@
       try {
         const state = await postJson("/api/preferences", patch);
         prefs = state.preferences;
+        preferencesLoaded = true;
         renderPreferences();
         renderCompanion(state.companion);
         $("preferences-note").textContent = "Saved";
@@ -184,7 +217,6 @@
   }
   for (const [id, key] of [
     ["background-enabled", "background_enabled"],
-    ["notifications-enabled", "notifications_enabled"],
     ["notification-previews", "show_previews"],
     ["audio-enabled", "audio_enabled"],
     ["audio-device", "audio_device_id"],
@@ -196,6 +228,18 @@
       }),
     );
   }
+  $('notifications-enabled').addEventListener('change',event=>{
+    notificationSetupGeneration++;
+    save(event.target.checked?notificationPatch():{notifications_enabled:false});
+  });
+  $('notification-pair').addEventListener('click',()=>postJson('/api/bluetooth/settings',{}).catch(()=>{$('notifications-note').textContent='Couldn’t open Bluetooth settings. Try again.';}));
+  $('notification-windows-settings').addEventListener('click',()=>postJson('/api/notifications/settings',{}).catch(()=>{$('notifications-note').textContent='Couldn’t open notification settings. Try again.';}));
+  $('notifications-check').addEventListener('click',async()=>{
+    const generation=notificationSetupGeneration;
+    $('notifications-check').disabled=true;
+    try { await refreshBluetooth(); if(generation===notificationSetupGeneration&&prefs.notifications_enabled&&$('notifications-enabled').checked)await save(notificationPatch()); }
+    finally { $('notifications-check').disabled=false; }
+  });
   document.querySelectorAll("#notification-types input").forEach((x) =>
     x.addEventListener("change", () =>
       save({
@@ -206,11 +250,8 @@
     ),
   );
   function renderCompanion(state = {}) {
-    $("notifications-note").textContent =
-      window.paneBluetoothNote(state.notifications) ||
-      (state.available
-        ? "Choose your iPhone above."
-        : "Use a Windows build of Pane to connect your iPhone.");
+    companionState=state;
+    renderNotificationSetup();
     $("audio-note").textContent =
       window.paneBluetoothNote(state.audio) ||
       (state.available
@@ -238,6 +279,7 @@
   const ready = getJson("/api/preferences")
     .then((state) => {
       prefs = state.preferences;
+      preferencesLoaded = true;
       renderPreferences();
       renderCompanion(state.companion);
       return prefs;

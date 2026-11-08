@@ -2,6 +2,12 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.5 - Simpler notification setup and black bezel (development build)
+
+Phone notification setup starts with one switch. Pane selects a paired iPhone automatically when there is one unambiguous choice, while keeping saved choices. A compact Bluetooth settings preview shows the laptop name and Share System Notifications switch; it disappears once connected. Check again refreshes devices and retries, and Windows notification permission failures offer the correct settings shortcut. Alert categories and message previews are under Alerts & privacy; previews and background behavior remain separate opt-ins.
+
+The uniform three-pixel bezel is solid black. The iPhone companion is unchanged.
+
 ## 2.5.4 - Thin uniform bezel and Wi-Fi reconnection (development build)
 
 The bezel is a single uniform three-pixel ring. Screen rendering uses the integrated display dimensions reported by the iPhone to remove small encoder padding at the right and bottom, rather than treating that padding as part of the display. It does not guess from black app content or hardcode phone models. Normalized touch coordinates cover the complete real display.

@@ -151,13 +151,10 @@ const fs = require("node:fs");
     await page.locator("#background-next").waitFor({ state: "visible" });
     await capture("08-background-action");
     await page.locator("#background-next").click();
-    await page
-      .locator("#notification-device-control")
-      .waitFor({ state: "visible" });
+    assert.equal(await page.locator('#notification-device-field').isVisible(),false);
+    assert.equal(await page.locator('#notification-options').isVisible(),false);
+    assert.equal(await page.locator('#notification-options').getAttribute('open'),null);
     await capture("09-notifications-off");
-    const compact = await page
-      .locator("#notification-setup-help .action-summary")
-      .evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
     await page.locator("#notifications-enabled").check();
     await page
       .locator("#notification-setup-help .action-expanded")
@@ -166,10 +163,12 @@ const fs = require("node:fs");
       await page.locator("#notification-setup-help").innerText(),
       /Share System Notifications/,
     );
-    const expanded = await page
-      .locator("#notification-setup-help .action-expanded p")
-      .evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
-    assert.ok(expanded > compact);
+    await page.locator('#notification-device-control').waitFor({state:'visible'});
+    assert.equal(await page.locator('#notification-options').getAttribute('open'),null);
+    const notificationPrefs=(await page.evaluate(()=>getJson('/api/preferences'))).preferences;
+    assert.equal(notificationPrefs.show_previews,false,'Enabling alerts must not enable message previews');
+    assert.equal(notificationPrefs.background_enabled,true,'The earlier explicit background choice must be preserved');
+    assert.equal(notificationPrefs.notification_device_id,'','Two iPhones require a manual choice');
     assert.equal(await page.locator("#background-next").isVisible(), false);
     await capture("10-notifications-on");
     await fits(".drawer-scroll");
@@ -228,6 +227,7 @@ const fs = require("node:fs");
     await picker.press("Enter");
     await picker.press("Tab");
     assert.equal(await page.getByRole("listbox").isVisible(), false);
+    await page.locator('#notification-options > summary').click();
     await page.locator("#notification-previews").check();
     await page.waitForFunction(() =>
       document
@@ -235,6 +235,8 @@ const fs = require("node:fs");
         .textContent.includes("Titles"),
     );
     await capture("12-notification-previews");
+    assert.equal(await page.locator('.drawer-scroll').evaluate(e=>getComputedStyle(e).overflowY),'auto','Expanded privacy options must remain scrollable');
+    await page.locator('#notification-options > summary').click();
     await fits(".drawer-scroll");
     await page.locator("#notifications-enabled").focus();
     await page.waitForTimeout(750);

@@ -199,6 +199,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       return [inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom];
     });
     assert.ok(bezel.every(side=>Math.abs(side-3)<.1),`Uneven bezel: ${bezel}`);
+    assert.equal(await page.locator('#phone-shell').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(0, 0, 0)','The uniform bezel must be solid black');
     assert.ok(Math.abs(geometry.width/geometry.height-1170/2532)<.002);
     assert.ok(geometry.top>=-1 && geometry.bottom<=geometry.viewportHeight+1);
     assert.equal(geometry.center.x,32768);assert.equal(geometry.center.y,32768);

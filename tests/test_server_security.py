@@ -106,13 +106,22 @@ class ServerSecurityTests(unittest.TestCase):
 
     def test_bluetooth_preferences_require_same_origin_token(self):
         for method, path in [('GET', '/api/preferences'), ('POST', '/api/preferences'),
-                             ('GET', '/api/bluetooth/devices'), ('POST', '/api/bluetooth/settings')]:
+                             ('GET', '/api/bluetooth/devices'), ('POST', '/api/bluetooth/settings'),
+                             ('POST', '/api/notifications/settings')]:
             with self.subTest(method=method, path=path):
                 self.assertEqual(self.request(method, path)[0], 403)
         status, _, _ = self.request('POST', '/api/preferences', {
             'X-Pane-Token': ACCESS_TOKEN, 'Content-Type': 'application/json',
         }, b'{"background_enabled":"false"}')
         self.assertEqual(status, 400)
+
+    def test_notification_settings_action_opens_only_the_fixed_settings_page(self):
+        headers = {'X-Pane-Token': ACCESS_TOKEN, 'Content-Type': 'application/json'}
+        with patch('handset.server.notifications.open_notification_settings') as launch:
+            status, _, body = self.request('POST', '/api/notifications/settings', headers, b'{}')
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body), {'ok': True})
+            launch.assert_called_once_with()
 
 
 if __name__ == "__main__":

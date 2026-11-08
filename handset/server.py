@@ -153,10 +153,13 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, OSError) as error:
                 self._json({'error': str(error)}, status=400)
             return
-        if path in ('/api/preferences', '/api/bluetooth/settings'):
+        if path in ('/api/preferences', '/api/bluetooth/settings', '/api/notifications/settings'):
             try:
                 if path == '/api/preferences':
                     self._json(notifications.save(payload))
+                elif path == '/api/notifications/settings':
+                    notifications.open_notification_settings()
+                    self._json({'ok': True})
                 else:
                     notifications.open_bluetooth_settings()
                     self._json({'ok': True})

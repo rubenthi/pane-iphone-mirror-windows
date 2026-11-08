@@ -47,14 +47,30 @@ const fs = require("node:fs");
         },
       }),
     );
-    await page.route("**/api/bluetooth/devices", (r) =>
-      r.fulfill({
+    let deviceRequests=0;
+    let delayedLookup=null;
+    let delayedOptOut=null;
+    const preferencePatches=[];
+    await page.route('**/api/preferences',async r=>{
+      if(r.request().method()==='POST'){
+        const patch=r.request().postDataJSON();preferencePatches.push(patch);
+        if(delayedOptOut&&patch.notifications_enabled===false){
+          const response=await r.fetch();delayedOptOut.saved();await delayedOptOut.promise;
+          return r.fulfill({response});
+        }
+      }
+      return r.continue();
+    });
+    await page.route("**/api/bluetooth/devices", async (r) => {
+      deviceRequests++;
+      if(delayedLookup){delayedLookup.started();await delayedLookup.promise;}
+      return r.fulfill({
         json: {
           audio: [{ id: "audio-phone", name: "My iPhone" }],
           notifications: [{ id: "ble-phone", name: "My iPhone" }],
         },
-      }),
-    );
+      });
+    });
     // Exercise the native controls' DOM. Actual HWND behavior has separate Windows tests.
     await page.route("**/api/window", async (r) => {
       const response = await r.fetch();
@@ -97,9 +113,89 @@ const fs = require("node:fs");
     await page
       .locator('#notification-device option[value="ble-phone"]')
       .waitFor({ state: "attached" });
-    await page.locator("#notification-device").selectOption("ble-phone");
+    assert.equal(await page.locator('#notification-device-field').isVisible(),false);
+    assert.equal(await page.locator('#notification-options').isVisible(),false);
+    assert.equal(await page.locator('#notification-options').getAttribute('open'),null);
     await page.locator("#notifications-enabled").check();
+    await page.waitForFunction(async()=>{
+      const p=(await getJson('/api/preferences')).preferences;
+      return p.notifications_enabled&&p.notification_device_id==='ble-phone';
+    });
+    assert.equal(await page.locator('#notification-device-field').isVisible(),false,'One known iPhone should not require a picker');
+    assert.equal(await page.locator('#notification-selected-phone').isVisible(),true);
+    assert.equal(await page.locator('#notification-options').getAttribute('open'),null);
+    let saved=(await page.evaluate(()=>getJson('/api/preferences'))).preferences;
+    assert.equal(saved.show_previews,false);
+    assert.equal(saved.background_enabled,false);
+    const enabledPatch=preferencePatches.find(p=>p.notifications_enabled===true);
+    assert.deepEqual(enabledPatch,{notifications_enabled:true,notification_device_id:'ble-phone'});
+    const beforeCheck=deviceRequests,beforeRetry=preferencePatches.filter(p=>p.notifications_enabled===true).length;
+    await page.locator('#notifications-check').click();
+    await page.waitForFunction(()=>!document.querySelector('#notifications-check').disabled);
+    assert.equal(deviceRequests,beforeCheck+1,'Check again must refresh devices');
+    assert.equal(preferencePatches.filter(p=>p.notifications_enabled===true).length,beforeRetry+1,'Check again must retry the existing opt-in');
+    saved=(await page.evaluate(()=>getJson('/api/preferences'))).preferences;
+    assert.equal(saved.show_previews,false);
+    assert.equal(saved.background_enabled,false);
+    // A device scan can finish after the user turns alerts off. Its stale
+    // Check-again continuation must never opt the user back in.
+    let lookupStarted,releaseLookup,optOutSaved,releaseOptOut;
+    const started=new Promise(resolve=>{lookupStarted=resolve;});
+    const optedOut=new Promise(resolve=>{optOutSaved=resolve;});
+    delayedLookup={started:lookupStarted,promise:new Promise(resolve=>{releaseLookup=resolve;})};
+    delayedOptOut={saved:optOutSaved,promise:new Promise(resolve=>{releaseOptOut=resolve;})};
+    await page.locator('#notifications-check').click();
+    await started;
+    let offPatchCount;
+    try{
+      await page.locator('#notifications-enabled').uncheck();
+      await optedOut;
+      await page.waitForFunction(async()=>!(await getJson('/api/preferences')).preferences.notifications_enabled);
+      offPatchCount=preferencePatches.length;
+      // Keep the opt-out HTTP reply pending: frontend prefs are still stale
+      // while the scan finishes. The setup-generation guard must win anyway.
+      delayedLookup=null;releaseLookup();
+      await page.waitForFunction(()=>!document.querySelector('#notifications-check').disabled);
+    }finally{delayedLookup=null;releaseLookup();delayedOptOut=null;releaseOptOut();}
+    await page.waitForFunction(()=>document.querySelector('#notifications-toggle-hint').textContent==='Off');
+    assert.equal(await page.locator('#notifications-enabled').isChecked(),false);
+    assert.equal((await page.evaluate(()=>getJson('/api/preferences'))).preferences.notifications_enabled,false);
+    assert.equal(preferencePatches.slice(offPatchCount).some(p=>p.notifications_enabled===true),false,'A completed scan must not undo an explicit opt-out');
+    await page.locator('#notifications-enabled').check();
+    await page.locator('#notifications-check').waitFor({state:'visible'});
+    await page.evaluate(()=>window.paneExperience.renderCompanion({available:true,notificationPhase:'ready',computerName:'Test PC'}));
+    assert.equal(await page.locator('#notification-setup-help').isVisible(),false);
+    assert.equal(await page.locator('#notifications-check').isVisible(),false);
+    assert.equal(await page.locator('#notifications-toggle-hint').innerText(),'On');
+    let windowsSettingsRequests=0;
+    await page.route('**/api/notifications/settings',r=>{
+      windowsSettingsRequests++;
+      return r.fulfill({json:{ok:true}});
+    });
+    await page.evaluate(()=>window.paneExperience.renderCompanion({available:true,notificationPhase:'needs_windows_permission',computerName:'Test PC'}));
+    assert.equal(await page.locator('#notification-phone-steps').isVisible(),false);
+    assert.equal(await page.locator('#notification-windows-help').isVisible(),true);
+    await Promise.all([
+      page.waitForResponse(response=>response.url().endsWith('/api/notifications/settings')),
+      page.locator('#notification-windows-settings').click(),
+    ]);
+    assert.equal(windowsSettingsRequests,1,'The Windows action must use the mocked notification-settings endpoint');
+    await page.evaluate(()=>window.paneExperience.renderCompanion({available:true,notificationPhase:'needs_permission',computerName:'Test PC'}));
+    assert.equal(await page.locator('#notification-phone-steps').isVisible(),true);
+    assert.equal(await page.locator('#notification-windows-help').isVisible(),false);
+    assert.equal(await page.locator('#notification-pc-name').innerText(),'Test PC');
+    await page.locator('#notifications-enabled').uncheck();
+    await page.waitForFunction(()=>document.querySelector('#notifications-toggle-hint').textContent==='Off');
+    assert.equal(await page.locator('#notification-device-field').isVisible(),false);
+    assert.equal(await page.locator('#notification-options').isVisible(),false);
+    assert.equal(await page.locator('#notification-selected-phone').isVisible(),false);
+    assert.equal(await page.locator('#notifications-check').isVisible(),false);
+    assert.equal(await page.locator('#notification-setup-help .action-summary').isVisible(),true);
+    await page.locator('#notifications-enabled').check();
+    await page.locator('#notifications-check').waitFor({state:'visible'});
+    await page.locator('#notification-options > summary').click();
     await page.locator('#notification-types input[value="mail"]').check();
+    await page.locator('#notification-options > summary').click();
     await page.locator("#background-enabled").check();
     await page.waitForFunction(async () => {
       const p = await getJson("/api/preferences");
