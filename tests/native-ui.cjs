@@ -122,6 +122,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     });
     await page.locator('.rail-grip').hover();
     await page.getByRole('button',{name:'Restore window',exact:true}).click();
+    // Native geometry changes before the asynchronous restore reply renders.
+    // Wait for that reply before beginning a fresh pointer-driven resize.
+    await page.waitForFunction(()=>document.querySelector('#maximize-window').getAttribute('aria-label')==='Maximize window');
     await page.waitForFunction(h=>innerHeight===h,compact.height);
     await page.waitForFunction(h=>document.querySelector('.workspace').getBoundingClientRect().height===h,compact.height);
     const grip=await page.locator('[data-resize-corner=se]').boundingBox();
