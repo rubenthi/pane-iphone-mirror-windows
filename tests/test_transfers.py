@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,6 +33,60 @@ class TransferTests(unittest.TestCase):
             self.assertNotIn('\\', safe)
             self.assertNotIn('\x00', safe)
         self.assertEqual(safe_name('CON.txt'), '_CON.txt')
+        for name in ('CON .txt', 'LPT².log', 'COM³.dat', 'CONOUT$'):
+            self.assertEqual(safe_name(name), '_' + name)
+
+    def test_driver_payloads_stay_out_of_transfer_history(self):
+        private = 'sensitive bytes from a GATT packet'
+        class Peer:
+            async def call(self, op, **fields):
+                raise RuntimeError(private)
+        self.stage(b'example')
+        with patch('handset.bluetooth.store', return_value=self.store):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(Bluetooth()._send(Peer(), *self.store.next_outgoing()))
+            with self.assertRaises(RuntimeError):
+                asyncio.run(Bluetooth()._receive(Peer(), self.remote(b'example'), 'phone'))
+        self.assertNotIn(private, json.dumps(self.store.status()))
+        history = self.store.root / 'transfers.json'
+        self.assertNotIn(private, history.read_text())
+        rows = json.loads(history.read_text())
+        rows[0]['error'] = private
+        history.write_text(json.dumps(rows))
+        reopened = TransferStore(self.store.root, self.downloads)
+        self.assertNotIn(private, json.dumps(reopened.status()))
+        self.assertNotIn(private, history.read_text())
+        self.assertEqual(len(reopened.rows), 2)
+
+    def test_stale_remote_controls_cannot_resurrect_completed_transfer(self):
+        item = self.stage(b'finished')
+        self.store.update(item['id'], state='complete')
+        class Peer:
+            controls = True
+            async def call(self, op, **fields):
+                return {'transfers':[{'id':item['id'],'state':'paused'}]}
+        with patch('handset.bluetooth.store', return_value=self.store):
+            asyncio.run(Bluetooth()._sync_controls(Peer()))
+        self.assertEqual(self.store.row(item['id'])['state'], 'complete')
+
+    def test_repeated_resume_preserves_active_phase(self):
+        item = self.stage(b'example')
+        row, _ = self.store.next_outgoing()
+        self.store.control(item['id'], 'pause')
+        self.store.control(item['id'], 'resume')
+        self.store.control(item['id'], 'resume')
+        self.assertEqual(self.store.row(item['id'])['state'], row['state'])
+
+    def test_destination_staging_collision_preserves_other_file(self):
+        self.downloads.mkdir()
+        remote = self.remote(b'good')
+        identifier, part = self.store.incoming(remote, 'phone')
+        part.write_bytes(b'good')
+        unrelated = self.downloads / ('.pane-' + identifier + '.part')
+        unrelated.write_bytes(b'existing')
+        with self.assertRaises(FileExistsError):
+            self.store.deliver(identifier, part, remote['sha256'])
+        self.assertEqual(unrelated.read_bytes(), b'existing')
 
     def test_chunk_order_limits_and_empty_files(self):
         identifier = self.store.begin('x', 3)['id']

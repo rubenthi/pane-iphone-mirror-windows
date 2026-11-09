@@ -43,6 +43,15 @@ def list_devices(address: tuple[str, int] = USB_HOST) -> list[dict]:
     return [device for device in devices if device["udid"] and device["deviceId"] is not None]
 
 
+def usb_devices(records: list[dict]) -> list[dict]:
+    """Return one physical cable route per phone from Apple's mixed route list."""
+    unique = {}
+    for record in records:
+        if record["connection"] == "USB":
+            unique.setdefault(record["udid"], record)
+    return list(unique.values())
+
+
 @contextmanager
 def open_lockdown(device_id: int, address: tuple[str, int] = USB_HOST):
     with _session(address) as sock:

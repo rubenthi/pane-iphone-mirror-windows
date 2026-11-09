@@ -13,7 +13,7 @@ import threading
 from handset.edition import STREAM_PORT
 
 from handset.device import developer_mode_enabled
-from handset.mux import MuxError, list_devices
+from handset.mux import MuxError, list_devices, usb_devices
 from handset.wifi import wifi_paired_udids, wifi_tunnel
 
 DEVELOPER_MODE_MESSAGE = (
@@ -257,7 +257,7 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
 
 def _usb_udids() -> list[str]:
     try:
-        return [device["udid"] for device in list_devices()]
+        return [device["udid"] for device in usb_devices(list_devices())]
     except MuxError:
         return []
 

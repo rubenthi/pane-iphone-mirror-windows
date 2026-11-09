@@ -15,6 +15,9 @@ from handset.state import DATA_DIR, downloads_folder, read_json, write_json
 MAX_FILE = 2 * 1024**3
 MAX_IPA = 128 * 1024**2
 CHUNK = 256 * 1024
+SEND_ERROR = 'Transfer interrupted. Send the file again.'
+RECEIVE_ERROR = 'File could not be received or verified. Reconnect to retry.'
+RESTART_ERROR = 'Pane restarted. Please send the file again.'
 
 
 def safe_name(value: str) -> str:
@@ -23,7 +26,9 @@ def safe_name(value: str) -> str:
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', '_', value).strip(' .')[:180].rstrip(' .')
     if not name:
         raise ValueError('Missing file name.')
-    if name.split('.')[0].upper() in {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(10)), *(f'LPT{i}' for i in range(10))}:
+    # Windows also reserves superscript port numbers and ignores spaces before an extension.
+    stem = name.split('.')[0].rstrip(' ').upper().translate(str.maketrans('¹²³', '123'))
+    if stem in {'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$', *(f'COM{i}' for i in range(10)), *(f'LPT{i}' for i in range(10))}:
         name = '_' + name
     return name
 
@@ -48,9 +53,17 @@ class TransferStore:
         if not isinstance(self.rows, list):
             self.rows = []
         self.rows = [r for r in self.rows if isinstance(r, dict)][-200:]
+        history_changed = False
         for row in self.rows:
             if row.get('state') in {'queued', 'sending', 'receiving', 'paused'}:
-                row.update(state='failed', error='Pane restarted. Please send the file again.')
+                row.update(state='failed', error=RESTART_ERROR)
+                history_changed = True
+            elif row.get('error') and row['error'] not in (SEND_ERROR, RECEIVE_ERROR, RESTART_ERROR):
+                # Older releases stored driver exceptions containing GATT payload bytes.
+                row['error'] = SEND_ERROR if row.get('direction') == 'to-phone' else RECEIVE_ERROR
+                history_changed = True
+        if history_changed:
+            write_json(root / 'transfers.json', self.rows)
         # Only opaque IDs owned by this module; never paths supplied by the phone.
         for folder in ('staging', 'outbox'):
             directory = root / folder
@@ -132,6 +145,8 @@ class TransferStore:
                     row['beforePause'] = row['state'] if row['state'] != 'paused' else row.get('beforePause', 'queued')
                     row['state'] = 'paused'
                 elif action == 'resume':
+                    if row['state'] != 'paused':
+                        return {'ok': True}
                     row['state'] = row.pop('beforePause', 'queued' if row['direction'] == 'to-phone' else 'receiving')
                 else:
                     row['state'] = 'cancelled'
@@ -209,8 +224,10 @@ class TransferStore:
             # Stage on the destination volume, then link exclusively. This avoids
             # overwrites, works across disks, and publishes only complete files.
             temporary = folder / ('.pane-' + identifier + '.part')
+            created = False
             try:
                 with part.open('rb') as source, temporary.open('xb') as target:
+                    created = True
                     import shutil
                     shutil.copyfileobj(source, target, CHUNK)
                     target.flush()
@@ -233,7 +250,8 @@ class TransferStore:
                 self.update(identifier, state='complete', done=row['size'], savedAs=name)
                 return True
             finally:
-                temporary.unlink(missing_ok=True)
+                if created:
+                    temporary.unlink(missing_ok=True)
                 part.unlink(missing_ok=True)
 
 

@@ -10,7 +10,7 @@ import time
 
 from handset.setup import COMMAND_UUID, RESPONSE_UUID
 from handset.state import DATA_DIR, read_json, write_json
-from handset.transfers import store, digest_file
+from handset.transfers import RECEIVE_ERROR, SEND_ERROR, store, digest_file
 
 WIRE_CHUNK = 4096
 MAX_FRAME = 65536
@@ -280,7 +280,7 @@ class Bluetooth:
             for row in rows:
                 if remote.get('id') == row.get('remoteId', row['id']):
                     current = store().row(row['id'])
-                    if current.get('control'):
+                    if current['state'] in {'complete', 'failed', 'cancelled'} or current.get('control'):
                         continue  # A newer user action arrived while the RPC was in flight.
                     state = remote['state']
                     if state == 'cancelled':
@@ -340,8 +340,9 @@ class Bluetooth:
             retain = True
         except TransferCancelled:
             store().update(identifier, state='cancelled')
-        except BaseException as error:
-            store().update(identifier, state='failed', error=str(error) or 'Transfer disconnected. Send the file again.')
+        except BaseException:
+            # WinRT errors can contain an entire GATT write, including file data.
+            store().update(identifier, state='failed', error=SEND_ERROR)
             raise
         finally:
             if not retain:
@@ -418,8 +419,8 @@ class Bluetooth:
         except TransferCancelled:
             store().update(identifier, state='cancelled')
             return
-        except BaseException as error:
-            store().update(identifier, state='failed', error=str(error) or 'Transfer disconnected. Reconnect to retry.')
+        except BaseException:
+            store().update(identifier, state='failed', error=RECEIVE_ERROR)
             raise
         finally:
             if bulk is not None:

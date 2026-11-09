@@ -171,6 +171,9 @@ fn register_toasts(executable: &str) -> Result<()> {
             fs::create_dir_all(&path)?;
             let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
             link.SetPath(&HSTRING::from(executable))?;
+            if app_id == "Pane.Desktop.Development" {
+                link.SetArguments(windows::core::w!("--development"))?;
+            }
             link.SetIconLocation(&HSTRING::from(executable), 0)?;
             link.SetDescription(windows::core::w!(
                 "Pane — iPhone mirroring and notifications"
@@ -527,7 +530,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
                 {
                     Ok(Ok(a)) => {
                         audio = Some(a);
-                        status.audio="Receiver connected. Select Zephyrus in the iPhone audio menu if needed.".into();
+                        status.audio="Receiver connected. Select this PC in the iPhone audio menu if needed.".into();
                     }
                     _ => {
                         status.audio="Audio not connected. Pair the iPhone, then select this PC in its audio output menu.".into();
@@ -701,9 +704,20 @@ async fn worker(dir: PathBuf) -> Result<()> {
                 }
             }
             Event::Ble(g, connected) if ancs.as_ref().is_some_and(|a| a.generation == g) => {
+                // A callback can queue during setup. Consult the current link before
+                // discarding a live subscription; a lost link needs fresh GATT handles.
+                let connected = ancs
+                    .as_ref()
+                    .and_then(|a| a.device.ConnectionStatus().ok())
+                    .map_or(connected, |s| s == BluetoothConnectionStatus::Connected);
                 status.notifications = if connected {
                     "Connected. Selected notifications will appear on this PC."
                 } else {
+                    ancs = None;
+                    request = None;
+                    queue.clear();
+                    seen.clear();
+                    retry = Some(tokio::time::Instant::now() + Duration::from_secs(30));
                     "iPhone disconnected. Waiting for Bluetooth to reconnect."
                 }
                 .into();
