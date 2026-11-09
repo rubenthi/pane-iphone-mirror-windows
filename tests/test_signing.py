@@ -1,11 +1,41 @@
 import json
+import io
+import queue
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from handset import signing
 
 class SigningTests(unittest.TestCase):
+    def test_certificate_revocation_requires_listed_choice_and_explicit_confirmation(self):
+        prompt = {'id':'current', 'kind':'certificate', 'choices':[{'id':'old-pane'}]}
+        answers = queue.Queue()
+        with patch.dict(signing._STATE, phase='prompt', prompt=prompt), patch.object(signing, '_ANSWERS', answers):
+            for value, confirmation in [('old-pane', False), ('old-pane', 'true'), ('unlisted', True)]:
+                with self.assertRaises(ValueError): signing.answer('current', value, confirmation)
+            self.assertTrue(answers.empty())
+            signing.answer('current', 'old-pane', True)
+            self.assertEqual(answers.get_nowait(), {'value':'old-pane','confirmed':True})
+            self.assertEqual(signing.status()['phase'], 'working')
+            with self.assertRaises(ValueError): signing.answer('current', 'old-pane', True)
+    def test_worker_error_retains_safe_diagnostics_and_clears_credentials(self):
+        process = MagicMock()
+        process.stdin = io.StringIO()
+        process.stdout = io.StringIO(json.dumps({'event': 'error', 'code': 'connection', 'stage': 2, 'note': 'A signing connection failed.'}) + '\n')
+        process.poll.return_value = 1
+        initial = {'email': 'private@example.com', 'password': 'test-secret', 'udid': 'phone'}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(signing._STATE, phase='working', prompt=None), patch.object(signing, '_PROCESS', process):
+            package = Path(directory) / 'staged.ipa'
+            package.write_bytes(b'test')
+            signing._run(process, package, initial)
+            state = signing.status()
+            self.assertEqual((state['phase'], state['code'], state['stage']), ('error', 'connection', 2))
+            self.assertNotIn('test-secret', json.dumps(state))
+            self.assertNotIn('private@example.com', json.dumps(state))
+            self.assertEqual(initial, {})
+            self.assertFalse(package.exists())
+            self.assertTrue(process.stdin.closed)
     def test_protected_storage_hides_values_and_paths(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(signing, 'DATA_DIR', Path(directory)), patch.object(signing, 'protect', side_effect=lambda data, decrypt=False: data[6:] if decrypt else b'cipher'+data):
             signing._storage('account', {'event':'store','key':'../../certificate','value':'private-key'})

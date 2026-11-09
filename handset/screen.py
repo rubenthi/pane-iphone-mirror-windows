@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from handset.edition import STREAM_PORT
 
 from handset.device import developer_mode_enabled
-from handset.mux import MuxError, list_devices
+from handset.mux import MuxError, list_devices, usb_devices
 from handset.wifi import wifi_paired_udids, wifi_tunnel
 
 DEVELOPER_MODE_MESSAGE = (
@@ -21,14 +22,14 @@ DEVELOPER_MODE_MESSAGE = (
     "unlock it, tap Turn On, then press Show screen again."
 )
 
-VIEW_URL = "http://127.0.0.1:8766/"
+VIEW_URL = f"http://127.0.0.1:{STREAM_PORT}/"
 _LOCK = threading.Lock()
 _COMMAND_LOCK = threading.RLock()
 _WORKER = None
 _LOOP = None
 _TASK = None
 _READY = threading.Event()
-_STATE = {"phase": "idle", "udid": None, "url": None, "error": None, "note": None, "transport": None}
+_STATE = {"phase": "idle", "udid": None, "url": None, "error": None, "note": None, "transport": None, "displaySize": None}
 
 
 def screen_status() -> dict:
@@ -42,7 +43,7 @@ def restart_screen(udid: str | None = None) -> dict:
 
 
 def _restart_screen(udid: str | None = None) -> dict:
-    """Nudge the device encoder and keep the HTTP stream on 8766 alive."""
+    """Nudge the device encoder and keep the local HTTP stream alive."""
     import http.client
     from handset.server import upstream_authorization
 
@@ -52,7 +53,7 @@ def _restart_screen(udid: str | None = None) -> dict:
     chosen = (udid or "").strip() or state.get("udid") or _only_udid()
     nudged = False
     for path in ("/restart", "/pli"):
-        conn = http.client.HTTPConnection("127.0.0.1", 8766, timeout=20)
+        conn = http.client.HTTPConnection("127.0.0.1", STREAM_PORT, timeout=20)
         try:
             conn.request("POST", path, body=b"", headers={"Authorization": upstream_authorization()})
             response = conn.getresponse()
@@ -111,7 +112,7 @@ def _start_screen(udid: str | None, transport: str) -> dict:
             return {**screen_status(), "error": "Previous stream is still closing. Try again shortly."}
     with _LOCK:
         note = "Looking for the iPhone on Wi-Fi…" if transport == "wifi" else None
-        _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport)
+        _STATE.update(phase="starting", udid=chosen, url=None, error=None, note=note, transport=transport, displaySize=None)
     _READY.clear()
     _WORKER = threading.Thread(target=_run, args=(chosen, transport), name="handset-screen", daemon=True)
     _WORKER.start()
@@ -144,12 +145,27 @@ def _run(udid: str, transport: str) -> None:
         asyncio.run(run())
         _set(phase="idle", udid=udid, url=None, error="The screen stream stopped.")
     except asyncio.CancelledError:
-        _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None)
+        _set(phase="idle", udid=None, url=None, error=None, note=None, transport=None, displaySize=None)
     except Exception as error:
-        _set(phase="error", udid=udid, url=None, error=_plain(error))
+        message = 'Wi-Fi connection timed out. Retry.' if transport == 'wifi' and isinstance(error, TimeoutError) else _plain(error)
+        _set(phase="error", udid=udid, url=None, error=message, note=None)
 
 
 DISPLAY_SERVICE = "com.apple.coredevice.displayservice"
+
+
+def primary_display_size(info):
+    """Use the integrated display, not a padded virtual wireless framebuffer."""
+    if not isinstance(info, dict) or not isinstance(info.get('displays'), list):
+        return None
+    for display in info['displays']:
+        if not isinstance(display, dict) or display.get('primary') is not True or display.get('external') is not False:
+            continue
+        size = display.get('nativeSize')
+        if (isinstance(size, list) and len(size) == 2
+                and all(type(n) in (int, float) and 0 < n <= 16384 and float(n).is_integer() for n in size)):
+            return dict(width=int(size[0]), height=int(size[1]))
+    return None
 
 
 def _open_tunnel(udid: str, transport: str):
@@ -181,11 +197,21 @@ async def _serve(udid: str, transport: str) -> None:
 async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
     from pymobiledevice3.remote.core_device.display_service import is_media_in_use_error
     from handset.security import ACCESS_TOKEN
+    from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+
+    display_size = None
+    try:
+        async with asyncio.timeout(4):
+            async with DeviceInfoService(rsd) as info:
+                display_size = primary_display_size(await info.get_display_info())
+    except Exception:
+        pass  # Never guess a crop if the device cannot report its aperture.
+    _set(displaySize=display_size)
 
     server = ScreenStreamServer(
         rsd,
         bind="127.0.0.1",
-        http_port=8766,
+        http_port=STREAM_PORT,
         audio_default_on=False,
         password=ACCESS_TOKEN,
     )
@@ -214,7 +240,7 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
                 await task
                 return
             try:
-                reader, writer = await asyncio.open_connection('127.0.0.1', 8766)
+                reader, writer = await asyncio.open_connection('127.0.0.1', STREAM_PORT)
                 writer.close()
                 await writer.wait_closed()
                 break
@@ -231,7 +257,7 @@ async def _stream(rsd, udid: str, ScreenStreamServer) -> None:
 
 def _usb_udids() -> list[str]:
     try:
-        return [device["udid"] for device in list_devices()]
+        return [device["udid"] for device in usb_devices(list_devices())]
     except MuxError:
         return []
 

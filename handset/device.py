@@ -7,7 +7,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from handset.mux import MuxError, list_devices, lockdown_request, open_lockdown
+from handset.mux import MuxError, list_devices, usb_devices
 
 INFO_KEYS = (
     "DeviceName",
@@ -50,7 +50,7 @@ def snapshot() -> dict:
     devices: list[dict] = []
     error = None
     try:
-        devices = list_devices()
+        devices = usb_devices(list_devices())
     except MuxError as exc:
         error = str(exc)
     developer_mode = developer_mode_enabled(devices[0]["udid"]) if len(devices) == 1 else None
@@ -64,19 +64,30 @@ def snapshot() -> dict:
 
 
 def read_handset(udid: str) -> dict:
-    match = next((device for device in list_devices() if device["udid"] == udid), None)
-    if match is None:
+    matches = [device for device in list_devices() if device["udid"] == udid]
+    if not matches:
         raise MuxError("That iPhone is not connected.")
-    with open_lockdown(int(match["deviceId"])) as sock:
-        kind = lockdown_request(sock, "QueryType")
-        if kind.get("Type") != "com.apple.mobile.lockdown":
-            raise MuxError("The phone did not answer as a lockdown service.")
-        result = lockdown_request(sock, "GetValue")
-    if result.get("Error"):
-        return {"udid": udid, "paired": False, "info": {}, "error": _lockdown_error(str(result["Error"]))}
-    values = result.get("Value") if isinstance(result.get("Value"), dict) else {}
-    info = {key: values.get(key) for key in INFO_KEYS if key in values}
-    return {"udid": udid, "paired": True, "info": info}
+    connection = (usb_devices(matches) or matches)[0]["connection"]
+    try:
+        return asyncio.run(_read_existing_session(udid, connection))
+    except Exception as error:
+        raise MuxError("Could not verify the iPhone session. Unlock it and reconnect.") from error
+
+
+async def _read_existing_session(udid: str, connection: str) -> dict:
+    from pymobiledevice3.lockdown import create_using_usbmux
+
+    # Unpaired devices can answer QueryType and GetValue. The library's
+    # paired flag is set only after validating the record and starting a session.
+    async with asyncio.timeout(8):
+        lockdown = await create_using_usbmux(serial=udid, connection_type=connection, autopair=False)
+        try:
+            if not lockdown.paired:
+                return {"udid": udid, "paired": False, "info": {}, "error": _lockdown_error("InvalidHostID")}
+            info = {key: lockdown.all_values[key] for key in INFO_KEYS if key in lockdown.all_values}
+            return {"udid": udid, "paired": True, "info": info}
+        finally:
+            await lockdown.close()
 
 
 def _lockdown_error(code: str) -> str:
@@ -90,14 +101,18 @@ def _lockdown_error(code: str) -> str:
 
 
 def developer_mode_enabled(udid: str) -> bool | None:
-    async def check() -> bool:
+    async def check() -> bool | None:
         from pymobiledevice3.lockdown import create_using_usbmux
 
-        lockdown = await create_using_usbmux(serial=udid, autopair=False)
-        try:
-            return bool(await lockdown.get_developer_mode_status())
-        finally:
-            await lockdown.close()
+        async with asyncio.timeout(8):
+            lockdown = await create_using_usbmux(serial=udid, connection_type="USB", autopair=False)
+            try:
+                if not lockdown.paired:
+                    return None
+                value = await lockdown.get_value(domain="com.apple.security.mac.amfi", key="DeveloperModeStatus")
+                return value if isinstance(value, bool) else None
+            finally:
+                await lockdown.close()
 
     try:
         return asyncio.run(check())

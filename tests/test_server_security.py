@@ -7,6 +7,7 @@ import unittest
 
 from handset.security import ACCESS_TOKEN, MAX_REQUEST_BODY
 from handset.server import Handler, SingleServer
+from unittest.mock import Mock, patch
 
 
 class ServerSecurityTests(unittest.TestCase):
@@ -36,6 +37,25 @@ class ServerSecurityTests(unittest.TestCase):
         status, headers, _ = self.request("GET", "/")
         self.assertEqual(status, 200)
         self.assertEqual(headers.get("X-Frame-Options"), "SAMEORIGIN")
+
+    def test_development_reset_requires_token_safe_profile_and_confirmation(self):
+        route = '/api/development/reset'
+        headers = {'X-Pane-Token': ACCESS_TOKEN}
+        restart = Mock()
+        with patch.object(self.server, 'request_development_reset', restart):
+            self.assertEqual(self.request('POST', route)[0], 403)
+            with patch('handset.server.can_reset_development', return_value=False):
+                self.assertEqual(self.request('POST', route, headers, b'{"confirm":true}')[0], 404)
+            with patch('handset.server.can_reset_development', return_value=True):
+                self.assertEqual(self.request('POST', route, headers, b'{"confirm":1}')[0], 400)
+                with patch('handset.server.setup.status', return_value={'phase':'working'}):
+                    self.assertEqual(self.request('POST', route, headers, b'{"confirm":true}')[0], 409)
+                restart.assert_not_called()
+                with patch('handset.server.setup.status', return_value={'phase':'idle'}), patch(
+                    'handset.server.signing.status', return_value={'phase':'idle'}
+                ):
+                    self.assertEqual(self.request('POST', route, headers, b'{"confirm":true}')[0], 200)
+                    restart.assert_called_once_with()
 
     def test_auth_token_is_available_to_same_origin(self):
         status, _, body = self.request("GET", "/api/auth")
@@ -86,13 +106,22 @@ class ServerSecurityTests(unittest.TestCase):
 
     def test_bluetooth_preferences_require_same_origin_token(self):
         for method, path in [('GET', '/api/preferences'), ('POST', '/api/preferences'),
-                             ('GET', '/api/bluetooth/devices'), ('POST', '/api/bluetooth/settings')]:
+                             ('GET', '/api/bluetooth/devices'), ('POST', '/api/bluetooth/settings'),
+                             ('POST', '/api/notifications/settings')]:
             with self.subTest(method=method, path=path):
                 self.assertEqual(self.request(method, path)[0], 403)
         status, _, _ = self.request('POST', '/api/preferences', {
             'X-Pane-Token': ACCESS_TOKEN, 'Content-Type': 'application/json',
         }, b'{"background_enabled":"false"}')
         self.assertEqual(status, 400)
+
+    def test_notification_settings_action_opens_only_the_fixed_settings_page(self):
+        headers = {'X-Pane-Token': ACCESS_TOKEN, 'Content-Type': 'application/json'}
+        with patch('handset.server.notifications.open_notification_settings') as launch:
+            status, _, body = self.request('POST', '/api/notifications/settings', headers, b'{}')
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body), {'ok': True})
+            launch.assert_called_once_with()
 
 
 if __name__ == "__main__":

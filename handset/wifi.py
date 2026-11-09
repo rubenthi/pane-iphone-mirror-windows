@@ -10,12 +10,18 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import os
 import socket
 import struct
 from typing import Optional
 
 BONJOUR_TIMEOUT = 8.0
+WIFI_CONNECT_TIMEOUT = 5.0
+WIFI_PROVIDER_TIMEOUT = 25.0
+WIFI_CLOSE_TIMEOUT = 2.0
+WIFI_TCP_TIMEOUT = 5.0
+WIFI_STARTUP_TIMEOUT = 45.0
 _MDNS_GROUP = "224.0.0.251"
 _MDNS_PORT = 5353
 _bonjour_patched = False
@@ -136,39 +142,115 @@ def pair_for_wifi(udid: str) -> dict:
 
 
 async def _wifi_provider(serial: Optional[str], autopair: bool, remotepairing_fallback: bool = True):
+    from pymobiledevice3 import bonjour
+    from pymobiledevice3.exceptions import ConnectionTerminatedError
     from pymobiledevice3.remote import tunnel_service
 
     _patch_bonjour()
-    services = await tunnel_service.get_remote_pairing_tunnel_services(
-        udid=serial, bonjour_timeout=BONJOUR_TIMEOUT
+    alt_irks = {}
+    pairing_rejected = False
+    for identifier, _, record in tunnel_service.iter_remote_pair_records_by_identifier():
+        if serial is not None and identifier != serial:
+            continue
+        key = record.get(tunnel_service.PEER_ALT_IRK_KEY)
+        if isinstance(key, bytes) and len(key) == 16:
+            alt_irks[identifier] = key
+
+    async def close_candidate(service):
+        # The library's connect helper does not close when cancellation lands
+        # during pair verification. Own the candidate until its whole handshake
+        # succeeds, and never let a broken peer stall cleanup indefinitely.
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(WIFI_CLOSE_TIMEOUT):
+                await service.close()
+
+    if alt_irks:
+        try:
+            async with asyncio.timeout(WIFI_PROVIDER_TIMEOUT):
+                # The iterator yields a service as soon as its first address
+                # arrives, then never yields it again. Collect the bounded
+                # browse window so a later IPv4 answer is not lost behind IPv6.
+                answers = await bonjour.browse_remotepairing(timeout=BONJOUR_TIMEOUT)
+                candidates, seen = [], set()
+                for answer in answers:
+                    identifier = tunnel_service._match_remote_pair_record(answer, alt_irks)
+                    if identifier is None:
+                        continue
+                    for address in answer.addresses:
+                        try:
+                            host = address.full_ip
+                        except OSError:
+                            continue  # An adapter may have disappeared since discovery.
+                        key = identifier, host, answer.port
+                        if key not in seen:
+                            seen.add(key)
+                            candidates.append(key)
+                candidates.sort(key=lambda candidate: ':' in candidate[1])
+                for identifier, host, port in candidates:
+                    service = tunnel_service.RemotePairingTunnelService(identifier, host, port)
+                    original_validate = service._validate_pairing
+                    async def validate_pairing(original=original_validate):
+                        nonlocal pairing_rejected
+                        valid = await original()
+                        if valid is False:
+                            pairing_rejected = True
+                        return valid
+                    # Keep the library's cryptographic validation unchanged;
+                    # distinguish its explicit rejection from an interrupted
+                    # connection, which raises the same exception downstream.
+                    service._validate_pairing = validate_pairing
+                    try:
+                        # Bound pair verification too, not just the library's
+                        # initial TCP dial. Return immediately on first success.
+                        async with asyncio.timeout(WIFI_CONNECT_TIMEOUT):
+                            await service.connect(autopair=False)
+                    except BaseException as error:
+                        await close_candidate(service)
+                        if not isinstance(error, (ConnectionTerminatedError, asyncio.IncompleteReadError,
+                                                  TimeoutError, OSError)):
+                            raise
+                    else:
+                        return service, None
+                    finally:
+                        service._validate_pairing = original_validate
+        except TimeoutError:
+            pass
+    if pairing_rejected:
+        raise WifiPairingRejectedError('Wi-Fi pairing rejected. Reconnect USB once to repair Wi-Fi.')
+    raise WifiNotFoundError(
+        "The iPhone was not found on the network. Put the PC and the iPhone on the same Wi-Fi, "
+        "keep the iPhone unlocked, and set that Wi-Fi to Private in Windows settings."
     )
-    if not services:
-        raise WifiNotFoundError(
-            "The iPhone was not found on the network. Put the PC and the iPhone on the same Wi-Fi, "
-            "keep the iPhone unlocked, and set that Wi-Fi to Private in Windows settings."
-        )
-    for extra in services[1:]:
-        await extra.close()
-    return services[0], None
 
 
 class WifiNotFoundError(RuntimeError):
     pass
 
 
+class WifiPairingRejectedError(RuntimeError):
+    pass
+
+
 def wifi_tunnel(udid: str):
     """An RSD tunnel to ``udid`` over Wi-Fi, used like ``PreferredRsdTunnel``."""
-    from pymobiledevice3.remote import userspace_tunnel
+    from pymobiledevice3.remote import tunnel_service, userspace_tunnel
 
     class WifiRsdTunnel(userspace_tunnel.UserspaceRsdTunnel):
         # The base class always starts from USB (usbmux); swap in the network
         # provider for the duration of this tunnel's setup only.
         async def _aopen_locked(self):
             original = userspace_tunnel._create_no_root_tunnel_provider
+            original_connection = tunnel_service.create_connection
             userspace_tunnel._create_no_root_tunnel_provider = _wifi_provider
+            # The dependency makes one blocking socket dial during TCP tunnel
+            # setup. Bound that call separately: an asyncio deadline cannot
+            # interrupt a blocking OS connect on the event-loop thread.
+            tunnel_service.create_connection = functools.partial(original_connection, timeout=WIFI_TCP_TIMEOUT)
             try:
-                return await super()._aopen_locked()
+                async with asyncio.timeout(WIFI_STARTUP_TIMEOUT):
+                    return await super()._aopen_locked()
             finally:
+                tunnel_service.create_connection = original_connection
                 userspace_tunnel._create_no_root_tunnel_provider = original
 
     return WifiRsdTunnel(serial=udid, autopair=False)

@@ -16,10 +16,21 @@ from handset.wifi import pair_for_wifi, wifi_paired_udids
 COMMAND_UUID = '8a5d1001-7b44-4b1b-9bb6-a42e447a0001'
 RESPONSE_UUID = '8a5d1002-7b44-4b1b-9bb6-a42e447a0001'
 _LOCK = threading.RLock()
-_STATE = {'phase': 'idle', 'step': 'connect', 'note': 'Connect and unlock your iPhone, then tap Trust.'}
-_saved = read_json(DATA_DIR / 'setup.json', {})
-if isinstance(_saved, dict):
-    _STATE.update({k: v for k, v in _saved.items() if k in {'step', 'udid', 'usbReady', 'revealed', 'developerEnabled', 'installed'}})
+def initial_state():
+    state = {'phase': 'idle', 'step': 'connect', 'note': 'Connect and unlock your iPhone, then tap Trust.'}
+    saved = read_json(DATA_DIR / 'setup.json', {})
+    if isinstance(saved, dict):
+        state.update({k: v for k, v in saved.items() if k in {'step', 'udid', 'usbReady', 'revealed', 'developerEnabled', 'installed'}})
+    return state
+
+
+_STATE = initial_state()
+
+
+def reload_state():
+    with _LOCK:
+        _STATE.clear()
+        _STATE.update(initial_state())
 
 
 def status():
@@ -130,6 +141,13 @@ async def _perform(action, udid, package):
             return
         enabled = await lockdown.get_developer_mode_status()
         if not enabled:
+            _set(developerEnabled=False)
+            if action in {'developer', 'check'}:
+                # Retry the reveal here as well as during initial USB setup: a
+                # phone can reach this step with the toggle still hidden.
+                await AmfiService(lockdown).reveal_developer_mode_option_in_ui()
+                _set(step='developer', revealed=True)
+                raise ValueError('Developer Mode is not enabled yet. Pane asked the iPhone to reveal it in Settings → Privacy & Security. Open Settings again, switch it on, restart the iPhone and confirm Turn On. Device restrictions may prevent it from appearing.')
             raise ValueError('Developer Mode is not enabled yet. Switch it on, restart the iPhone and confirm Turn On.')
         if action == 'developer':
             _set(phase='ready', step='install', developerEnabled=True, note='Developer Mode is enabled. Sign and install Pane next.')

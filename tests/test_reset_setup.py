@@ -53,7 +53,7 @@ class ResetTests(unittest.TestCase):
             (root/'device').mkdir(parents=True)
             (root/'device'/'remote_new.plist').write_bytes(b'current')
             common=MagicMock(_HOMEFOLDER=legacy)
-            with patch.object(state,'DATA_DIR',root), patch.dict('sys.modules',{'pymobiledevice3':MagicMock(common=common)}):
+            with patch.object(state,'DEVELOPMENT',False), patch.object(state,'DATA_DIR',root), patch.dict('sys.modules',{'pymobiledevice3':MagicMock(common=common)}):
                 prepare_state(root)
                 state.isolate_device_state()
                 self.assertEqual((root/'device'/'remote_phone.plist').read_bytes(),b'paired')
@@ -122,6 +122,45 @@ class SetupTests(unittest.TestCase):
         (setup.DATA_DIR / 'binding.json').unlink()
         with patch.object(setup, 'wifi_paired_udids', return_value=['legacy-phone']):
             self.assertFalse(setup.status()['onboardingRequired'])
+
+    def test_disabled_developer_checks_reveal_hidden_toggle_without_enabling(self):
+        for action in ('developer', 'check'):
+            with self.subTest(action=action):
+                lockdown = MagicMock(close=AsyncMock(), get_developer_mode_status=AsyncMock(return_value=False))
+                amfi = MagicMock(reveal_developer_mode_option_in_ui=AsyncMock())
+                modules = {
+                    'pymobiledevice3.lockdown': MagicMock(create_using_usbmux=AsyncMock(return_value=lockdown)),
+                    'pymobiledevice3.services.amfi': MagicMock(AmfiService=MagicMock(return_value=amfi)),
+                    'pymobiledevice3.services.house_arrest': MagicMock(),
+                    'pymobiledevice3.services.installation_proxy': MagicMock(),
+                }
+                with patch.dict('sys.modules', modules), patch.dict(setup._STATE, developerEnabled=True), patch.object(setup, '_companion', new_callable=AsyncMock) as companion:
+                    with self.assertRaisesRegex(ValueError, 'Pane asked the iPhone to reveal'):
+                        asyncio.run(_perform(action, 'phone', None))
+                    self.assertFalse(setup.status()['developerEnabled'])
+                    self.assertTrue(setup.status()['revealed'])
+                    self.assertEqual(setup.status()['step'], 'developer')
+                    companion.assert_not_awaited()
+                amfi.reveal_developer_mode_option_in_ui.assert_awaited_once()
+                amfi.enable_developer_mode.assert_not_called()
+                amfi.enable_developer_mode_post_restart.assert_not_called()
+                lockdown.close.assert_awaited_once()
+
+    def test_developer_reveal_rejection_is_not_reported_as_success(self):
+        lockdown = MagicMock(close=AsyncMock(), get_developer_mode_status=AsyncMock(return_value=False))
+        amfi = MagicMock(reveal_developer_mode_option_in_ui=AsyncMock(side_effect=RuntimeError('Device refused reveal')))
+        modules = {
+            'pymobiledevice3.lockdown': MagicMock(create_using_usbmux=AsyncMock(return_value=lockdown)),
+            'pymobiledevice3.services.amfi': MagicMock(AmfiService=MagicMock(return_value=amfi)),
+            'pymobiledevice3.services.house_arrest': MagicMock(),
+            'pymobiledevice3.services.installation_proxy': MagicMock(),
+        }
+        with patch.dict('sys.modules', modules), patch.dict(setup._STATE, developerEnabled=True, revealed=False):
+            with self.assertRaisesRegex(RuntimeError, 'Device refused reveal'):
+                asyncio.run(_perform('developer', 'phone', None))
+            self.assertFalse(setup.status()['developerEnabled'])
+            self.assertFalse(setup.status()['revealed'])
+        lockdown.close.assert_awaited_once()
 
     def test_developer_check_does_not_require_companion_already_installed(self):
         lockdown = MagicMock()

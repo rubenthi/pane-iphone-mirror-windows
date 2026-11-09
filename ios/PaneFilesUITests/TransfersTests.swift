@@ -1,7 +1,7 @@
 import XCTest
 
 final class TransfersTests: XCTestCase {
-    func testTransferActionsAndUSBSetup() {
+    func testTransferActionsAndUSBSetup() throws {
         let app = XCUIApplication()
         app.launch()
         XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 15))
@@ -13,8 +13,78 @@ final class TransfersTests: XCTestCase {
         add(preview)
         app.buttons["laptopConnection"].tap()
         XCTAssertTrue(app.buttons["Activate USB link"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["2.4.0"].exists || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Installed version")).count > 0)
+        XCTAssertTrue(app.switches["keepScreenAwake"].exists)
+        XCTAssertTrue(app.staticTexts["transferTransportHelp"].label.contains("files continue over Bluetooth"))
+        let version = try XCTUnwrap(Bundle(for: Self.self).object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        let elements = app.descendants(matching: .any)
+        let combined = elements.matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND (value == %@ OR label ENDSWITH %@)",
+            "Installed version", version, version
+        )).firstMatch
+        let label = app.staticTexts["Installed version"]
+        let value = app.staticTexts[version]
+        func versionRowIsVisible() -> Bool {
+            (combined.exists && combined.isHittable) ||
+                (label.exists && label.isHittable && value.exists && value.isHittable)
+        }
+        for _ in 0..<5 {
+            if versionRowIsVisible() { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(versionRowIsVisible(), "Expected Installed version to show \(version) in App updates.")
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Send files"].waitForExistence(timeout: 5))
     }
+
+    func testPauseResumeCancelInBothDirections() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-transfers"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 15))
+        for (id, name) in [(String(repeating: "1", count: 32), "Phone test file.txt"),
+                           (String(repeating: "2", count: 32), "Laptop test file.txt")] {
+            let toggle = app.buttons["transfer-toggle-\(id)"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            XCTAssertEqual(toggle.label, "Pause")
+            toggle.tap()
+            XCTAssertEqual(toggle.label, "Resume")
+            toggle.tap()
+            XCTAssertEqual(toggle.label, "Pause")
+            let cancel = app.buttons["transfer-cancel-\(id)"]
+            XCTAssertTrue(cancel.exists)
+            cancel.tap()
+            XCTAssertFalse(app.staticTexts[name].exists)
+            XCTAssertFalse(toggle.exists)
+            XCTAssertFalse(cancel.exists)
+        }
+    }
+
+    func testKeepAwakePreferencePersistsInIsolatedFixture() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-transfers"]
+        app.launch()
+        XCTAssertTrue(app.buttons["laptopConnection"].waitForExistence(timeout: 15))
+        app.buttons["laptopConnection"].tap()
+        let toggle = app.switches["keepScreenAwake"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        let original = toggle.value as? String ?? "invalid"
+        XCTAssertTrue(["0", "1"].contains(original))
+        let changed = original == "1" ? "0" : "1"
+        // SwiftUI exposes the labeled row as a switch. Hit the trailing
+        // switch control rather than the center of its multiline label.
+        print("Keep-awake control: \(toggle.debugDescription)")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let changedValue = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", changed), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [changedValue], timeout: 5), .completed)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["laptopConnection"].waitForExistence(timeout: 15))
+        app.buttons["laptopConnection"].tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, changed)
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let restoredValue = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", original), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [restoredValue], timeout: 5), .completed)
+    }
+
 }

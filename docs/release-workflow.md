@@ -16,13 +16,15 @@ Copy-Item signer/target/release/pane-signer.exe signer/pane-signer.exe -Force
 cargo build --release --locked --manifest-path native/Cargo.toml
 ```
 
-The fetch script restores the exact unsigned iPhone companion used by the previous compatible release and verifies its SHA-256. The IPA, native outputs, virtual environment and build directories are ignored by Git.
+The fetch script verifies the local unsigned IPA against the macOS build of the matching iPhone source. On a fresh Windows checkout it restores the pinned IPA from the release or the corresponding GitHub Actions run. The Actions fallback uses an authenticated GitHub CLI. The IPA, native outputs, virtual environment and build directories are ignored by Git.
 
 ## Edit and run
 
 Use a local feature branch. Close any other copy of Pane and run `.\.venv\Scripts\python.exe -m handset.app`. Restart it after Python, HTML, CSS or JavaScript edits. Rebuild the corresponding helper after Rust edits. A Windows shortcut can target `.venv\Scripts\pythonw.exe` with arguments `-m handset.app` and its **Start in** folder set to the checkout.
 
-Source runs use the existing Windows Pane data directory and skip the desktop release updater. For isolated development, set `PANE_DATA_DIR` to a separate test folder and `PANE_PORT` to an unused port before launching. The installed release executable remains available separately.
+Source runs appear as **Pane (Development)**. They store settings, pairing records, and the browser profile in `%LOCALAPPDATA%\Pane (Development)` and use ports 8775 and 8776 for the UI and mirror. The downloaded **Pane** release uses `%LOCALAPPDATA%\Pane` and ports 8765 and 8766. To run a packaged executable as **Pane (Development)**, launch `Pane.exe --development`. This uses the same development profile and ports as source runs, and never checks for or applies production desktop updates. Launching `Pane.exe` without the switch remains production **Pane**. The local development shortcut targets the executable with `--development`; development reset relaunches retain that switch. Only the production packaged release checks for desktop updates. For a disposable instance, set `PANE_DATA_DIR`, `PANE_PORT`, and `PANE_STREAM_PORT` before launching.
+
+Choose **Reset development app** in Settings or at the bottom of first-run setup to clear the standard development profile and reopen the Connect step. Files already saved in Downloads remain available.
 
 ## Build and upload a release
 

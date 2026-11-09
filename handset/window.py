@@ -8,13 +8,15 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes as W
 import math
+import logging
 import os
 import threading
 
 DRAWER = 416
 TAB = 60
 DEFAULT_ASPECT = 390 / 844
-SCREEN_CHROME = 14  # CSS: symmetric 7px bezel on all four sides
+SCREEN_CHROME = 6  # CSS: one symmetric 3px bezel on all four sides
+PANEL_MIN_HEIGHT = 540
 
 
 def _native_pointer(handle):
@@ -24,11 +26,12 @@ def _native_pointer(handle):
     return IntPtr(Int64(ctypes.c_ssize_t(handle).value))
 
 
-def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760):
+def dimensions(aspect=DEFAULT_ASPECT, expanded=False, work_width=1920, work_height=1080, preferred_height=760, *, work_margin=48):
     if type(expanded) is not bool or type(aspect) not in (float, int) or not math.isfinite(aspect) or not .35 <= aspect <= 2.5:
         raise ValueError('Invalid window layout.')
     extra = TAB
-    height = max(120, min(preferred_height, work_height - 48, (work_width - extra - 48 - SCREEN_CHROME) / aspect + SCREEN_CHROME))
+    preferred_height = max(PANEL_MIN_HEIGHT, preferred_height) if expanded else preferred_height
+    height = max(120, min(preferred_height, work_height - work_margin, (work_width - extra - work_margin - SCREEN_CHROME) / aspect + SCREEN_CHROME))
     # Derive width from the integer height Windows actually receives. Using
     # a fractional drag height here distorts wider displays after rounding.
     height = round(height)
@@ -53,6 +56,9 @@ class FloatingWindow:
         self._restore_height = self.preferred_height
         self._lock = threading.RLock()
         self._geometry = dimensions()
+        self._clip_children = set()
+        self._repair_queued = False
+        self._dpi_queued = False
         if os.name != 'nt':
             return
         self.u = ctypes.WinDLL('user32', use_last_error=True)
@@ -73,6 +79,8 @@ class FloatingWindow:
             'GetWindowRgn': ([W.HWND, W.HRGN], ctypes.c_int),
             'GetWindowRect': ([W.HWND, ctypes.POINTER(W.RECT)], W.BOOL),
             'GetDpiForWindow': ([W.HWND], W.UINT),
+            'GetWindowDpiAwarenessContext': ([W.HWND], W.HANDLE),
+            'AreDpiAwarenessContextsEqual': ([W.HANDLE, W.HANDLE], W.BOOL),
             'ShowWindow': ([W.HWND, ctypes.c_int], W.BOOL),
             'SetForegroundWindow': ([W.HWND], W.BOOL),
             'PostMessageW': ([W.HWND, W.UINT, W.WPARAM, W.LPARAM], W.BOOL),
@@ -136,8 +144,17 @@ class FloatingWindow:
             self._form.Activated += disable_backdrop
             from System.Drawing import Color
             from System.Windows.Forms import Timer
+            # Newly exposed pixels should match Pane while WebView2 repaints.
+            self._form.BackColor = Color.FromArgb(24, 25, 27)
             self._form.webview.DefaultBackgroundColor = Color.Transparent
             self.layout(False, DEFAULT_ASPECT)
+            # Native WebView2 child bounds can trail the form resize. Repair
+            # after its resize events instead of waiting for the watchdog.
+            self._form.Resize += self._queue_region_repair
+            self._form.webview.Resize += self._queue_region_repair
+            self._form.webview.HandleCreated += self._queue_region_repair
+            self._attach_display_messages()
+            self._form.HandleCreated += lambda *_: self._attach_display_messages()
             # WebView2 can recreate its child renderer after navigation, DPI or
             # GPU changes. Clip its native hosts as well as the WinForms parent.
             self._shape_timer = Timer()
@@ -148,12 +165,70 @@ class FloatingWindow:
             return True
         return self._on_ui(configure)
 
-    def status(self):
-        return {**self._geometry, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
+    def _attach_display_messages(self):
+        # The .NET Framework host may suppress Form.DpiChanged unless its own
+        # application config also opts in. Observe the actual native message;
+        # keep WinForms' window procedure and WebView2 child notifications intact.
+        self._comctl = ctypes.WinDLL('comctl32', use_last_error=True)
+        message_type = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, W.HWND, W.UINT,
+                                         W.WPARAM, W.LPARAM, ctypes.c_size_t, ctypes.c_size_t)
+        self._comctl.SetWindowSubclass.argtypes = [W.HWND, message_type, ctypes.c_size_t, ctypes.c_size_t]
+        self._comctl.SetWindowSubclass.restype = W.BOOL
+        self._comctl.RemoveWindowSubclass.argtypes = [W.HWND, message_type, ctypes.c_size_t]
+        self._comctl.RemoveWindowSubclass.restype = W.BOOL
+        self._comctl.DefSubclassProc.argtypes = [W.HWND, W.UINT, W.WPARAM, W.LPARAM]
+        self._comctl.DefSubclassProc.restype = ctypes.c_ssize_t
+        @message_type
+        def messages(hwnd, message, wparam, lparam, identifier, data):
+            result = self._comctl.DefSubclassProc(hwnd, message, wparam, lparam)
+            try:
+                if message == 0x02e0:  # WM_DPICHANGED
+                    self._queue_dpi_layout()
+                elif message == 0x0082:  # WM_NCDESTROY
+                    self._comctl.RemoveWindowSubclass(hwnd, self._display_messages, identifier)
+            except Exception:
+                # Exceptions must never escape a native window-procedure callback.
+                logging.exception('Could not update Pane for the display density change.')
+            return result
+        self._display_messages = messages  # Keep the native callback alive.
+        if not self._comctl.SetWindowSubclass(self._form.Handle.ToInt64(), messages, 0x50414e45, 0):
+            raise OSError('Windows could not attach the display-density handler.')
 
-    def layout(self, expanded, aspect):
+    def _queue_dpi_layout(self):
+        if self._dpi_queued or self._form.IsDisposed or not self._form.IsHandleCreated:
+            return
+        from System import Action
+        self._dpi_queued = True
+        def relayout():
+            self._dpi_queued = False
+            if not self._form.IsDisposed:
+                self.layout(self.expanded, self.aspect)
+        # WM_DPICHANGED must finish updating GetDpiForWindow first. WebView2
+        # then follows the new monitor scale and redraws at physical resolution.
+        self._form.BeginInvoke(Action(relayout))
+
+    def _queue_region_repair(self, *_):
+        if self._repair_queued or self._form.IsDisposed or not self._form.IsHandleCreated:
+            return
+        from System import Action
+        self._repair_queued = True
+        def repair():
+            self._repair_queued = False
+            if not self._form.IsDisposed:
+                self._repair_regions()
+        self._form.BeginInvoke(Action(repair))
+
+    def status(self):
+        density = {}
+        if self.handle:
+            density = {'dpi': self.u.GetDpiForWindow(self.handle),
+                       'per_monitor_v2': bool(self.u.AreDpiAwarenessContextsEqual(
+                           self.u.GetWindowDpiAwarenessContext(self.handle), -4))}
+        return {**self._geometry, **density, 'native': bool(self.handle), 'pinned': self.pinned, 'maximized': self.maximized}
+
+    def layout(self, expanded, aspect, *, resize_corner=None):
         if self._form is not None and self._form.InvokeRequired:
-            return self._on_ui(lambda: self.layout(expanded, aspect))
+            return self._on_ui(lambda: self.layout(expanded, aspect, resize_corner=resize_corner))
         with self._lock:
             if self.handle and self.u.IsIconic(self.handle):
                 return self.status()
@@ -167,11 +242,23 @@ class FloatingWindow:
                 info = MonitorInfo(); info.size = ctypes.sizeof(info)
                 if self.u.GetMonitorInfoW(self.u.MonitorFromWindow(self.handle, 2), ctypes.byref(info)):
                     work = info.work
-                geometry = dimensions(aspect, expanded, (work.right-work.left)/scale, (work.bottom-work.top)/scale, self.preferred_height)
                 rect = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(rect))
+                available_width, available_height = work.right-work.left, work.bottom-work.top
+                if resize_corner:
+                    available_width = rect.right-work.left if 'w' in resize_corner else work.right-rect.left
+                    available_height = rect.bottom-work.top if 'n' in resize_corner else work.bottom-rect.top
+                # A placement gutter is useful for normal layout. Applying it
+                # again inside an anchored resize budget can shrink an existing
+                # window while the user is trying to grow it near a screen edge.
+                geometry = dimensions(aspect, expanded, available_width/scale, available_height/scale,
+                                      self.preferred_height, work_margin=0 if resize_corner else 48)
                 width, height = round(geometry['width']*scale), round(geometry['height']*scale)
-                x = min(max(rect.left, work.left), work.right-width)
-                y = min(max(rect.top, work.top), work.bottom-height)
+                if resize_corner:
+                    x = rect.right-width if 'w' in resize_corner else rect.left
+                    y = rect.bottom-height if 'n' in resize_corner else rect.top
+                else:
+                    x = min(max(rect.left, work.left), work.right-width)
+                    y = min(max(rect.top, work.top), work.bottom-height)
                 def rounded(left, top, right, bottom, radius):
                     return self.g.CreateRoundRectRgn(*(round(v*scale) for v in (left, top, right, bottom, radius*2, radius*2)))
                 pw, h = geometry['phone_width'], geometry['height']
@@ -202,7 +289,9 @@ class FloatingWindow:
                 if width != rect.right-rect.left or height != rect.bottom-rect.top:
                     self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, x, y, width, height, 0x0110)
                     self._form.webview.SetBounds(0, 0, width, height)
-                    self.u.RedrawWindow(self.handle, None, None, 0x0181)
+                    # Queue paint after the browser receives its resize event.
+                    # UPDATENOW paints the old browser surface at the new size.
+                    self.u.RedrawWindow(self.handle, None, None, 0x0081)
                 else:
                     self.u.SetWindowPos(self.handle, -1 if self.pinned else -2, 0, 0, 0, 0, 0x0013)
             self.aspect, self.expanded, self._geometry = aspect, expanded, geometry
@@ -247,14 +336,21 @@ class FloatingWindow:
                 self.g.DeleteObject(actual)
         try:
             apply(self.handle)
+            seen = set()
             @self.callback
             def child(hwnd, _):
                 rect = W.RECT(); self.u.GetWindowRect(hwnd, ctypes.byref(rect))
+                seen.add(hwnd)
                 # Only full-surface browser hosts, never small controls/popups.
-                if abs((rect.right-rect.left)-(parent.right-parent.left)) <= 2 and abs((rect.bottom-rect.top)-(parent.bottom-parent.top)) <= 2:
+                full_size = abs((rect.right-rect.left)-(parent.right-parent.left)) <= 2 and abs((rect.bottom-rect.top)-(parent.bottom-parent.top)) <= 2
+                if full_size or hwnd in self._clip_children:
+                    # A previously identified surface still needs the new clip
+                    # while its asynchronous bounds lag behind the parent.
+                    self._clip_children.add(hwnd)
                     apply(hwnd, rect.left-parent.left, rect.top-parent.top)
                 return True
             self.u.EnumChildWindows(self.handle, child, 0)
+            self._clip_children.intersection_update(seen)
         finally:
             self.g.DeleteObject(expected)
 
@@ -269,17 +365,9 @@ class FloatingWindow:
             corner = payload.get('corner', 'se')
             if corner not in ('nw', 'ne', 'sw', 'se'):
                 raise ValueError('Invalid resize corner.')
-            before = W.RECT()
-            if self.handle: self.u.GetWindowRect(self.handle, ctypes.byref(before))
-            self.preferred_height = height
+            self.preferred_height = max(PANEL_MIN_HEIGHT, height) if self.expanded else height
             self.maximized = False
-            result = self.layout(self.expanded, self.aspect)
-            if self.handle:
-                after = W.RECT(); self.u.GetWindowRect(self.handle, ctypes.byref(after))
-                x = before.right - (after.right-after.left) if 'w' in corner else after.left
-                y = before.bottom - (after.bottom-after.top) if 'n' in corner else after.top
-                self.u.SetWindowPos(self.handle, 0, x, y, 0, 0, 0x0015)
-            return result
+            return self.layout(self.expanded, self.aspect, resize_corner=corner)
         if action == 'maximize':
             if not self.maximized:
                 self._restore_height = self.preferred_height

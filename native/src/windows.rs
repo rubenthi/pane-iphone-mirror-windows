@@ -42,7 +42,13 @@ use windows::{
     core::{GUID, HSTRING},
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-const APP_ID: &str = "Pane.Desktop";
+fn app_identity() -> (&'static str, &'static str) {
+    if std::env::var("PANE_DEVELOPMENT").as_deref() == Ok("1") {
+        ("Pane.Desktop.Development", "Pane (Development)")
+    } else {
+        ("Pane.Desktop", "Pane")
+    }
+}
 const ANCS: GUID = GUID::from_u128(0x7905f431_b5ce_4e99_a40f_4b1e122d00d0);
 const SOURCE: GUID = GUID::from_u128(0x9fbf120d_6301_42d9_8c58_25e699a21dbd);
 const CONTROL: GUID = GUID::from_u128(0x69d1d8f3_45e1_49a8_9821_9bbdfdaad9d9);
@@ -55,6 +61,10 @@ struct Session {
     desktop_executable: String,
     #[serde(default)]
     helper_executable: String,
+}
+
+fn audio_requested(prefs: &Preferences, session: &Session) -> bool {
+    prefs.audio_enabled && session.desktop_pid != 0 && !prefs.audio_device_id.is_empty()
 }
 enum Event {
     Config,
@@ -150,6 +160,7 @@ fn register_toasts(executable: &str) -> Result<()> {
         },
     };
     use windows::core::Interface;
+    let (app_id, name) = app_identity();
     // An unpackaged desktop app needs a Start-menu shortcut carrying its AUMID.
     // Use the actual Pane executable, never the temporary PyInstaller directory.
     if !executable.is_empty() && Path::new(executable).is_file() {
@@ -160,6 +171,9 @@ fn register_toasts(executable: &str) -> Result<()> {
             fs::create_dir_all(&path)?;
             let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
             link.SetPath(&HSTRING::from(executable))?;
+            if app_id == "Pane.Desktop.Development" {
+                link.SetArguments(windows::core::w!("--development"))?;
+            }
             link.SetIconLocation(&HSTRING::from(executable), 0)?;
             link.SetDescription(windows::core::w!(
                 "Pane — iPhone mirroring and notifications"
@@ -171,19 +185,21 @@ fn register_toasts(executable: &str) -> Result<()> {
             };
             let mut value = PROPVARIANT::default();
             (*value.Anonymous.Anonymous).vt = VT_LPWSTR;
-            (*value.Anonymous.Anonymous).Anonymous.pwszVal =
-                SHStrDupW(windows::core::w!("Pane.Desktop"))?;
+            (*value.Anonymous.Anonymous).Anonymous.pwszVal = SHStrDupW(&HSTRING::from(app_id))?;
             store.SetValue(&key, &value)?;
             store.Commit()?;
             let file: IPersistFile = link.cast()?;
-            file.Save(&HSTRING::from(path.join("Pane.lnk").as_os_str()), true)?;
+            file.Save(
+                &HSTRING::from(path.join(format!("{name}.lnk")).as_os_str()),
+                true,
+            )?;
         }
     }
     let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
-    let (key, _) = hkcu.create_subkey(format!("Software\\Classes\\AppUserModelId\\{APP_ID}"))?;
-    key.set_value("DisplayName", &"Pane")?;
+    let (key, _) = hkcu.create_subkey(format!("Software\\Classes\\AppUserModelId\\{app_id}"))?;
+    key.set_value("DisplayName", &name)?;
     unsafe {
-        SetCurrentProcessExplicitAppUserModelID(windows::core::w!("Pane.Desktop"))?;
+        SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(app_id))?;
     }
     Ok(())
 }
@@ -193,7 +209,8 @@ fn toast(uid: u32, title: &str, body: &str) -> Result<()> {
     let n = ToastNotification::CreateToastNotification(&xml)?;
     n.SetTag(&HSTRING::from(uid.to_string()))?;
     n.SetGroup(&HSTRING::from("iPhone"))?;
-    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(APP_ID))?.Show(&n)?;
+    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_identity().0))?
+        .Show(&n)?;
     Ok(())
 }
 struct Audio {
@@ -462,10 +479,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
         if configure {
             configure = false;
             retry = None;
-            let want_audio = prefs.audio_enabled
-                && session.mirroring
-                && session.desktop_pid != 0
-                && !prefs.audio_device_id.is_empty();
+            let want_audio = audio_requested(&prefs, &session);
             let want_notifications = prefs.notifications_enabled
                 && (session.desktop_pid != 0 || prefs.background_enabled)
                 && !prefs.notification_device_id.is_empty();
@@ -474,7 +488,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
                 status.audio = if prefs.audio_device_id.is_empty() {
                     "Choose a paired iPhone for Bluetooth audio."
                 } else {
-                    "Bluetooth audio starts with mirroring."
+                    "Open Pane to connect Bluetooth audio."
                 }
                 .into();
             }
@@ -516,7 +530,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
                 {
                     Ok(Ok(a)) => {
                         audio = Some(a);
-                        status.audio="Receiver connected. Select Zephyrus in the iPhone audio menu if needed.".into();
+                        status.audio="Receiver connected. Select this PC in the iPhone audio menu if needed.".into();
                     }
                     _ => {
                         status.audio="Audio not connected. Pair the iPhone, then select this PC in its audio output menu.".into();
@@ -639,7 +653,7 @@ async fn worker(dir: PathBuf) -> Result<()> {
                         h.RemoveGroupedTagWithId(
                             &HSTRING::from(n.uid.to_string()),
                             &HSTRING::from("iPhone"),
-                            &HSTRING::from(APP_ID),
+                            &HSTRING::from(app_identity().0),
                         )
                     });
                     seen.retain(|id| *id != n.uid);
@@ -690,9 +704,20 @@ async fn worker(dir: PathBuf) -> Result<()> {
                 }
             }
             Event::Ble(g, connected) if ancs.as_ref().is_some_and(|a| a.generation == g) => {
+                // A callback can queue during setup. Consult the current link before
+                // discarding a live subscription; a lost link needs fresh GATT handles.
+                let connected = ancs
+                    .as_ref()
+                    .and_then(|a| a.device.ConnectionStatus().ok())
+                    .map_or(connected, |s| s == BluetoothConnectionStatus::Connected);
                 status.notifications = if connected {
                     "Connected. Selected notifications will appear on this PC."
                 } else {
+                    ancs = None;
+                    request = None;
+                    queue.clear();
+                    seen.clear();
+                    retry = Some(tokio::time::Instant::now() + Duration::from_secs(30));
                     "iPhone disconnected. Waiting for Bluetooth to reconnect."
                 }
                 .into();
@@ -745,6 +770,25 @@ pub fn run() -> Result<()> {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn audio_follows_desktop_lifetime_and_saved_preference() {
+        let mut prefs = Preferences {
+            audio_device_id: "saved-phone".into(),
+            ..Default::default()
+        };
+        let mut session = Session {
+            desktop_pid: 1,
+            ..Default::default()
+        };
+        assert!(audio_requested(&prefs, &session));
+        session.desktop_pid = 0;
+        session.mirroring = true;
+        assert!(!audio_requested(&prefs, &session));
+        session.desktop_pid = 1;
+        prefs.audio_enabled = false;
+        assert!(!audio_requested(&prefs, &session));
+    }
 
     #[test]
     fn only_a_different_requested_helper_replaces_the_worker() {

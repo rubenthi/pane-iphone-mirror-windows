@@ -1,6 +1,11 @@
 // Small, consistent outline icons; inline SVG avoids font-dependent glyphs.
 window.paneIcon = function(name) {
   const paths = {
+    play: '<path d="m7 4 9 6-9 6z"/>',
+    chevron: '<path d="m8 5 5 5-5 5"/>',
+    settings: '<path d="m8 2 4 0 1 3 3 1 2 4-2 3-3 1-1 4H8l-1-4-3-1-2-3 2-4 3-1z"/><circle cx="10" cy="10" r="3"/>',
+    bell: '<path d="M4 14h12l-2-3V7a4 4 0 0 0-8 0v4zM8 17h4"/>',
+    volume: '<path d="M2 7h4l4-4v14l-4-4H2zM13 7a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12"/>',
     'arrow-right': '<path d="M4 10h12m-5-5 5 5-5 5"/>',
     phone: '<rect x="5.5" y="2" width="9" height="16" rx="2.5"/><path d="M8 15.5h4"/>',
     folder: '<path d="M2 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/>',

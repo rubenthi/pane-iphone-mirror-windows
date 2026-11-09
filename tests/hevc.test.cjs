@@ -9,3 +9,13 @@ test('HEVC portrait dimensions replace Windows 1280x720 fallback',()=>{const d=h
 test('HEVC conformance crop uses chroma subsampling',()=>{const d=hevc.dimensions(fixture(1920,1088,[0,0,0,4]).description);assert.equal(d.height,1080)});
 test('in-band rotation SPS updates decoder dimensions',()=>{const portrait=fixture(1328,2896),landscape=fixture(2896,1328);const n=landscape.nal.length;const chunk=Uint8Array.from([0,0,n>>8,n&255,...landscape.nal]);const updated=hevc.update(portrait.description,chunk);assert.equal(hevc.dimensions(updated).width,2896);assert.equal(hevc.update(updated,chunk),null)});
 test('truncated HEVC metadata is rejected',()=>{for(const description of [new Uint8Array(),fixture(1328,2896).description.slice(0,-2)])assert.throws(()=>hevc.dimensions(description));});
+
+test('ordinary slices use the supplied subarray and reject malformed lengths',()=>{
+  const bytes=Uint8Array.of(255,0,0,0,2,2,1,255);
+  assert.equal(hevc.update(null,bytes.subarray(1,7)),null);
+  assert.throws(()=>hevc.update(null,bytes.subarray(1)),/Truncated/);
+  assert.throws(()=>hevc.update(null,Uint8Array.of(255,0,0,2,2,1)),/Invalid/);
+  const oversized=new Uint8Array(4+65536);
+  oversized.set([0,1,0,0,66,1]);
+  assert.throws(()=>hevc.update(null,oversized),/configuration limit/);
+});

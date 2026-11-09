@@ -2,6 +2,60 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.8 - Fast file transfers in both directions
+
+Pane can send desktop files over authenticated Wi-Fi to iPhone companion 2.6.1 (build 7). Bluetooth negotiates the channel and provides a fallback with older companions. File transfers work with mirroring off. When the network changes mid-transfer, the desktop checks how much the iPhone received before continuing. Windows verifies incoming files before publishing them in Downloads and avoids a second file copy on the same drive.
+
+## 2.5.7 - Device connection, transfers and release packaging
+
+The Windows mirror scans ordinary HEVC slices without allocating a parser object for each slice. It checks packet boundaries before submitting frames to the decoder. The Windows build includes Pane’s license and the license files supplied in pinned Python package metadata. A clean desktop checkout can restore the verified iPhone companion 2.6.0 (build 6) from its macOS build.
+
+## 2.5.6 - Native display density and flat colors (development build)
+
+Pane renders at each monitor's own pixel density instead of letting Windows stretch a 100%-scale bitmap on a 200%-scale laptop screen. The packaged executable declares PerMonitorV2, source runs enable the same mode before opening the window, and moving between monitors updates the physical window shape and browser surface together. Resizing near a monitor edge uses the available space without subtracting a second placement gutter. The three-pixel black bezel stays consistent.
+
+Flat Slate surfaces and Blue action colors from [Radix Colors](https://www.radix-ui.com/colors/docs/palette-composition/composing-a-palette) replace the layered blue gradients, glossy highlights and hover glows. Controls keep their existing layout and behavior. The iPhone companion is unchanged.
+
+## 2.5.5 - Simpler notification setup and black bezel (development build)
+
+Phone notification setup starts with one switch. Pane selects a paired iPhone automatically when there is one unambiguous choice, while keeping saved choices. A compact Bluetooth settings preview shows the laptop name and Share System Notifications switch; it disappears once connected. Check again refreshes devices and retries, and Windows notification permission failures offer the correct settings shortcut. Alert categories and message previews are under Alerts & privacy; previews and background behavior remain separate opt-ins.
+
+The uniform three-pixel bezel is solid black. The iPhone companion is unchanged.
+
+## 2.5.4 - Thin uniform bezel and Wi-Fi reconnection (development build)
+
+The bezel is a single uniform three-pixel ring. Screen rendering uses the integrated display dimensions reported by the iPhone to remove small encoder padding at the right and bottom, rather than treating that padding as part of the display. It does not guess from black app content or hardcode phone models. Normalized touch coordinates cover the complete real display.
+
+Wi-Fi discovery waits for the complete address list, tries IPv4 first and returns on the first verified connection. Full pairing handshakes and tunnel startup have deadlines; failed candidates close promptly. A rejected saved pairing now asks for USB repair instead of another unlock. Connection attempts do not change pairing records. The iPhone companion is unchanged.
+
+## 2.5.3 - Essential tooltips and uniform bezel (development build)
+
+Tooltips are limited to ambiguous icon controls and filenames that are actually truncated. Visible button labels and settings no longer repeat themselves in hover bubbles. The mirrored image fills the symmetric seven-pixel screen opening, preserving aspect while clipping the small rounding excess instead of adding black letterbox strips. The existing iPhone companion is unchanged.
+
+## 2.5.2 - Four-corner resizing (development build)
+
+Diagonal resize gestures use a continuous aspect-preserving calculation, keeping direction changes smooth. Native bounds and the anchored opposite corner update together, instead of exposing an intermediate position. Late bridge replies no longer overwrite current viewport dimensions. Open panels have a usable minimum height, and their title leaves room for the header buttons. The existing 2.6.0 (6) iPhone companion is unchanged.
+
+## 2.5.1 - Direct Wi-Fi phone uploads (development build)
+
+Phone-to-laptop files can use a direct local TLS connection instead of Bluetooth for bulk data. The existing USB-bound, encrypted Bluetooth link conveys a temporary certificate pin and channel secret. Transfers retain bounded buffers, Pause/Cancel, checksums and atomic delivery; interrupted Wi-Fi resumes at the last written offset over Bluetooth. Requires companion 2.6.0 (6), local-network permission and a reachable local network. No cloud relay or public release. Actual radio speed must be measured on the devices.
+
+## 2.5.0 - Visual setup and independent transfers (local test build)
+
+Local follow-up: phone uploads use independent 32 KiB receive batches when supported, omit redundant incoming metadata and rate-limit unchanged control snapshots. Local Pause/Cancel and changed queues bypass the limit; completion forces a final remote control check. This desktop-only optimization retains the existing companion and has not been pushed or published.
+
+Prepared locally; this version has not been published. The packaged development edition runs as Pane.exe with its own taskbar identity and reuses the development profile via `--development`.
+
+Setup uses short illustrated Settings paths, compact certificate recovery and brief failure messages with a next action. Settings uses grouped icon rows and Back navigation. Connect your iPhone immediately attempts Wi-Fi. Scroll over the side volume buttons to adjust volume while connected.
+
+Saved Bluetooth file pairing reconnects while Pane is open, independently of screen mirroring. A manually disconnected file link stays disconnected until explicitly reconnected or Pane restarts. The saved audio receiver also follows the desktop app's lifetime while honoring its existing switch and selected device.
+
+The iPhone companion source is now 2.5.1, build 5. It adds Pause, Resume and Cancel for transfers in both directions and negotiates larger acknowledged batches with Windows. Keep iPhone awake prevents idle screen locking while Pane is visible and restores normal behavior when leaving the app. Existing companions retain the legacy transfer protocol. Actual Bluetooth speed depends on the devices and connection; no hardware throughput improvement is claimed from automated tests.
+
+The Enable step requests Developer Mode again if the setting is still hidden. Enabling it, restarting and confirming remain on the iPhone. Installation now explains how credentials are processed locally, identifies the stage of signing failures, and offers credential-free service diagnostics. Saved signing keys and pairings are preserved.
+
+When Apple reports certificate limit 7460, setup offers a certificate list and a separate **Revoke selected certificate & retry** confirmation. Selecting a certificate does not revoke it. The warning explains that revocation cannot be undone and may stop other apps signed with that certificate from opening.
+
 ## 2.4.0 - iPhone transfers and USB updates
 
 The iPhone companion has a Transfers screen with native Liquid Glass send controls on iOS 26 and later. Received files, sharing and the outgoing queue are together. Tap the laptop connection row for USB pairing and the installed version. iOS 17–18 use standard SwiftUI buttons.

@@ -18,6 +18,11 @@
       if (!devices.length) select.add(new Option('Waiting for your iPhone…', ''));
       for (const device of devices) select.add(new Option(device.name || device.udid, device.udid));
       if (devices.some(d => d.udid === wanted)) select.value = wanted;
+      $('#onboarding-device-picker').hidden = devices.length < 2;
+      const status = $('#onboarding-usb-status');
+      status.hidden = devices.length > 1;
+      status.dataset.connected = String(devices.length === 1);
+      status.textContent = devices.length ? (devices[0].name || 'iPhone connected by USB') : 'Waiting for a USB connection…';
     }
     if (active) {
       if (select.value) selectedUdid = select.value;
@@ -28,19 +33,19 @@
     if (!active) return;
     stage = state.boundUdid ? 'bluetooth' : state.developerEnabled ? (state.installed ? 'bind' : 'install') : state.revealed ? 'developer' : 'connect';
     const copy = {
-      connect: ['Welcome to Pane', 'Your iPhone, connected.', 'One guided setup links your phone to this laptop.', 'Connect'],
-      developer: ['On your iPhone', 'Enable Developer Mode.', 'Pane has requested the developer switch. Finish these steps on your phone.', 'I’ve enabled it — check'],
-      install: ['Your companion app', 'Install Pane on iPhone.', 'Pane signs and pushes the included app over USB. Complete Apple verification when asked.', 'Install'],
-      bind: ['Link your connections', 'Bind this laptop.', 'Pane will provision the companion over USB and pair Wi-Fi mirroring.', 'Bind connections'],
-      bluetooth: ['One last connection', 'Open Pane on iPhone.', 'Keep the cable connected for this final step.', 'Connect Bluetooth']
+      connect: ['Connect your iPhone', 'Unlock your iPhone. Tap Trust if asked.', 'Connect'],
+      developer: ['Enable Developer Mode', '', 'Check Developer Mode'],
+      install: ['Install Pane on iPhone', 'Install using your Apple Account.', 'Install'],
+      bind: ['Link this laptop', 'Linking your iPhone…', 'Retry pairing'],
+      bluetooth: ['Open Pane on iPhone', 'Trust the app, then allow Bluetooth.', 'Connect Bluetooth']
     }[stage];
-    $('#onboarding-kicker').textContent=copy[0]; $('#onboarding-title').textContent=copy[1]; $('#onboarding-description').textContent=copy[2];
-    for (const name of ['connect','developer','signing','bluetooth']) $('#onboarding-'+name).hidden = name !== ({install:'signing',bind:'bluetooth'}[stage] || stage);
-    const next=$('#onboarding-next'); next.textContent=copy[3]; next.hidden=stage==='install';
+    $('#onboarding-title').textContent=copy[0]; $('#onboarding-description').textContent=copy[1];
+    for (const name of ['connect','developer','signing','bluetooth']) $('#onboarding-'+name).hidden = name !== (stage==='install' ? 'signing' : stage);
+    const next=$('#onboarding-next'); next.textContent=next.title=copy[2]; next.hidden=stage==='install';
     const usb=devices.some(d=>d.udid===chosen());
     next.disabled=busy || state.phase==='working' || (stage!=='bluetooth'&&!usb) || (stage==='bluetooth'&&bluetooth.phase==='connecting');
-    $('#onboarding-refresh').hidden=stage==='install';
-    $('#onboarding-note').textContent=state.error || (stage==='bluetooth' ? bluetooth.note : state.note) || '';
+    $('#onboarding-refresh').hidden=stage!=='connect';
+    $('#onboarding-note').textContent=state.error || state.phase==='error' ? window.paneNotice(state.error || state.note) : stage==='bluetooth' ? (bluetooth.phase==='error'?window.paneNotice(bluetooth.note,'bluetooth'):bluetooth.phase==='connecting'?'Connecting…':'') : state.phase==='working'?'Connecting…':'';
     const steps=['connect','developer','install','bluetooth'];const current=steps.indexOf(stage==='bind'?'bluetooth':stage);
     for(const item of document.querySelectorAll('[data-stage]')) {
       item.dataset.done=String(steps.indexOf(item.dataset.stage)<current);
@@ -55,7 +60,7 @@
     try {
       if(action==='bluetooth')bluetooth=await postJson('/api/bluetooth/connect',{});
       else state=await postJson('/api/setup/'+action,{udid:chosen()});
-    } catch(error) {state={...state,phase:'error',error:error.message,note:error.message};$('#onboarding-note').textContent=error.message;}
+    } catch(error) {state={...state,phase:'error',error:error.message,note:error.message};$('#onboarding-note').textContent=window.paneNotice(error.message);}
     finally {busy=false;render();}
   }
   $('#onboarding-next').onclick=()=>act({connect:'start',developer:'developer',bind:'bind',bluetooth:'bluetooth'}[stage]);

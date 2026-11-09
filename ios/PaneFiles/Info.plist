@@ -11,6 +11,7 @@
   <key>LSRequiresIPhoneOS</key><true/>
   <key>PaneProtocolVersion</key><integer>1</integer>
   <key>NSBluetoothAlwaysUsageDescription</key><string>Transfer selected photos and files to your USB-paired laptop and receive files from it.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Send and receive files faster over Wi-Fi with your paired laptop.</string>
   <key>UIFileSharingEnabled</key><true/>
   <key>LSSupportsOpeningDocumentsInPlace</key><true/>
   <key>UILaunchScreen</key><dict/>

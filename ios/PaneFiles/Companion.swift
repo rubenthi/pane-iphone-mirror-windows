@@ -30,6 +30,15 @@ private struct Incoming {
     var hash = SHA256()
 }
 
+// Persist the destination inode before publishing. After a crash between the
+// rename and its acknowledgement, the same file proves that the rename ran.
+private struct DeliveryReceipt: Codable {
+    let file: SharedFile
+    let destination: String
+    let inode: UInt64
+    var published: Bool
+}
+
 private struct TransferError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -44,21 +53,112 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     @Published var receiveProgress: Double?
     @Published var outgoing: [SharedFile] = []
     @Published var received: [URL] = []
+    @Published var laptopFiles: [SharedFile] = []
+    @Published var transferStates: [String: String] = [:]
+    @Published var controlsAvailable = false
+    private var chunkLimit = 4096
     private var pairing: Pairing?
     private var manager: CBPeripheralManager!
     private var response: CBMutableCharacteristic?
     private var authorized: UUID?
     private var buffers: [UUID: Data] = [:]
     private var notifications: [(Data, CBCentral)] = []
-    private var incoming: Incoming?
+    private var incoming: [String: Incoming] = [:]
+    private var bulkUpload: BulkUpload?
+    private var bulkUploadID: String?
+    private var bulkDownload: BulkUpload?
+    private var bulkDownloadID: String?
+    private var downloadGeneration = UUID()
+    @Published var receiveProgresses: [String: Double] = [:]
     private let documents = paneFileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
     private let support = paneFileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    private var sentFolder: URL { support.appendingPathComponent("Outbox") }
-    private var inbox: URL { documents.appendingPathComponent("Received") }
-    private var queueManifest: URL { support.appendingPathComponent("queue.json") }
+    private var fixtureRoot: URL?
+    private var sentFolder: URL { (fixtureRoot ?? support).appendingPathComponent("Outbox") }
+    private var inbox: URL { (fixtureRoot ?? documents).appendingPathComponent("Received") }
+    private var queueManifest: URL { (fixtureRoot ?? support).appendingPathComponent("queue.json") }
+    private var receiptFolder: URL { (fixtureRoot ?? support).appendingPathComponent("DeliveryReceipts") }
+
+    private func receiptURL(_ id: String) throws -> URL {
+        guard id.utf8.count == 32, id.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }) else {
+            throw TransferError(message: "Invalid transfer ID.")
+        }
+        return receiptFolder.appendingPathComponent(id + ".json")
+    }
+
+    private func completed(_ id: String, matching file: SharedFile? = nil) throws -> Bool {
+        let url = try receiptURL(id)
+        guard paneFileManager.fileExists(atPath: url.path) else { return false }
+        var receipt = try JSONDecoder().decode(DeliveryReceipt.self, from: Data(contentsOf: url))
+        if let file, file.name != receipt.file.name || file.size != receipt.file.size || file.sha256 != receipt.file.sha256 {
+            throw TransferError(message: "This transfer ID describes a different file.")
+        }
+        if receipt.published { return true }
+        let destination = inbox.appendingPathComponent(receipt.destination)
+        let attributes = try? paneFileManager.attributesOfItem(atPath: destination.path)
+        guard (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value == receipt.inode,
+              (attributes?[.size] as? NSNumber)?.intValue == receipt.file.size,
+              try Self.hashFile(destination) == receipt.file.sha256 else { return false }
+        receipt.published = true
+        try? JSONEncoder().encode(receipt).write(to: url, options: .atomic)
+        return true
+    }
+
+    deinit { bulkUpload?.cancel(); bulkDownload?.cancel() }
+
+    private func stopBulkDownload(_ id: String? = nil) {
+        guard id == nil || bulkDownloadID == id else { return }
+        downloadGeneration = UUID()
+        bulkDownload?.cancel()
+        bulkDownload = nil
+        bulkDownloadID = nil
+    }
+
+    func reserveDownload(_ id: String) -> UUID {
+        stopBulkDownload()
+        bulkDownloadID = id
+        return downloadGeneration
+    }
+
+    private func stopBulkUpload(_ id: String? = nil) {
+        guard id == nil || bulkUploadID == id else { return }
+        bulkUpload?.cancel()
+        bulkUpload = nil
+        bulkUploadID = nil
+    }
+
+    #if DEBUG
+    init(testDirectory: URL) throws {
+        super.init()
+        fixtureRoot = testDirectory
+        try paneFileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
+    }
+    #endif
 
     override init() {
         super.init()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-transfers") {
+            // A separate temporary sandbox, with no pairing reads or Bluetooth
+            // manager. The fixture exercises the real published state/actions.
+            fixtureRoot = paneFileManager.temporaryDirectory.appendingPathComponent("PaneUITests-\(UUID().uuidString)")
+            do {
+                try paneFileManager.createDirectory(at: sentFolder, withIntermediateDirectories: true)
+                try paneFileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
+                let phone = SharedFile(id: String(repeating: "1", count: 32), name: "Phone test file.txt", size: 4, sha256: "")
+                let laptop = SharedFile(id: String(repeating: "2", count: 32), name: "Laptop test file.txt", size: 4, sha256: "")
+                try Data("test".utf8).write(to: sentFolder.appendingPathComponent(phone.id))
+                outgoing = [phone]
+                laptopFiles = [laptop]
+                transferStates = [phone.id: "sending", laptop.id: "receiving"]
+                sendProgress[phone.id] = 0.25
+                receiveProgresses[laptop.id] = 0.25
+                receiveProgress = 0.25
+                controlsAvailable = true
+                status = "Transfer preview."
+            } catch { activity = "Couldn't prepare the transfer preview. Reopen Pane." }
+            return
+        }
+        #endif
         do {
             try paneFileManager.createDirectory(at: sentFolder, withIntermediateDirectories: true)
             try paneFileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
@@ -69,16 +169,23 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
                 pairing = try JSONDecoder().decode(Pairing.self, from: data)
                 isPaired = true
             }
+            for url in (try? paneFileManager.contentsOfDirectory(at: support, includingPropertiesForKeys: nil)) ?? [] {
+                if url.lastPathComponent == "incoming.part" || url.lastPathComponent.range(of: "^incoming-[a-fA-F0-9]{32}\\.part$", options: .regularExpression) != nil {
+                    try? paneFileManager.removeItem(at: url)
+                }
+            }
             refreshReceived()
-        } catch { activity = error.localizedDescription }
+        } catch { activity = "Couldn't load your files. Reopen Pane and try again." }
         if isPaired { manager = CBPeripheralManager(delegate: self, queue: .main) }
     }
 
     func activatePendingUSB() {
+        guard fixtureRoot == nil else { return }
         if paneFileManager.fileExists(atPath: documents.appendingPathComponent("pane-pairing.json").path) { activateUSB() }
     }
 
     func activateUSB() {
+        guard fixtureRoot == nil else { return }
         do {
             let source = documents.appendingPathComponent("pane-pairing.json")
             let data = try Data(contentsOf: source)
@@ -93,6 +200,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             pairing = newPairing
             isPaired = true
             isConnected = false
+            stopBulkUpload()
             authorized = nil
             buffers.removeAll(); notifications.removeAll()
             discardIncoming()
@@ -101,10 +209,15 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             } else {
                 advertise()
             }
-            activity = "USB pairing loaded. Connect Bluetooth from Pane on your laptop. Wi-Fi mirroring is controlled there."
+            activity = "Linked. Keep Pane open on both devices."
         } catch {
-            activity = "Keep USB connected and choose Bind USB & Wi-Fi on the laptop first. \(error.localizedDescription)"
+            activity = "Phone not linked. Connect USB and retry setup on your laptop."
         }
+    }
+
+    func filePreparationFailed(_ error: Error) {
+        if let failure = error as? TransferError { activity = failure.message }
+        else { activity = "Couldn't prepare the file. Choose it again." }
     }
 
     @MainActor func queueFile(_ source: URL) async throws {
@@ -125,6 +238,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             }
         }.value
         outgoing.append(file)
+        transferStates[file.id] = "queued"
         do { try saveQueue() }
         catch {
             outgoing.removeAll { $0.id == id }
@@ -134,12 +248,27 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
         activity = "Queued \(file.name). Keep Pane open."
     }
 
-    func removeOutgoing(at offsets: IndexSet) {
-        for index in offsets.sorted(by: >) {
-            let item = outgoing.remove(at: index)
-            try? paneFileManager.removeItem(at: sentFolder.appendingPathComponent(item.id))
+    func transferState(_ id: String) -> String { transferStates[id] ?? "queued" }
+
+    func controlTransfer(_ id: String, action: String) {
+        guard ["pause", "resume", "cancel"].contains(action) else { return }
+        let state = action == "pause" ? "paused" : action == "cancel" ? "cancelled" : "queued"
+        transferStates[id] = state
+        if action == "cancel" {
+            stopBulkUpload(id)
+            discardIncoming(id)
+            if outgoing.contains(where: { $0.id == id }) {
+                outgoing.removeAll { $0.id == id }
+                sendProgress.removeValue(forKey: id)
+                try? paneFileManager.removeItem(at: sentFolder.appendingPathComponent(id))
+                do { try saveQueue() } catch { activity = "Couldn't save the queue. Reopen Pane and try again." }
+            }
+            laptopFiles.removeAll { $0.id == id }
         }
-        do { try saveQueue() } catch { activity = error.localizedDescription }
+    }
+
+    func removeOutgoing(at offsets: IndexSet) {
+        for index in offsets.sorted(by: >) { controlTransfer(outgoing[index].id, action: "cancel") }
     }
 
     private func saveQueue() throws {
@@ -179,25 +308,26 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     }
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
+        stopBulkUpload()
         authorized = nil; isConnected = false; buffers.removeAll(); notifications.removeAll(); discardIncoming()
         if peripheral.state == .poweredOn { advertise() }
         else { status = "Bluetooth unavailable. Enable it and allow Pane in Settings." }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
-        if let error { status = error.localizedDescription; return }
+        if error != nil { status = "Couldn't start Bluetooth. Reopen Pane and try again."; return }
         guard let pairing else { return }
         peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [CBUUID(string: pairing.service)], CBAdvertisementDataLocalNameKey: pairing.peerName])
     }
 
     func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
-        if let error { status = error.localizedDescription }
+        if error != nil { status = "Couldn't connect. Keep Pane open on both devices and try again." }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
         buffers.removeValue(forKey: central.identifier)
         notifications.removeAll { $0.1.identifier == central.identifier }
-        if authorized == central.identifier { authorized = nil; isConnected = false; discardIncoming(); status = "Laptop disconnected. Reconnect from Pane." }
+        if authorized == central.identifier { stopBulkUpload(); authorized = nil; isConnected = false; discardIncoming(); status = "Laptop disconnected. Reconnect from Pane." }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
@@ -234,12 +364,12 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             reply = try handle(body, central: central)
         } catch {
             reply = ["error": error.localizedDescription]
-            activity = error.localizedDescription
+            activity = "Transfer stopped. Try sending the file again."
         }
         reply["request"] = requestID
         guard var data = try? JSONSerialization.data(withJSONObject: reply) else { return }
         data.append(10)
-        guard data.count <= 65536, notifications.count < 1024 else { return }
+        guard data.count <= 65536, notifications.count < 4096 else { return }
         let size = max(1, central.maximumUpdateValueLength)
         for start in stride(from: 0, to: data.count, by: size) {
             notifications.append((data.subdata(in: start..<min(data.count, start + size)), central))
@@ -269,18 +399,119 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             authorized = central.identifier
             isConnected = true
             status = "Connected to your laptop over Bluetooth."
-            return ["version": 1]
+            let capabilities = body["capabilities"] as? [String] ?? []
+            controlsAvailable = capabilities.contains("transfer-control-v1")
+            chunkLimit = capabilities.contains("chunk-32768") ? 32768 : 4096
+            return ["version": 1, "capabilities": ["transfer-control-v1", "chunk-32768", "wifi-upload-v1", "wifi-download-v1"]]
         }
         guard authorized == central.identifier else { throw TransferError(message: "Pair over USB first.") }
+        return try transferOperation(body)
+    }
+
+    // Called on the same main queue as Bluetooth authorization, controls and UI.
+    func transferOperation(_ body: [String: Any]) throws -> [String: Any] {
+        let op = body["op"] as? String ?? ""
         switch op {
+        case "bulk-write", "bulk-write-stop":
+            guard let id = body["id"] as? String else { throw TransferError(message: "Missing file ID.") }
+            if op == "bulk-write-stop" { stopBulkDownload(id) }
+            let state = transferState(id)
+            if state == "cancelled" { return ["state": state, "offset": 0] }
+            guard let current = incoming[id] else { throw TransferError(message: "Start this file again.") }
+            if state == "paused" { return ["state": state, "offset": current.offset] }
+            if op == "bulk-write-stop" { return ["ok": true, "offset": current.offset] }
+            guard let raw = body["endpoint"] as? [String: Any], let endpoint = BulkUpload.Endpoint(raw) else {
+                throw TransferError(message: "Invalid fast transfer endpoint.")
+            }
+            let generation = reserveDownload(id)
+            let download = BulkUpload(endpoint: endpoint, size: current.file.size) { [weak self] offset, data, reply in
+                DispatchQueue.main.async {
+                    guard let self else { reply(2, 0); return }
+                    let result = self.acceptBulk(id, generation: generation, offset: offset, data: data)
+                    reply(result.status, result.offset)
+                }
+            }
+            bulkDownload = download
+            download.start()
+            return ["ok": true, "offset": current.offset]
+        case "bulk-read":
+            guard let id = body["id"] as? String,
+                  let file = outgoing.first(where: { $0.id == id }),
+                  let rawEndpoint = body["endpoint"] as? [String: Any],
+                  let endpoint = BulkUpload.Endpoint(rawEndpoint) else {
+                throw TransferError(message: "Fast transfer unavailable. Try again.")
+            }
+            if ["paused", "cancelled"].contains(transferState(id)) { return ["state": transferState(id)] }
+            stopBulkUpload()
+            bulkUploadID = id
+            let upload = BulkUpload(endpoint: endpoint, file: sentFolder.appendingPathComponent(file.id), size: file.size,
+                state: { [weak self] complete in
+                    DispatchQueue.main.async {
+                        guard let self, self.bulkUploadID == id,
+                              self.outgoing.contains(where: { $0.id == id }) else { complete(2); return }
+                        let state = self.transferState(id)
+                        complete(state == "paused" ? 1 : state == "cancelled" ? 2 : 0)
+                    }
+                }, progress: { [weak self] offset in
+                    DispatchQueue.main.async {
+                        guard let self, self.bulkUploadID == id,
+                              !["paused", "cancelled"].contains(self.transferState(id)) else { return }
+                        self.transferStates[id] = "sending"
+                        self.sendProgress[id] = file.size == 0 ? 1 : Double(offset) / Double(file.size)
+                        self.activity = "Sending \(file.name): \(file.size == 0 ? 100 : offset * 100 / file.size)%"
+                    }
+                })
+            bulkUpload = upload
+            upload.start()
+            return ["ok": true]
+        case "controls":
+            guard controlsAvailable, let transfers = body["transfers"] as? [[String: Any]], transfers.count <= 256 else {
+                throw TransferError(message: "Invalid transfer controls.")
+            }
+            var laptop: [SharedFile] = []
+            var visible = Set(outgoing.map { $0.id })
+            visible.formUnion(incoming.keys)
+            for transfer in transfers {
+                guard let id = transfer["id"] as? String,
+                      let direction = transfer["direction"] as? String else { continue }
+                let key = direction == "from-phone" ? (transfer["remoteId"] as? String ?? id) : id
+                visible.insert(key)
+                if let desired = transfer["control"] as? String,
+                   ["queued", "sending", "receiving", "paused", "cancelled"].contains(desired) {
+                    // Explicit Windows actions supersede an older local action.
+                    transferStates[key] = desired
+                    if desired == "cancelled" {
+                        stopBulkUpload(key)
+                        discardIncoming(key)
+                        if outgoing.contains(where: { $0.id == key }) {
+                            outgoing.removeAll { $0.id == key }
+                            sendProgress.removeValue(forKey: key)
+                            try? paneFileManager.removeItem(at: sentFolder.appendingPathComponent(key))
+                            try saveQueue()
+                        }
+                    }
+                }
+                if direction == "to-phone", transferStates[key] != "cancelled",
+                   let name = transfer["name"] as? String, let size = transfer["size"] as? Int {
+                    laptop.append(SharedFile(id: id, name: name, size: size, sha256: ""))
+                    if transferStates[id] == nil { transferStates[id] = transfer["state"] as? String ?? "queued" }
+                }
+            }
+            laptopFiles = laptop
+            transferStates = transferStates.filter { visible.contains($0.key) }
+            let states = transferStates.map { ["id": $0.key, "state": $0.value] }
+            return ["transfers": states]
         case "list":
             return ["files": try JSONSerialization.jsonObject(with: JSONEncoder().encode(outgoing))]
         case "read":
+            if let id = body["id"] as? String, ["paused", "cancelled"].contains(transferState(id)) { return ["state": transferState(id)] }
             guard let id = body["id"] as? String, let file = outgoing.first(where: { $0.id == id }),
                   let offset = body["offset"] as? Int, let length = body["length"] as? Int,
-                  offset >= 0, length > 0, length <= 4096, offset <= file.size, length <= file.size - offset else {
+                  offset >= 0, length > 0, length <= chunkLimit, offset <= file.size, length <= file.size - offset else {
                 throw TransferError(message: "Invalid file range.")
             }
+            if ["paused", "cancelled"].contains(transferState(id)) { return ["state": transferState(id)] }
+            transferStates[id] = "sending"
             let handle = try FileHandle(forReadingFrom: sentFolder.appendingPathComponent(file.id))
             defer { try? handle.close() }
             try handle.seek(toOffset: UInt64(offset))
@@ -290,9 +521,11 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             return ["data": data.base64EncodedString()]
         case "received":
             guard let id = body["id"] as? String else { throw TransferError(message: "Missing file ID.") }
+            stopBulkUpload(id)
             if let index = outgoing.firstIndex(where: { $0.id == id }) {
                 let file = outgoing.remove(at: index)
                 sendProgress.removeValue(forKey: file.id)
+                transferStates.removeValue(forKey: file.id)
                 try saveQueue()
                 try? paneFileManager.removeItem(at: sentFolder.appendingPathComponent(file.id))
                 activity = "Saved \(file.name) to laptop Downloads."
@@ -304,38 +537,57 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
                   let hash = body["sha256"] as? String, hash.count == 64, hash.allSatisfy({ $0.isHexDigit }) else {
                 throw TransferError(message: "Invalid incoming file.")
             }
-            discardIncoming()
+            if transferState(id) == "cancelled" { return ["state": "cancelled"] }
             let name = Self.safeName(rawName)
             let file = SharedFile(id: id, name: name, size: size, sha256: hash.lowercased())
-            let target = support.appendingPathComponent("incoming.part")
+            if try completed(id, matching: file) { return ["ok": true, "completed": true] }
+            guard incoming[id] != nil || incoming.count < 8 else { throw TransferError(message: "Finish or cancel incoming files first.") }
+            discardIncoming(id)
+            let target = (fixtureRoot ?? support).appendingPathComponent("incoming-\(id).part")
             try Data().write(to: target)
+            if transferStates[id] != "paused" { transferStates[id] = "receiving" }
+            if !laptopFiles.contains(where: { $0.id == id }) { laptopFiles.append(file) }
             receiveProgress = 0
-            incoming = Incoming(file: file, url: target, handle: try FileHandle(forWritingTo: target), offset: 0)
+            receiveProgresses[id] = 0
+            incoming[id] = Incoming(file: file, url: target, handle: try FileHandle(forWritingTo: target), offset: 0)
             return ["ok": true]
         case "write":
-            guard var current = incoming, body["id"] as? String == current.file.id,
-                  let offset = body["offset"] as? Int, offset == current.offset,
+            if let id = body["id"] as? String, ["paused", "cancelled"].contains(transferState(id)) { return ["state": transferState(id)] }
+            guard let id = body["id"] as? String, bulkDownloadID != id,
+                  let offset = body["offset"] as? Int,
                   let text = body["data"] as? String, let data = Data(base64Encoded: text),
-                  !data.isEmpty, data.count <= 4096, data.count <= current.file.size - current.offset else {
+                  data.count <= chunkLimit else {
                 throw TransferError(message: "Incoming chunk is out of order or too large.")
             }
-            try current.handle.write(contentsOf: data)
-            current.hash.update(data: data)
-            current.offset += data.count
-            incoming = current
-            receiveProgress = current.file.size == 0 ? 1 : Double(current.offset) / Double(current.file.size)
-            activity = "Receiving \(current.file.name): \(current.file.size == 0 ? 100 : current.offset * 100 / current.file.size)%"
-            return ["offset": current.offset]
+            return ["offset": try appendIncoming(id, offset: offset, data: data)]
         case "finish":
-            guard let current = incoming, body["id"] as? String == current.file.id, current.offset == current.file.size else {
+            if let id = body["id"] as? String, ["paused", "cancelled"].contains(transferState(id)) { return ["state": transferState(id)] }
+            if let id = body["id"] as? String, incoming[id] == nil, try completed(id) { return ["ok": true, "completed": true] }
+            guard let id = body["id"] as? String, let current = incoming[id], current.offset == current.file.size else {
                 throw TransferError(message: "Incoming file is incomplete.")
             }
-            try current.handle.synchronize(); try current.handle.close()
+            stopBulkDownload(id)
+            // Keep the handle usable if receipt creation or publication fails.
+            // A later finish can retry without discarding already-verified bytes.
+            try current.handle.synchronize()
             let hash = current.hash.finalize().map { String(format: "%02x", $0) }.joined()
-            guard hash == current.file.sha256 else { discardIncoming(); throw TransferError(message: "File verification failed. Send again.") }
+            guard hash == current.file.sha256 else { discardIncoming(id); throw TransferError(message: "File verification failed. Send again.") }
             let destination = availableName(current.file.name)
+            let attrs = try paneFileManager.attributesOfItem(atPath: current.url.path)
+            guard let inode = attrs[.systemFileNumber] as? NSNumber else { throw TransferError(message: "Unable to identify the incoming file.") }
+            var receipt = DeliveryReceipt(file: current.file, destination: destination.lastPathComponent, inode: inode.uint64Value, published: false)
+            try paneFileManager.createDirectory(at: receiptFolder, withIntermediateDirectories: true)
+            let url = try receiptURL(id)
+            try JSONEncoder().encode(receipt).write(to: url, options: .atomic)
             try paneFileManager.moveItem(at: current.url, to: destination)
-            incoming = nil
+            try? current.handle.close()
+            receipt.published = true
+            // The prepared receipt already proves the move when this second write fails.
+            try? JSONEncoder().encode(receipt).write(to: url, options: .atomic)
+            laptopFiles.removeAll { $0.id == current.file.id }
+            transferStates.removeValue(forKey: current.file.id)
+            incoming.removeValue(forKey: id)
+            receiveProgresses.removeValue(forKey: id)
             receiveProgress = nil
             refreshReceived()
             activity = "Received \(destination.lastPathComponent)."
@@ -345,9 +597,51 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
         }
     }
 
-    private func discardIncoming() {
-        if let incoming { try? incoming.handle.close(); try? paneFileManager.removeItem(at: incoming.url) }
-        incoming = nil
+    func acceptBulk(_ id: String, generation: UUID, offset: Int, data: Data) -> (status: UInt8, offset: Int) {
+        let committed = incoming[id]?.offset ?? 0
+        guard generation == downloadGeneration, bulkDownloadID == id else { return (3, committed) }
+        switch transferState(id) {
+        case "paused": return (1, committed)
+        case "cancelled": return (2, committed)
+        default: break
+        }
+        guard data.count <= 256 * 1024 else { return (3, committed) }
+        do { return (0, try appendIncoming(id, offset: offset, data: data)) }
+        catch { return (3, incoming[id]?.offset ?? 0) }
+    }
+
+    private func appendIncoming(_ id: String, offset: Int, data: Data) throws -> Int {
+        guard var current = incoming[id], current.offset == offset,
+              !data.isEmpty, data.count <= current.file.size - offset else {
+            throw TransferError(message: "Incoming chunk is out of order or too large.")
+        }
+        do { try current.handle.write(contentsOf: data) }
+        catch {
+            do {
+                try current.handle.truncate(atOffset: UInt64(offset))
+                try current.handle.seek(toOffset: UInt64(offset))
+            } catch { discardIncoming(id) }
+            throw error
+        }
+        current.hash.update(data: data)
+        current.offset += data.count
+        incoming[id] = current
+        receiveProgress = Double(current.offset) / Double(current.file.size)
+        receiveProgresses[id] = receiveProgress
+        activity = "Receiving \(current.file.name): \(current.offset * 100 / current.file.size)%"
+        return current.offset
+    }
+
+    private func discardIncoming(_ id: String? = nil) {
+        stopBulkDownload(id)
+        let ids = id.map { [$0] } ?? Array(incoming.keys)
+        for key in ids {
+            if let current = incoming.removeValue(forKey: key) {
+                try? current.handle.close()
+                try? paneFileManager.removeItem(at: current.url)
+            }
+            receiveProgresses.removeValue(forKey: key)
+        }
         receiveProgress = nil
     }
 

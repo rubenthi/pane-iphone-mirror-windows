@@ -6,8 +6,11 @@ import os
 from pathlib import Path
 import shutil
 
-DATA_DIR = Path(os.environ.get('PANE_DATA_DIR', str(Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Pane')))
+from handset.edition import DEVELOPMENT, data_dir
+
+DATA_DIR = data_dir()
 SCHEMA = 2
+RESET_REQUEST = 'development-reset.request'
 # Never erase arbitrary PANE_DATA_DIR contents or shared Apple trust records.
 OWNED = ('signing', 'window', 'webview', 'device', 'staging', 'outbox', 'settings.json',
          'preferences.json', 'session.json', 'companion-status.json', 'native', 'companion.lock',
@@ -28,6 +31,13 @@ def read_json(path: Path, default):
         return default
 
 
+def can_reset_development():
+    base = os.environ.get('LOCALAPPDATA')
+    return bool(DEVELOPMENT and base and
+                DATA_DIR.resolve() == Path(base).resolve() / 'Pane (Development)' and
+                not DATA_DIR.is_symlink() and not (hasattr(DATA_DIR, 'is_junction') and DATA_DIR.is_junction()))
+
+
 def prepare_state(root: Path = DATA_DIR, *, force: bool = False) -> bool:
     """Preserve all state at startup. Only an explicit force=True request resets it."""
     if root.is_symlink() or (hasattr(root, 'is_junction') and root.is_junction()):
@@ -37,7 +47,7 @@ def prepare_state(root: Path = DATA_DIR, *, force: bool = False) -> bool:
     if not force:
         # Missing/old markers are migrations, never permission to erase user data.
         if not isinstance(marker, dict) or marker.get('schema') != SCHEMA:
-            write_json(root / 'state-version.json', {'schema': SCHEMA, 'legacyPairingPending': True})
+            write_json(root / 'state-version.json', {'schema': SCHEMA, 'legacyPairingPending': not DEVELOPMENT})
         return False
     for name in OWNED:
         item = root / name

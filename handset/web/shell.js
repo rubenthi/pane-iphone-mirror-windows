@@ -10,11 +10,15 @@
   let native = false;
   function render(state) {
     native = state.native;
-    document.documentElement.style.setProperty('--rail-scale',state.rail_scale??1);
-    document.documentElement.style.setProperty('--rail-top',`${state.rail_top??240}px`);
+    const height=native?innerHeight:state.height;
+    const railScale=native?Math.min(1,Math.max(.15,(height-174)/292)):(state.rail_scale??1);
+    document.documentElement.style.setProperty('--rail-scale',railScale);
+    document.documentElement.style.setProperty('--rail-top',`${native?Math.max(166,(height-288*railScale)/2):(state.rail_top??240)}px`);
     expanded = state.expanded;
-    document.documentElement.style.setProperty('--phone-width', `${state.phone_width}px`);
-    document.documentElement.style.setProperty('--phone-height', `${state.height}px`);
+    // Bridge replies can arrive after another resize. The native viewport is
+    // authoritative; never repaint an earlier reply's dimensions over it.
+    document.documentElement.style.setProperty('--phone-width', `${native?innerWidth-60:state.phone_width}px`);
+    document.documentElement.style.setProperty('--phone-height', `${height}px`);
     document.body.classList.toggle('drawer-open', expanded);
     document.body.classList.toggle('browser-mode', !native);
     for (const id of ['pin-window','minimize-window','maximize-window','close-window']) document.querySelector('#'+id).hidden = !native;
@@ -37,9 +41,14 @@
   }
   window.paneOpenDrawer = () => layout(true);
   arrow.addEventListener('click', () => layout(!expanded).catch(() => {}));
-  document.querySelector('#welcome-setup').addEventListener('click', async () => {
-    await layout(true);
-    document.querySelector('#toggle-guide').click();
+  window.addEventListener('resize', () => {
+    if (!native) return;
+    // Follow the viewport in the same paint; don't wait for the bridge reply.
+    const height=innerHeight, scale=Math.min(1,Math.max(.15,(height-174)/292));
+    document.documentElement.style.setProperty('--phone-width',`${innerWidth-60}px`);
+    document.documentElement.style.setProperty('--phone-height',`${height}px`);
+    document.documentElement.style.setProperty('--rail-scale',scale);
+    document.documentElement.style.setProperty('--rail-top',`${Math.max(166,(height-288*scale)/2)}px`);
   });
   document.querySelectorAll('#drag-handle,[data-window-drag]').forEach(handle => {
     let origin=null;
@@ -64,7 +73,7 @@
       if([s.width,s.height,s.received,s.presented].every(Number.isFinite)) document.querySelector('#video-performance').textContent=`${s.width} × ${s.height} · received ${s.received.toFixed(1)} FPS · displayed ${s.presented.toFixed(1)} FPS · target ${fpsSelect.value}`;
       return;
     }
-    if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':event.data.text;arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
+    if(event.data.source==='pane-stream-status'){document.querySelector('#stream-note').textContent=event.data.tone==='ok'?'':window.paneNotice(event.data.text);arrow.classList.toggle('has-warning',event.data.tone==='warn');return;}
     const { width, height } = event.data;
     if (![width, height].every(value => Number.isInteger(value) && value > 0 && value <= 16384)) return;
     const next = width / height;
@@ -90,10 +99,8 @@
     });
     corner.addEventListener('pointermove',event=>{
       if(!resizing)return;
-      const dy=(event.screenY-resizing.y)*(resizing.corner.includes('n')?-1:1);
-      const dx=(event.screenX-resizing.x)*(resizing.corner.includes('w')?-1:1)/aspect;
-      const size={corner:resizing.corner,height:Math.max(360,Math.min(10000,resizing.height+(Math.abs(dy)>=Math.abs(dx)?dy:dx)))};
-      resize(size).catch(error=>{document.querySelector("#screen-note").textContent=error.message;});
+      const size={corner:resizing.corner,height:window.paneResizeHeight(resizing,event.screenX,event.screenY,aspect)};
+      resize(size).catch(error=>{document.querySelector("#screen-note").textContent=window.paneNotice(error.message,'window');});
     });
     const end=()=>{resizing=null;};
     corner.addEventListener('pointerup',end);corner.addEventListener('pointercancel',end);corner.addEventListener('lostpointercapture',end);

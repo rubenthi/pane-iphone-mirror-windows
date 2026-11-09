@@ -16,6 +16,11 @@ def run(output):
         from handset.version import VERSION
         import webview
         from bleak import BleakClient, BleakScanner
+        # Exercise the bundled TLS/cryptography implementation without binding
+        # a LAN socket or connecting to a phone.
+        from handset.bulk import _tls_context
+        tls_context, fingerprint = _tls_context()
+        assert len(fingerprint) == 64 and tls_context.minimum_version.value >= 771
         from pymobiledevice3.services.amfi import AmfiService
         from pymobiledevice3.services.house_arrest import HouseArrestService
         from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -25,6 +30,9 @@ def run(output):
         assert hasattr(userspace_tunnel.UserspaceRsdTunnel, '_aopen_locked')
         assert hasattr(bonjour, '_bind_ipv4') and hasattr(bonjour, '_send_query_all')
         assert Path(__file__).with_name('install_update.ps1').is_file()
+        licenses = Path(__file__).resolve().parents[1] / 'licenses'
+        assert (licenses / 'Pane' / 'LICENSE').is_file()
+        assert any(licenses.glob('pymobiledevice3-*.dist-info/licenses/LICENSE'))
         import subprocess
         from handset.signing import helper_path, bundled_package
         from handset.setup import inspect_ipa
@@ -53,7 +61,7 @@ def run(output):
         finally:
             server.shutdown(); server.server_close(); thread.join(5)
         verify_native_window()
-        result = {'ok': True, 'version': VERSION, 'checks': ['dependency imports', 'bundled signer and Bluetooth worker', 'bundled updater', 'HTTP UI', 'WebView2 renderer', 'native window region', 'drawer sizing', 'WebCodecs API']}
+        result = {'ok': True, 'version': VERSION, 'checks': ['dependency imports', 'ephemeral bulk TLS identity', 'bundled signer and Bluetooth worker', 'bundled updater', 'HTTP UI', 'WebView2 renderer', 'native window region', 'drawer sizing', 'WebCodecs API']}
     except Exception as error:
         import traceback
         result['error'] = str(error)
@@ -64,6 +72,8 @@ def run(output):
 
 def verify_native_window():
     """Exercise the real packaged WinForms/WebView2 renderer without any phone API."""
+    from handset.display import enable_per_monitor_dpi
+    enable_per_monitor_dpi()
     import ctypes
     from ctypes import wintypes as W
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -88,8 +98,10 @@ def verify_native_window():
             for expanded in (False,True,False):
                 state=shell.layout(expanded,390/844)
                 time.sleep(.2)
-                viewport=window.evaluate_js('({width:innerWidth,height:innerHeight,decoder:typeof VideoDecoder})')
+                viewport=window.evaluate_js('({width:innerWidth,height:innerHeight,decoder:typeof VideoDecoder,dpr:devicePixelRatio})')
                 assert viewport['width']==state['width'] and viewport['height']==state['height'], (viewport,state)
+                assert state['per_monitor_v2'], 'Packaged window must use PerMonitorV2'
+                assert abs(viewport['dpr'] - state['dpi']/96) < .01, (viewport, state)
                 assert viewport['decoder']=='function', 'WebCodecs VideoDecoder unavailable'
             shell.u.GetWindowRgn.argtypes=[W.HWND,W.HRGN]
             shell.g.PtInRegion.argtypes=[W.HRGN,ctypes.c_int,ctypes.c_int]

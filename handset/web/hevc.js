@@ -22,13 +22,22 @@
     return {codedWidth,codedHeight,width,height,x:left*subW,y:top*subH};
   }
   function update(description, chunk){
-    const sets=new Map();let p=0;
+    let sets=null,p=0;
     while(p+4<=chunk.length){
-      const n=new DataView(chunk.buffer,chunk.byteOffset+p,4).getUint32(0);p+=4;
+      // The length is unsigned. Index the existing byte view directly so
+      // ordinary slices need no per-NAL objects, even for an offset subarray.
+      const n=chunk[p]*0x1000000+(chunk[p+1]<<16)+(chunk[p+2]<<8)+chunk[p+3];p+=4;
       if(n<2||p+n>chunk.length)throw Error('Invalid HEVC access unit');
-      const type=(chunk[p]>>1)&63;if(type>=32&&type<=34)sets.set(type,chunk.slice(p,p+n));p+=n;
+      const type=(chunk[p]>>1)&63;
+      if(type>=32&&type<=34){
+        if(n>65535)throw Error('HEVC parameter set exceeds configuration limit');
+        sets??=new Map();
+        sets.set(type,chunk.subarray(p,p+n));
+      }
+      p+=n;
     }
-    if(!sets.size)return null;
+    if(p!==chunk.length)throw Error('Truncated HEVC access unit');
+    if(!sets)return null;
     const d=new Uint8Array(description),out=Array.from(d.slice(0,23));p=23;
     for(let a=0;a<d[22];a++){
       const kind=d[p++],count=d[p]*256+d[p+1];p+=2;const nals=[];

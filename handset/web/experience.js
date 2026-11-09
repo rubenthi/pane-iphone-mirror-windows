@@ -3,20 +3,55 @@
   let prefs = {},
     devices = { audio: [], notifications: [] },
     tour = 0;
+  let companionState = {};
+  let preferencesLoaded = false;
+  let notificationSetupGeneration = 0;
+  function iphoneCandidates() {
+    return [...new Map((devices.notifications||[]).filter(d=>d&&typeof d.id==='string'&&d.id.trim()&&d.id.length<=2048&&!/[\x00-\x1f]/.test(d.id)&&typeof d.name==='string'&&/iphone/i.test(d.name)&&!/^pane-/i.test(d.name.trim())).map(d=>[d.id,d])).values()];
+  }
+  function notificationPatch() {
+    const patch={notifications_enabled:true}, phones=iphoneCandidates();
+    if(preferencesLoaded&&!prefs.notification_device_id&&phones.length===1)patch.notification_device_id=phones[0].id;
+    return patch;
+  }
+  function renderNotificationSetup() {
+    const enabled=!!prefs.notifications_enabled, phase=companionState.notificationPhase;
+    const ready=enabled&&phase==='ready', phones=iphoneCandidates();
+    const selected=(devices.notifications||[]).find(d=>d.id===prefs.notification_device_id);
+    $('notifications-toggle-hint').textContent=enabled?(ready?'On':'Setting up…'):'Off';
+    const detail=$('notification-setup-help');
+    detail.hidden=ready;
+    detail.dataset.expanded=String(enabled&&!ready);
+    detail.querySelector('.action-summary').hidden=enabled&&!ready;
+    detail.querySelector('.action-summary').textContent=ready?'Ready. iPhone alerts will appear here.':'Turn on to get iPhone alerts here.';
+    detail.querySelector('.action-expanded').hidden=!enabled||ready;
+    $('notification-phone-steps').hidden=phase==='needs_windows_permission';
+    $('notification-windows-help').hidden=phase!=='needs_windows_permission';
+    $('notification-pc-name').textContent=companionState.computerName||'This PC';
+    $('notification-device-field').hidden=!enabled||(phones.length===1&&phones[0].id===prefs.notification_device_id);
+    $('notification-selected-phone').hidden=!enabled||ready||!prefs.notification_device_id||!$('notification-device-field').hidden;
+    $('notification-selected-phone').textContent=selected?`${selected.name} selected`:'Saved iPhone';
+    $('notification-actions').hidden=!enabled||ready;
+    $('notification-pair').hidden=!!prefs.notification_device_id;
+    $('notification-options').hidden=!enabled;
+    const descriptions={off:'',ready:'Connected',needs_device:'Choose your iPhone, or pair it first.',connecting:'Connecting…',needs_permission:'Allow sharing on your iPhone.',needs_windows_permission:'Allow notifications for Pane in Windows.',error:'Connection paused. Check again.',unavailable:'Use the Windows app to receive alerts.'};
+    $('notifications-note').textContent=descriptions[enabled?phase:'off']??(enabled?'Allow sharing on your iPhone.':'');
+    $('notifications-note').dataset.phase=enabled?phase||'connecting':'off';
+  }
   const tours = [
     [
       "Your iPhone. Your mouse.",
-      "Click to tap. Drag or scroll to swipe. Right-click to go Home. While the mirror is focused, your keyboard types on your iPhone.",
+      "Click to tap, drag to swipe, and type with your keyboard. Right-click for Home.",
       '<div class="mini-phone"><svg viewBox="0 0 40 40"><path d="M12 7v25l6-7 6 11 5-3-6-10 10-2z"/></svg></div><div class="mini-bubble">Click. Swipe. Type.<span>All in the phone window.</span></div>',
     ],
     [
       "A little room to move.",
-      "Drag the three bars to move Pane. Hover or focus them for the connected window controls. Resize from any phone corner, or pin Pane above your work.",
+      "Drag the three bars to move Pane. Resize from a corner, or open the window controls to pin it.",
       '<div class="mini-phone"></div><div class="mini-bubble">≡<span>One place for window controls.</span></div>',
     ],
     [
       "Stay connected, your way.",
-      "Use Uploads to send photos and files in either direction. Connect Bluetooth audio in Settings. Choose phone notifications in Notifications. Background mode is off by default; enable it in the sidebar to keep notifications coming after closing Pane.",
+      "Send files in Uploads. Choose audio and notifications in Settings, and enable background mode to keep alerts after closing Pane.",
       '<div class="mini-phone"><svg viewBox="0 0 40 40"><path d="M12 28h16l-3-5v-7a5 5 0 0 0-10 0v7zM18 33h4"/></svg></div><div class="mini-bubble">You choose.<span>Audio, alerts and background mode.</span></div>',
     ],
   ];
@@ -38,6 +73,16 @@
       .forEach((p) => (p.hidden = true));
   }
   $("settings-tab").addEventListener("click", home);
+  document.querySelector('.preferences-heading h2').textContent='Settings';
+  const settingsIcons={notifications:['bell','coral'],audio:['volume','violet'],display:['phone','blue'],setup:['settings','gray'],details:['wifi','green'],help:['alert','blue']};
+  document.querySelectorAll('.settings-links > button').forEach(row=>{
+    const [icon,color]=settingsIcons[row.dataset.settings] || ['play','blue'];
+    const label=document.createElement('span');label.className='settings-row-label';
+    label.textContent=row.firstChild.textContent;
+    const badge=document.createElement('span');badge.className='settings-row-icon '+color;badge.append(window.paneIcon(icon));
+    row.replaceChildren(badge,label,window.paneIcon('chevron'));
+  });
+  document.querySelectorAll('[data-settings-back]').forEach(button=>{button.setAttribute('aria-label','Back to Settings');button.textContent='‹ Settings';});
   document
     .querySelectorAll("[data-settings]")
     .forEach((x) =>
@@ -106,9 +151,6 @@
   });
   window.paneView = { open };
   function renderPreferences() {
-    $("notifications-toggle-hint").textContent = prefs.notifications_enabled
-      ? "Complete the iPhone step below."
-      : "Off until you choose to enable it.";
     $("previews-toggle-hint").textContent = prefs.show_previews
       ? "Titles and messages appear on this PC."
       : "Keep content private when this is off.";
@@ -120,7 +162,6 @@
     $("background-next").hidden =
       !prefs.background_enabled || !!prefs.notifications_enabled;
     for (const [id, key] of [
-      ["notification-setup-help", "notifications_enabled"],
       ["audio-setup-help", "audio_enabled"],
     ]) {
       const detail = $(id),
@@ -154,6 +195,7 @@
       select.value = prefs[key] || "";
     }
     window.paneSelects?.sync();
+    renderNotificationSetup();
   }
   // Preference writes are ordered. A quick second change cannot resurrect stale state.
   let saveChain = Promise.resolve();
@@ -162,11 +204,12 @@
       try {
         const state = await postJson("/api/preferences", patch);
         prefs = state.preferences;
+        preferencesLoaded = true;
         renderPreferences();
         renderCompanion(state.companion);
         $("preferences-note").textContent = "Saved";
       } catch (e) {
-        $("preferences-note").textContent = e.message;
+        $("preferences-note").textContent = window.paneNotice(e.message,'preferences');
         renderPreferences();
       }
     });
@@ -174,7 +217,6 @@
   }
   for (const [id, key] of [
     ["background-enabled", "background_enabled"],
-    ["notifications-enabled", "notifications_enabled"],
     ["notification-previews", "show_previews"],
     ["audio-enabled", "audio_enabled"],
     ["audio-device", "audio_device_id"],
@@ -186,6 +228,18 @@
       }),
     );
   }
+  $('notifications-enabled').addEventListener('change',event=>{
+    notificationSetupGeneration++;
+    save(event.target.checked?notificationPatch():{notifications_enabled:false});
+  });
+  $('notification-pair').addEventListener('click',()=>postJson('/api/bluetooth/settings',{}).catch(()=>{$('notifications-note').textContent='Couldn’t open Bluetooth settings. Try again.';}));
+  $('notification-windows-settings').addEventListener('click',()=>postJson('/api/notifications/settings',{}).catch(()=>{$('notifications-note').textContent='Couldn’t open notification settings. Try again.';}));
+  $('notifications-check').addEventListener('click',async()=>{
+    const generation=notificationSetupGeneration;
+    $('notifications-check').disabled=true;
+    try { await refreshBluetooth(); if(generation===notificationSetupGeneration&&prefs.notifications_enabled&&$('notifications-enabled').checked)await save(notificationPatch()); }
+    finally { $('notifications-check').disabled=false; }
+  });
   document.querySelectorAll("#notification-types input").forEach((x) =>
     x.addEventListener("change", () =>
       save({
@@ -196,13 +250,10 @@
     ),
   );
   function renderCompanion(state = {}) {
-    $("notifications-note").textContent =
-      state.notifications ||
-      (state.available
-        ? "Select your paired iPhone and enable sharing on the phone."
-        : "Use a Windows build of Pane to connect your iPhone.");
+    companionState=state;
+    renderNotificationSetup();
     $("audio-note").textContent =
-      state.audio ||
+      window.paneBluetoothNote(state.audio) ||
       (state.available
         ? ""
         : "Bluetooth audio is available in the Windows release.");
@@ -212,9 +263,9 @@
     try {
       devices = await getJson("/api/bluetooth/devices");
       renderPreferences();
-      if (devices.error) $("audio-note").textContent = devices.error;
+      if (devices.error) $("audio-note").textContent = window.paneNotice(devices.error,'bluetooth');
     } catch (e) {
-      $("audio-note").textContent = e.message;
+      $("audio-note").textContent = window.paneNotice(e.message,'preferences');
     } finally {
       $("bluetooth-refresh").disabled = false;
     }
@@ -222,23 +273,42 @@
   $("bluetooth-refresh").addEventListener("click", refreshBluetooth);
   $("bluetooth-settings").addEventListener("click", () =>
     postJson("/api/bluetooth/settings", {}).catch(
-      (e) => ($("audio-note").textContent = e.message),
+      (e) => ($("audio-note").textContent = window.paneNotice(e.message,'bluetooth')),
     ),
   );
   const ready = getJson("/api/preferences")
     .then((state) => {
       prefs = state.preferences;
+      preferencesLoaded = true;
       renderPreferences();
       renderCompanion(state.companion);
       return prefs;
     })
     .catch((e) => {
-      $("preferences-note").textContent = e.message;
+      $("preferences-note").textContent = window.paneNotice(e.message,'preferences');
       prefs = { tour_complete: true };
       return prefs;
     });
   window.paneExperience = { ready, renderCompanion };
-  // One shared, app-styled tooltip, available to pointer and keyboard users.
+  // Only ambiguous icon controls and actually truncated filenames need tips.
+  const essentialTips = '.rail-grip,#drawer-toggle,#refresh,#pin-window,[data-gesture="switcher"],[data-gesture="control"]';
+  const tipTargets = `${essentialTips},.transfer strong`;
+  function pruneTitles(root) {
+    const titled = [...(root.matches?.('[title]') ? [root] : []), ...(root.querySelectorAll?.('[title]') || [])];
+    for (const el of titled) {
+      if (el.tagName === 'IFRAME') continue; // Keep its accessible document name.
+      if (el.matches(tipTargets)) el.dataset.tip = el.getAttribute('title');
+      else delete el.dataset.tip;
+      el.removeAttribute('title');
+    }
+  }
+  pruneTitles(document);
+  new MutationObserver(records => {
+    for (const record of records) {
+      if (record.type === 'attributes') pruneTitles(record.target);
+      else for (const node of record.addedNodes) if (node.nodeType === 1) pruneTitles(node);
+    }
+  }).observe(document.body, {subtree:true,childList:true,attributes:true,attributeFilter:['title']});
   const tip = $("pane-tooltip");
   let current = null,
     timer;
@@ -255,11 +325,10 @@
     current = null;
   }
   function show(target) {
-    const el = target?.closest?.(
-      "[title],[data-tip],button,input,select,a,summary",
-    );
+    const el = target?.closest?.(tipTargets);
     if (!el || el === current) return;
     hide();
+    if (el.disabled || (el.matches('.transfer strong') && el.scrollWidth <= el.clientWidth)) return;
     if (
       el.getAttribute("role") === "combobox" &&
       el.getAttribute("aria-expanded") === "true"
@@ -300,7 +369,7 @@
       const size = tip.getBoundingClientRect();
       tip.style.left = `${Math.max(bounds.left + 8, Math.min(r.left, bounds.right - size.width - 8)) / scale}px`;
       tip.style.top = `${Math.max(bounds.top + 8, Math.min(r.bottom + 8, bounds.bottom - size.height - 12, window.innerHeight - size.height - 12)) / scale}px`;
-    }, 450);
+    }, 650);
   }
   document.addEventListener("pointerover", (e) => show(e.target));
   document.addEventListener("pointerout", (e) => {

@@ -139,6 +139,9 @@ const fs = require("node:fs");
     await page.locator('[data-transport="usb"]').click();
     await settings();
     await capture("06-settings");
+    assert.equal(await page.locator('.settings-links .settings-row-icon').count(), 7);
+    assert.equal(await page.locator('.settings-links > button > .pane-icon').count(), 7);
+    assert.equal(await page.locator('.settings-links > button > .pane-icon').first().isVisible(),true);
     await fits(".drawer-scroll");
     await page
       .locator('.settings-links [data-settings="notifications"]')
@@ -148,13 +151,10 @@ const fs = require("node:fs");
     await page.locator("#background-next").waitFor({ state: "visible" });
     await capture("08-background-action");
     await page.locator("#background-next").click();
-    await page
-      .locator("#notification-device-control")
-      .waitFor({ state: "visible" });
+    assert.equal(await page.locator('#notification-device-field').isVisible(),false);
+    assert.equal(await page.locator('#notification-options').isVisible(),false);
+    assert.equal(await page.locator('#notification-options').getAttribute('open'),null);
     await capture("09-notifications-off");
-    const compact = await page
-      .locator("#notification-setup-help .action-summary")
-      .evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
     await page.locator("#notifications-enabled").check();
     await page
       .locator("#notification-setup-help .action-expanded")
@@ -163,10 +163,12 @@ const fs = require("node:fs");
       await page.locator("#notification-setup-help").innerText(),
       /Share System Notifications/,
     );
-    const expanded = await page
-      .locator("#notification-setup-help .action-expanded p")
-      .evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
-    assert.ok(expanded > compact);
+    await page.locator('#notification-device-control').waitFor({state:'visible'});
+    assert.equal(await page.locator('#notification-options').getAttribute('open'),null);
+    const notificationPrefs=(await page.evaluate(()=>getJson('/api/preferences'))).preferences;
+    assert.equal(notificationPrefs.show_previews,false,'Enabling alerts must not enable message previews');
+    assert.equal(notificationPrefs.background_enabled,true,'The earlier explicit background choice must be preserved');
+    assert.equal(notificationPrefs.notification_device_id,'','Two iPhones require a manual choice');
     assert.equal(await page.locator("#background-next").isVisible(), false);
     await capture("10-notifications-on");
     await fits(".drawer-scroll");
@@ -225,6 +227,7 @@ const fs = require("node:fs");
     await picker.press("Enter");
     await picker.press("Tab");
     assert.equal(await page.getByRole("listbox").isVisible(), false);
+    await page.locator('#notification-options > summary').click();
     await page.locator("#notification-previews").check();
     await page.waitForFunction(() =>
       document
@@ -232,15 +235,20 @@ const fs = require("node:fs");
         .textContent.includes("Titles"),
     );
     await capture("12-notification-previews");
+    assert.equal(await page.locator('.drawer-scroll').evaluate(e=>getComputedStyle(e).overflowY),'auto','Expanded privacy options must remain scrollable');
+    await page.locator('#notification-options > summary').click();
     await fits(".drawer-scroll");
     await page.locator("#notifications-enabled").focus();
-    await page.locator("#pane-tooltip").waitFor({ state: "visible" });
+    await page.waitForTimeout(750);
+    assert.equal(await page.locator('#pane-tooltip').isVisible(),false);
     assert.match(
       await page
         .locator("#notifications-enabled")
         .getAttribute("aria-describedby"),
       /notification-setup-help/,
     );
+    await page.locator('#pin-window').focus();
+    await page.locator('#pane-tooltip').waitFor({state:'visible'});
     await capture("13-tooltip", false);
     await page.keyboard.press("Escape");
     assert.equal(
@@ -278,8 +286,8 @@ const fs = require("node:fs");
     await page.locator('[data-step="install"] > summary').click();
     await page.locator("#signing-form").scrollIntoViewIfNeeded();
     await capture("20-signing");
-    await page.locator("#settings-setup .trust-help summary").click();
-    await page.locator("#settings-setup .trust-help").scrollIntoViewIfNeeded();
+    await page.locator("#settings-setup .trust-help:not(.privacy-help) summary").click();
+    await page.locator("#settings-setup .trust-help:not(.privacy-help)").scrollIntoViewIfNeeded();
     await capture("21-trust-help");
     await page.getByRole("tab", { name: "Uploads", exact: true }).click();
     await capture("22-uploads-empty");
@@ -315,7 +323,7 @@ const fs = require("node:fs");
     await page
       .locator(".transfer strong")
       .first()
-      .evaluate((element, name) => (element.title = name), longName);
+      .evaluate((element, name) => {element.textContent=name;element.title=name;}, longName);
     await page.locator(".transfer strong").first().hover();
     await page.locator("#pane-tooltip").waitFor({ state: "visible" });
     const textBounds = await page
@@ -350,10 +358,10 @@ const fs = require("node:fs");
     ]) {
       setupSnapshot = { phase: "idle", onboardingRequired: true, ...state };
       const expectedTitle = {
-        connect: "Your iPhone, connected.",
-        developer: "Enable Developer Mode.",
-        install: "Install Pane on iPhone.",
-        pair: "Open Pane on iPhone.",
+        connect: "Connect your iPhone",
+        developer: "Enable Developer Mode",
+        install: "Install Pane on iPhone",
+        pair: "Open Pane on iPhone",
       }[stage];
       await page.waitForFunction(
         (title) => document.querySelector("#onboarding-title").textContent === title
@@ -361,6 +369,11 @@ const fs = require("node:fs");
         expectedTitle,
       );
       await capture(`25-setup-${stage}`);
+      if (stage === 'pair') {
+        const trust = page.locator('#onboarding-bluetooth .trust-visual');
+        assert.match(await trust.innerText(), /Settings[\s\S]*General[\s\S]*VPN & Device Management[\s\S]*Developer App[\s\S]*Your Apple Account[\s\S]*Tap Trust/);
+        assert.equal(await trust.locator('.trust-action .pane-icon').isVisible(), true);
+      }
       assert.equal(
         await page.locator("#onboarding").isVisible(),
         true,
@@ -369,7 +382,7 @@ const fs = require("node:fs");
       assert.match(
         await page.locator("#onboarding-title").innerText(),
         {
-          connect: /connected/,
+          connect: /Connect your iPhone/,
           developer: /Developer Mode/,
           install: /Install Pane/,
           pair: /Open Pane/,

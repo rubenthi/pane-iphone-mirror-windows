@@ -33,8 +33,13 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(async () => {
       const auth = await fetch('/api/auth').then(r=>r.json());
       const state = await fetch('/api/window',{headers:{'X-Pane-Token':auth.token}}).then(r=>r.json());
-      return state.native && innerWidth === state.width && innerHeight === state.height;
+      return state.native && state.windows_identity && innerWidth === state.width && innerHeight === state.height;
     });
+    const windowsIdentity=(await page.evaluate(()=>getJson('/api/window'))).windows_identity;
+    assert.deepEqual(windowsIdentity,{app_id:'Pane.Desktop.Development',form_icon_matches:true,small_icon:true,large_icon:true});
+    const initialDensity=await page.evaluate(async()=>({state:await getJson('/api/window'),dpr:devicePixelRatio}));
+    assert.equal(initialDensity.state.per_monitor_v2,true,'The native window must use PerMonitorV2, not Windows bitmap scaling');
+    assert.ok(Math.abs(initialDensity.dpr-initialDensity.state.dpi/96)<.01,'WebView2 must rasterize at the current monitor density');
     await page.evaluate(()=>load());
     await page.getByText('No iPhone detected.',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.locator('#connection-drawer').isVisible(),false);
@@ -47,7 +52,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     async function checkDesktopPixels(){
       await page.waitForFunction(async()=>{
         const s=await getJson('/api/window'),p=s.pixels,b=s.backdrop_color;
-        return p.corner===b && p.above===b && p.below===b && p.phone!==b;
+        return p.corner===b && p.above===b && p.below===b && p.phone!==b && p.phone!==0xffffffff;
       },null,{timeout:10000}).catch(async e=>{console.log('Desktop clipping failure:',await page.evaluate(()=>getJson('/api/window')));throw e;});
     }
     await checkDesktopPixels();
@@ -102,7 +107,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     // A same-origin message from the mirror iframe represents a decoded display size.
     const mirror = page.frames().find(frame=>frame.parentFrame()===page.mainFrame());
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:932,height:430},parent.location.origin));
-    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-14)/(parseFloat(css.getPropertyValue('--phone-height'))-14)>2;});
+    await page.waitForFunction(()=>{const css=getComputedStyle(document.documentElement);return (parseFloat(css.getPropertyValue('--phone-width'))-6)/(parseFloat(css.getPropertyValue('--phone-height'))-6)>2;});
     await mirror.evaluate(()=>parent.postMessage({source:'pane-display',width:390,height:844},parent.location.origin));
     await page.waitForFunction(w=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--phone-width'))===w-60,compact.width);
     await page.screenshot({path:path.join(output,'pane-expanded.png')});
@@ -111,7 +116,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(w=>innerWidth===w,compact.width);
     await page.locator('.handle-cluster').hover();
     await page.getByRole('button',{name:'Maximize window',exact:true}).waitFor({state:'visible'});
-    assert.equal(await page.locator('.rail-button[aria-label="Volume up"]').getAttribute('title'),'Volume up');
+    assert.equal(await page.locator('.rail-button[aria-label="Volume up"]').getAttribute('title'),null);
     await page.getByRole('button',{name:'Maximize window',exact:true}).click();
     // Resizing moves the hover menu away from the pointer on larger monitors.
     await page.waitForFunction(async () => {
@@ -120,11 +125,60 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     });
     await page.locator('.rail-grip').hover();
     await page.getByRole('button',{name:'Restore window',exact:true}).click();
+    // Native geometry changes before the asynchronous restore reply renders.
+    // Wait for that reply before beginning a fresh pointer-driven resize.
+    await page.waitForFunction(()=>document.querySelector('#maximize-window').getAttribute('aria-label')==='Maximize window');
     await page.waitForFunction(h=>innerHeight===h,compact.height);
     await page.waitForFunction(h=>document.querySelector('.workspace').getBoundingClientRect().height===h,compact.height);
     const grip=await page.locator('[data-resize-corner=se]').boundingBox();
     await page.mouse.move(grip.x+8,grip.y+8);await page.mouse.down();await page.mouse.move(grip.x+8,grip.y-145,{steps:6});await page.mouse.up();
     await page.waitForFunction(h=>innerHeight<h,compact.height);
+    // Real pointer drags from every corner, with the opposite corner fixed.
+    for(const corner of ['nw','ne','sw','se']){
+      const before=await page.evaluate(()=>getJson('/api/window'));
+      const grip=await page.locator(`[data-resize-corner=${corner}]`).boundingBox();
+      const x=grip.x+16,y=grip.y+16;
+      await page.mouse.move(x,y);await page.mouse.down();
+      await page.mouse.move(x+(corner.includes('w')?8:-8),y+(corner.includes('n')?17:-17),{steps:6});
+      await page.mouse.up();
+      await page.waitForFunction(h=>innerHeight<h,before.height);
+      const after=await page.evaluate(()=>getJson('/api/window'));
+      const anchorX=corner.includes('w')?2:0,anchorY=corner.includes('n')?3:1;
+      assert.equal(after.native_rect[anchorX],before.native_rect[anchorX],`${corner} moved its horizontal anchor`);
+      assert.equal(after.native_rect[anchorY],before.native_rect[anchorY],`${corner} moved its vertical anchor`);
+    }
+    // Exercise the Python bridge without rendering its reply: the viewport
+    // resize event must size the shell in the browser's next paint.
+    const resizeLatency=await page.evaluate(async()=>{
+      const measurements=[], initial=innerHeight;
+      for(const corner of ['se','sw','ne','nw']){
+        for(const height of [initial+24,initial]){
+          const before=(await getJson('/api/window')).native_rect;
+          const started=performance.now();
+          const state=await window.pywebview.api.window_command({action:'resize',corner,height});
+          if(state.error)throw new Error(state.error);
+          const deadline=started+1000;
+          while(innerHeight!==state.height || document.querySelector('.workspace').getBoundingClientRect().height!==innerHeight){
+            if(performance.now()>deadline)throw new Error('Native resize did not paint matching shell geometry within one second.');
+            await new Promise(resolve=>requestAnimationFrame(resolve));
+          }
+          measurements.push(performance.now()-started);
+          const after=(await getJson('/api/window')).native_rect;
+          const anchorX=corner.includes('w')?2:0, anchorY=corner.includes('n')?3:1;
+          if(before[anchorX]!==after[anchorX] || before[anchorY]!==after[anchorY])throw new Error(`Resize moved the opposite corner: ${corner}`);
+        }
+      }
+      return measurements;
+    });
+    await sleep(200);
+    const resizeState=await page.evaluate(()=>getJson('/api/window'));
+    assert.ok(resizeState.resize_timings.length>=8,'native resize timings were sampled');
+    assert.ok(resizeState.resize_paints.length>0,'desktop repaint was sampled during native resizing');
+    assert.ok(Math.max(...resizeState.resize_timings)<500,`native resize blocked: ${JSON.stringify(resizeState.resize_timings)}`);
+    assert.ok(Math.max(...resizeLatency)<1000,`resize presentation was delayed: ${JSON.stringify(resizeLatency)}`);
+    await checkRegion();
+    const resizeEvidence={nativeMs:resizeState.resize_timings,presentedMs:resizeLatency.map(v=>Math.round(v)),desktopSamples:resizeState.resize_paints.length,maxWhitePoints:Math.max(...resizeState.resize_paints),invalidDesktopSamples:resizeState.resize_invalid_samples};
+    console.log('Resize timing (ms):',JSON.stringify(resizeEvidence));
     await page.evaluate(async()=>renderScreen({phase:'idle'}));
     assert.deepEqual(errors,[]);
     // Exercise the real mirror document with synthetic full-size video frames.
@@ -142,6 +196,13 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       const r=canvas.getBoundingClientRect();return {width:r.width,height:r.height,viewportWidth:innerWidth,viewportHeight:innerHeight,top:r.top,bottom:r.bottom,center:touchCoords({clientX:r.left+r.width/2,clientY:r.top+r.height/2})};
     });
     console.log('Mirror geometry:',JSON.stringify(geometry));
+    assert.ok(geometry.width >= geometry.viewportWidth-.02 && geometry.height >= geometry.viewportHeight-.02,'Mirror must fill the bezel opening');
+    const bezel=await page.evaluate(()=>{
+      const outer=document.querySelector('#phone-shell').getBoundingClientRect(),inner=document.querySelector('#phone-screen').getBoundingClientRect();
+      return [inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom];
+    });
+    assert.ok(bezel.every(side=>Math.abs(side-3)<.1),`Uneven bezel: ${bezel}`);
+    assert.equal(await page.locator('#phone-shell').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(0, 0, 0)','The uniform bezel must be solid black');
     assert.ok(Math.abs(geometry.width/geometry.height-1170/2532)<.002);
     assert.ok(geometry.top>=-1 && geometry.bottom<=geometry.viewportHeight+1);
     assert.equal(geometry.center.x,32768);assert.equal(geometry.center.y,32768);
@@ -154,12 +215,134 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(await page.locator('#phone-shell .phone-status').count(),0);
     await page.evaluate(()=>{window.paneControl=window.originalPaneControl;});
     await require('./remote-controls.cjs')(page);
+    // Exercise actual decoded-frame drawing, not only CSS opening geometry:
+    // the phone's known native display occupies the top-left of a padded
+    // capture. Bright padding makes accidental inclusion unambiguous.
+    const apertureEvidence=await picture.evaluate(()=>{
+      const previousSize=nativeDisplaySize,previousRotation=visualRotation;
+      const source=document.createElement('canvas');source.width=1328;source.height=2896;
+      const brush=source.getContext('2d');
+      brush.fillStyle='#ff00ff';brush.fillRect(0,0,source.width,source.height);
+      brush.fillStyle='#00ff00';brush.fillRect(0,0,1320,2868);
+      const frame=new VideoFrame(source,{timestamp:1});
+      try{
+        visualRotation=0;
+        nativeDisplaySize=null;drawFrame(frame);
+        const uncropped={width:canvas.width,height:canvas.height,
+          bottomRight:Array.from(ctx.getImageData(canvas.width-1,canvas.height-1,1,1).data)};
+        nativeDisplaySize={width:1320,height:2868};drawFrame(frame);
+        const r=canvas.getBoundingClientRect();
+        return {uncropped,width:canvas.width,height:canvas.height,
+          bottomRight:Array.from(ctx.getImageData(canvas.width-1,canvas.height-1,1,1).data),
+          touchBottomRight:touchCoords({clientX:r.right,clientY:r.bottom}),
+          touchCenter:touchCoords({clientX:r.left+r.width/2,clientY:r.top+r.height/2})};
+      }finally{
+        frame.close();nativeDisplaySize=previousSize;visualRotation=previousRotation;
+        if(lastFrame)drawFrame(lastFrame);
+      }
+    });
+    assert.deepEqual([apertureEvidence.uncropped.width,apertureEvidence.uncropped.height],[1328,2896]);
+    assert.deepEqual(apertureEvidence.uncropped.bottomRight,[255,0,255,255],'Synthetic padding must be visible without native metadata');
+    assert.deepEqual([apertureEvidence.width,apertureEvidence.height],[1320,2868]);
+    assert.deepEqual(apertureEvidence.bottomRight,[0,255,0,255],'Real bottom-right display pixel must remain green; encoder padding must be excluded');
+    assert.deepEqual(apertureEvidence.touchBottomRight,{x:65535,y:65535});
+    assert.deepEqual(apertureEvidence.touchCenter,{x:32768,y:32768});
+    fs.writeFileSync(path.join(output,'native-aperture.json'),JSON.stringify(apertureEvidence,null,2));
+    console.log('Display aperture:',JSON.stringify(apertureEvidence));
+    // Keep the physical-desktop gate intact, but report independent WebView2
+    // frame-pixel results even if desktop capture is unavailable in this session.
+    assert.equal(resizeState.resize_invalid_samples,0,`Desktop pixel samples were invalid (CLR_INVALID): ${JSON.stringify(resizeState.resize_samples)}`);
+    assert.ok(Math.max(...resizeState.resize_paints)<7,`white native resize surface: ${JSON.stringify(resizeState.resize_paints)}`);
+    await checkDesktopPixels();
     await page.screenshot({path:path.join(output,'pane-glass-live-synthetic.png')});
 
-    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,checks:['native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','full-frame canvas','wheel-to-touch mapping','no phone overlays','no page errors']},null,2));
+    // Move only the disposable preview across real monitors. Browser emulated
+    // DPR cannot verify WM_DPICHANGED, WebView2 scale detection, or native clips.
+    const beforeDensity=await page.evaluate(()=>getJson('/api/window'));
+    const homeMonitor=beforeDensity.monitors.find(m=>m.name===beforeDensity.monitor);
+    const densityEvidence=[];
+    for(const monitor of [...beforeDensity.monitors,homeMonitor]){
+      assert.ok(monitor,'Original test monitor remains available');
+      await page.evaluate(()=>{window.testDensityStableSince=0;});
+      const response=await fetch('http://127.0.0.1:18776/api/window',{
+        method:'POST',headers:{'X-Pane-Token':token,'Content-Type':'application/json'},
+        body:JSON.stringify({action:'test-monitor',index:monitor.index})
+      });
+      assert.equal(response.status,200);
+      await page.waitForFunction(async monitor=>{
+        const s=await getJson('/api/window');
+        const matches=s.monitor===monitor.name && s.dpi===monitor.dpi && s.per_monitor_v2 && Math.abs(devicePixelRatio-monitor.dpi/96)<.01 &&
+          innerWidth===s.width && innerHeight===s.height && s.web_offset.every(v=>v===0) &&
+          Math.abs(s.native_rect[2]-s.native_rect[0]-innerWidth*devicePixelRatio)<=1 &&
+          Math.abs(s.native_rect[3]-s.native_rect[1]-innerHeight*devicePixelRatio)<=1;
+        if(!matches){window.testDensityStableSince=0;return false;}
+        window.testDensityStableSince ||= performance.now();
+        return performance.now()-window.testDensityStableSince>=300;
+      },monitor,{timeout:15000,polling:100});
+      const density=await page.evaluate(async()=>{
+        const state=await getJson('/api/window');
+        const outer=document.querySelector('#phone-shell').getBoundingClientRect();
+        const inner=document.querySelector('#phone-screen').getBoundingClientRect();
+        return {monitor:state.monitor,dpi:state.dpi,dpr:devicePixelRatio,
+          viewport:[innerWidth,innerHeight],nativeRect:state.native_rect,
+          bezel:[inner.left-outer.left,inner.top-outer.top,outer.right-inner.right,outer.bottom-inner.bottom],
+          bezelColor:getComputedStyle(document.querySelector('#phone-shell')).backgroundColor};
+      });
+      console.log('Monitor density snapshot:',JSON.stringify(density));
+      assert.equal(density.dpi,monitor.dpi);
+      assert.ok(Math.abs(density.dpr-monitor.dpi/96)<.01,'Browser DPR must match the target display density, not the source display');
+      assert.ok(Math.abs((density.nativeRect[2]-density.nativeRect[0])-density.viewport[0]*density.dpr)<=1,'Physical width must match CSS width times monitor density');
+      assert.ok(Math.abs((density.nativeRect[3]-density.nativeRect[1])-density.viewport[1]*density.dpr)<=1,'Physical height must match CSS height times monitor density');
+      assert.ok(density.bezel.every(side=>Math.abs(side-3)<.1),`DPI migration changed bezel width: ${JSON.stringify(density)}`);
+      assert.equal(density.bezelColor,'rgb(0, 0, 0)');
+      await checkRegion();
+      await checkDesktopPixels();
+      density.resizeChecks=[];
+      // A monitor transition must leave resize anchors and physical raster
+      // sizing correct, including after returning to the original dimensions.
+      const originalHeight=density.viewport[1];
+      for(const corner of ['se','nw']){
+        for(const height of [originalHeight+20,originalHeight]){
+          const before=await page.evaluate(()=>getJson('/api/window'));
+          const reply=await page.evaluate(payload=>window.pywebview.api.window_command(payload),{action:'resize',corner,height});
+          assert.equal(reply.error,undefined);
+          assert.equal(reply.height,height,'The density fixture must leave enough work-area space for its requested resize');
+          await page.waitForFunction(async expected=>{
+            const s=await getJson('/api/window');
+            return s.height===expected && innerWidth===s.width && innerHeight===s.height &&
+              document.querySelector('.workspace').getBoundingClientRect().height===innerHeight;
+          },height);
+          const after=await page.evaluate(async()=>({state:await getJson('/api/window'),dpr:devicePixelRatio,viewport:[innerWidth,innerHeight]}));
+          assert.equal(after.state.height,height,'Density resize must retain its requested logical height');
+          const anchorX=corner.includes('w')?2:0,anchorY=corner.includes('n')?3:1;
+          assert.equal(after.state.native_rect[anchorX],before.native_rect[anchorX],`${monitor.dpi}-DPI ${corner} resize moved its horizontal anchor`);
+          assert.equal(after.state.native_rect[anchorY],before.native_rect[anchorY],`${monitor.dpi}-DPI ${corner} resize moved its vertical anchor`);
+          assert.equal(after.state.dpi,monitor.dpi);
+          assert.ok(Math.abs(after.dpr-monitor.dpi/96)<.01);
+          assert.ok(Math.abs(after.state.native_rect[2]-after.state.native_rect[0]-after.viewport[0]*after.dpr)<=1,'Resized physical width must match CSS width times density');
+          assert.ok(Math.abs(after.state.native_rect[3]-after.state.native_rect[1]-after.viewport[1]*after.dpr)<=1,'Resized physical height must match CSS height times density');
+          await checkRegion();
+          density.resizeChecks.push({corner,height,viewport:after.viewport,nativeRect:after.state.native_rect});
+        }
+      }
+      await checkDesktopPixels();
+      const screenshot=await page.screenshot({path:path.join(output,`native-density-${densityEvidence.length}-${density.dpi}.png`)});
+      density.screenshot=[screenshot.readUInt32BE(16),screenshot.readUInt32BE(20)];
+      assert.ok(Math.abs(density.screenshot[0]-density.viewport[0]*density.dpr)<=1,'Capture must contain native-density raster pixels');
+      assert.ok(Math.abs(density.screenshot[1]-density.viewport[1]*density.dpr)<=1,'Capture height must contain native-density raster pixels');
+      densityEvidence.push(density);
+    }
+    fs.writeFileSync(path.join(output,'native-density.json'),JSON.stringify(densityEvidence,null,2));
+    console.log('Native display density:',JSON.stringify(densityEvidence));
+
+    fs.writeFileSync(path.join(output,'native-ui.json'),JSON.stringify({ok:true,compact,windowsIdentity,resizeEvidence,densityEvidence,checks:['Windows application identity and Pane icons','native client dimensions','expand/collapse','iOS 27 guide','AltStore fallback','transport tabs','pin toggle','simulated display aspect','hover window menu','maximize/restore','proportional resize','four-corner anchoring','resize latency and transient desktop pixels','full-frame canvas','wheel-to-touch mapping','native monitor density transitions','no phone overlays','no page errors']},null,2));
     console.log('PASS: native window, drawer, guide/AltStore, tabs, pinning, display aspect, and page errors.');
   } catch(error) {
     console.log('Native preview diagnostics:',logs);
+    if(page){
+      console.log('Native desktop sample diagnostics:',await page.evaluate(async()=>{const s=await getJson('/api/window');return {native_rect:s.native_rect,pixels:s.pixels,resize_samples:s.resize_samples,web_offset:s.web_offset,dpi:s.dpi,dpr:devicePixelRatio,viewport:[innerWidth,innerHeight],geometry:[s.width,s.height],monitor:s.monitor,history:s.command_history};}).catch(()=>({})));
+      await page.screenshot({path:path.join(output,'native-failure.png')}).catch(()=>{});
+    }
     if(page) console.log(await page.evaluate(()=>({status:document.querySelector('#status-note')?.textContent,devices:document.querySelector('#devices')?.textContent,setup:document.querySelector('#onboarding-note')?.textContent})).catch(()=>({})));
     throw error;
   } finally {

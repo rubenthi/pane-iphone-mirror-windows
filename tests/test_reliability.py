@@ -1,17 +1,72 @@
 import asyncio
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import plistlib
+import socketserver
+import struct
 import threading
 import time
 import unittest
 from unittest.mock import patch, MagicMock
 
-from handset import screen, updater
+from handset import mux, screen, updater
 from handset.security import ACCESS_TOKEN
 import test_server_security
 
 
 class ApiReliabilityTests(test_server_security.ServerSecurityTests):
+    def test_usb_disconnect_and_reconnect_use_fresh_routing_records(self):
+        records = []
+        def route(connection, routing_id):
+            return {'MessageType': 'Attached', 'DeviceID': routing_id,
+                    'Properties': {'SerialNumber': 'fixture-phone', 'ConnectionType': connection}}
+
+        class AppleService(socketserver.StreamRequestHandler):
+            def handle(self):
+                size, version, kind, tag = struct.unpack('<4I', self.rfile.read(16))
+                request = plistlib.loads(self.rfile.read(size - 16))
+                if request['MessageType'] != 'ListDevices':
+                    raise AssertionError('Unexpected Apple service request')
+                body = plistlib.dumps({'DeviceList': records.copy()})
+                self.wfile.write(struct.pack('<4I', len(body) + 16, version, kind, tag) + body)
+
+        starts = []
+        async def display(phone, transport):
+            starts.append((phone, transport))
+            if len(starts) == 1:
+                raise ConnectionError('Synthetic cable removal')
+            await asyncio.Event().wait()
+
+        def command(path):
+            status, _, body = self.request('POST', path, {'X-Pane-Token': ACCESS_TOKEN},
+                                          b'{"udid":"fixture-phone","transport":"usb"}')
+            self.assertEqual(status, 200)
+            return json.loads(body)
+
+        with socketserver.TCPServer(('127.0.0.1', 0), AppleService) as apple:
+            thread = threading.Thread(target=apple.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with (patch.object(screen, 'list_devices', lambda: mux.list_devices(apple.server_address)),
+                      patch.object(screen, 'wifi_paired_udids', return_value=[]),
+                      patch.object(screen, 'developer_mode_enabled', return_value=True),
+                      patch.object(screen, '_serve', side_effect=display), patch('handset.notifications.session')):
+                    records[:] = [route('USB', 7)]
+                    command('/api/screen')
+                    screen._WORKER.join(2)
+                    self.assertEqual(screen.screen_status()['phase'], 'error')
+                    records[:] = [route('Network', 8)]
+                    self.assertIn('not on the cable', command('/api/screen')['error'])
+                    records.append(route('USB', 27))
+                    self.assertEqual(command('/api/screen')['phase'], 'starting')
+                    self.assertEqual(command('/api/screen/stop')['phase'], 'idle')
+                    self.assertEqual(starts, [('fixture-phone', 'usb')] * 2)
+            finally:
+                screen.stop_screen()
+                apple.shutdown()
+                thread.join(2)
+
     def test_volume_control_remains_available(self):
         received = []
         class Upstream(BaseHTTPRequestHandler):

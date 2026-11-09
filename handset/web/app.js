@@ -64,7 +64,7 @@ setTransport(transport, false);
 function setTransport(value, reload = true) {
   transport = value === "wifi" ? "wifi" : "usb";
   document.querySelector('#connection-title').textContent = transport === 'wifi' ? 'Wireless connection' : 'Connect over USB';
-  document.querySelector('#connection-description').textContent = transport === 'wifi' ? 'Pair once over USB. Then go wireless.' : 'A direct connection. A simple first step.';
+  document.querySelector('#connection-description').textContent = transport === 'wifi' ? 'Keep your iPhone on the same Wi-Fi.' : 'Keep your iPhone connected.';
   localStorage.setItem("handset-transport", transport);
   document.querySelectorAll("[data-transport]").forEach((btn) => {
     const active = btn.dataset.transport === transport;
@@ -95,7 +95,7 @@ async function setUpWifi() {
     screenNote.textContent = "Wi‑Fi is set up. You can unplug the cable and choose Wi‑Fi.";
     screenNote.className = "";
   } catch (error) {
-    screenNote.textContent = error.message;
+    screenNote.textContent = window.paneNotice(error.message);
     screenNote.className = "warn";
   } finally {
     wifiPair.textContent = "Set up Wi‑Fi";
@@ -105,6 +105,12 @@ async function setUpWifi() {
 
 refresh.addEventListener("click", () => load());
 showScreen.addEventListener("click", () => showPhone());
+document.querySelector('#welcome-setup').addEventListener('click', () => {
+  if (['running','starting'].includes(connectionPhase)) return;
+  setTransport('wifi',false);
+  if (!wifiPaired.includes(selectedUdid)) selectedUdid=wifiPaired.length===1?wifiPaired[0]:null;
+  showPhone();
+});
 restartScreen.addEventListener("click", () => restartMirror());
 wireRemoteControls();
 
@@ -131,7 +137,7 @@ async function load() {
   } catch (error) {
     if (!loadGeneration.current(generation)) return;
     setPill(pillConnection, "Offline", "bad");
-    statusNote.textContent = error.message;
+    statusNote.textContent = window.paneNotice(error.message);
     statusNote.className = "warn";
   } finally {
     if (loadGeneration.current(generation)) refresh.disabled = false;
@@ -191,14 +197,13 @@ function renderStatus(state) {
     return;
   }
   statusNote.textContent =
-    state.error ||
-    (connected ? "Device connected. Press Start mirroring." : driver.detail) ||
+    (state.error ? window.paneNotice(state.error) : connected ? "iPhone connected." : !driver.ready ? "Install Apple Devices on this PC." : "") ||
     "";
   statusNote.className = state.error || !driver.ready ? "warn" : "";
   if (!connected && (state.wifi?.paired || []).length) {
-    statusNote.textContent = "No cable. Choose Wi‑Fi, keep the iPhone unlocked on the same network, and press Start mirroring.";
+    statusNote.textContent = "Keep your iPhone on the same Wi-Fi, then tap Connect.";
     statusNote.className = "";
-    placeholderHint.textContent = "No cable needed — choose Wi‑Fi and press Start mirroring.";
+    placeholderHint.textContent = "Connect your iPhone over Wi-Fi.";
   } else if (!connected) {
     placeholderHint.textContent = "Connect your iPhone with a data cable, unlock it, and tap Trust.";
   }
@@ -258,7 +263,7 @@ async function openDevice(udid) {
       pillDevice.textContent = device.info.DeviceName;
     }
   } catch (error) {
-    if (detailGeneration.current(generation) && selectedUdid === udid) detail.textContent = error.message;
+    if (detailGeneration.current(generation) && selectedUdid === udid) detail.textContent = window.paneNotice(error.message);
   }
 }
 
@@ -270,7 +275,7 @@ function renderDetail(device) {
   if (device.error) {
     const note = document.createElement("p");
     note.className = "warn";
-    note.textContent = device.error;
+    note.textContent = window.paneNotice(device.error);
     detail.append(note);
   }
   const list = document.createElement("dl");
@@ -300,7 +305,7 @@ function renderScreen(screen) {
     remotePanel.hidden = false;
     restartScreen.hidden = false;
     kbToggle.hidden = false;
-    screenNote.textContent = screen.error || screen.note || "Mirroring — typing on your keyboard goes to the iPhone.";
+    screenNote.textContent = screen.error ? window.paneNotice(screen.error) : "Connected.";
     screenNote.className = "";
     showScreen.textContent = "Disconnect";
     showScreen.disabled = connectionBusy;
@@ -320,14 +325,16 @@ function renderScreen(screen) {
   showScreen.disabled = false;
 
   if (screen.phase === "starting") {
-    screenNote.textContent = screen.note || "Starting stream… keep the iPhone unlocked.";
+    screenNote.textContent = "Connecting… Unlock your iPhone.";
+    placeholderHint.textContent = transport==='wifi'?'Connecting over Wi-Fi…':'Connecting to your iPhone…';
     screenNote.className = "";
     showScreen.disabled = connectionBusy;
     showScreen.textContent = "Disconnect";
     return;
   }
   if (screen.error) {
-    screenNote.textContent = screen.error;
+    screenNote.textContent = window.paneNotice(screen.error);
+    placeholderHint.textContent = screenNote.textContent;
     screenNote.className = "warn";
     return;
   }
@@ -344,13 +351,15 @@ async function showPhone() {
   window.clearTimeout(screenTimer);
   showScreen.disabled = true;
   showScreen.textContent = disconnect ? "Disconnecting…" : "Connecting…";
+  if(!disconnect)placeholderHint.textContent=transport==='wifi'?'Connecting over Wi-Fi…':'Connecting to your iPhone…';
   try {
     if (disconnect) await keyboard.releaseAll();
     const result = await postJson(disconnect ? "/api/screen/stop" : "/api/screen", disconnect ? {} : { udid: selectedUdid, transport });
     connectionBusy = false;
     renderScreen(result);
   } catch (error) {
-    screenNote.textContent = error.message;
+    screenNote.textContent = window.paneNotice(error.message);
+    placeholderHint.textContent = screenNote.textContent;
     screenNote.className = "warn";
   } finally {
     connectionBusy = false;
@@ -442,7 +451,7 @@ async function restartMirror() {
       }
     }, 4000);
   } catch (error) {
-    screenNote.textContent = error.message;
+    screenNote.textContent = window.paneNotice(error.message);
     screenNote.className = "warn";
   } finally {
     restartScreen.disabled = false;
@@ -451,7 +460,7 @@ async function restartMirror() {
 
 async function mirrorPost(path, payload) {
   try { await window.paneControl(path, payload); }
-  catch (error) { screenNote.textContent = error.message; screenNote.className = "warn"; }
+  catch (error) { screenNote.textContent = window.paneNotice(error.message); screenNote.className = "warn"; }
 }
 
 async function swipe(direction) {
@@ -485,7 +494,7 @@ function queueGesture(name) {
   gestureChain = gestureChain.then(async () => {
     if (workspace.classList.contains("is-live")) await gesture(name);
   }).catch(error => {
-    screenNote.textContent = error.message;
+    screenNote.textContent = window.paneNotice(error.message);
     screenNote.className = "warn";
   });
   return gestureChain;
@@ -595,6 +604,15 @@ function wireRemoteControls() {
       const name = btn.dataset.btn;
       if (name) mirrorPost("/button", { name, state: "press" });
     });
+  });
+  const volumeWheel=window.createPaneVolumeWheel(name=>mirrorPost('/button',{name,state:'press'}));
+  document.querySelectorAll('.rail-navigation [data-btn^="volume-"]').forEach(button=>{
+    button.dataset.tip='Scroll up for louder, down for quieter';
+    button.addEventListener('wheel',event=>{
+      if(button.disabled || !Number.isFinite(event.deltaY) || event.ctrlKey)return;
+      event.preventDefault();event.stopPropagation();
+      volumeWheel(event.deltaY,event.deltaMode).catch(()=>{});
+    },{passive:false});
   });
   document.querySelectorAll("[data-swipe]").forEach((btn) => {
     btn.addEventListener("click", () => swipe(btn.dataset.swipe));

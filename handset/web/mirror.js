@@ -40,6 +40,7 @@ let pendingFrame = null;
 let rafScheduled = false;
 let lastFrame = null;
 let lastFrameLandscape = null;
+let nativeDisplaySize = null;
 let frameCount = 0;
 let frameStats = new PaneFrameStats();
 let decodeDepth = 0;
@@ -64,6 +65,7 @@ setInterval(() => {
 
 function setStatus(text, tone) {
   if (!statusEl) return;
+  if(tone === "warn") text = window.parent.paneNotice ? window.parent.paneNotice(text) : "Connection lost. Reconnect your iPhone.";
   if (statusEl.textContent === text && statusEl.dataset.tone === String(tone)) return;
   statusEl.dataset.tone = String(tone);
   window.parent.postMessage({source:"pane-stream-status",text,tone},location.origin);
@@ -78,7 +80,10 @@ function fitCanvas() {
   const rect = parent.getBoundingClientRect();
   const naturalW = canvas.width;
   const naturalH = canvas.height;
-  const base = Math.min(rect.width / naturalW, rect.height / naturalH);
+  // Fill the symmetric bezel opening. Integer native bounds can differ from
+  // the video's aspect by a fraction of a pixel; contain leaves black bands.
+  // Cover preserves proportions and clips only the rounding excess normally.
+  const base = Math.max(rect.width / naturalW, rect.height / naturalH);
   const scale = base * zoom;
   canvas.style.width = `${naturalW * scale}px`;
   canvas.style.height = `${naturalH * scale}px`;
@@ -180,12 +185,13 @@ async function pressHome(times = 1) {
   }
 }
 
-function releaseActive() {
+function releaseActive(commitEdgeGesture = false) {
   if (activePointer === null) return;
   activePointer = null;
   if (edgeSwipe) {
     const swipe = edgeSwipe;
     edgeSwipe = null;
+    if (!commitEdgeGesture) return;
     if (swipe.armed) {
       const paused = performance.now() - swipe.lastMoveAt > SWITCHER_HOLD_MS;
       pressHome(paused ? 2 : 1);
@@ -201,7 +207,7 @@ function releaseActive() {
 // Listen on the whole document so a drag can start on the black margin just
 // below the picture; coordinates clamp onto the screen edge.
 document.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0 || wheelBusy) return;
+  if (e.button !== 0 || wheelBusy || activePointer !== null) return;
   e.preventDefault();
   canvas.focus({ preventScroll: true });
   try {
@@ -235,7 +241,7 @@ function onUp(e) {
   if (e.pointerId !== activePointer) return;
   e.preventDefault();
   lastCoords = touchCoords(e);
-  releaseActive();
+  releaseActive(true);
 }
 
 // Translate wheel/trackpad movement only on the phone picture into a bounded swipe.
@@ -272,11 +278,13 @@ async function pumpWheel(){
 
 window.addEventListener("pointermove", onMove);
 window.addEventListener("pointerup", onUp);
-window.addEventListener("pointercancel", onUp);
+window.addEventListener("pointercancel", e => {
+  if (e.pointerId === activePointer) releaseActive();
+});
 document.body.addEventListener("lostpointercapture", (e) => {
   if (e.pointerId === activePointer) releaseActive();
 });
-window.addEventListener("blur", releaseActive);
+window.addEventListener("blur", () => releaseActive());
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") releaseActive();
 });
@@ -333,7 +341,15 @@ async function fetchCodecWithRetry() {
         continue;
       }
       const description = Uint8Array.from(atob(info.description), (c) => c.charCodeAt(0));
-      return { codec: info.codec.trim(), description, geometry: PaneHEVC.dimensions(description) };
+      const geometry=PaneHEVC.dimensions(description);
+      let displaySize=null;
+      try {
+        const response=await fetch('/api/screen',{
+          cache:'no-store',headers:{'X-Pane-Token':await paneToken()},signal:AbortSignal.timeout(2000)
+        });
+        if(response.ok)displaySize=(await response.json()).displaySize;
+      } catch (_) { /* Missing metadata must not prevent a full-frame stream. */ }
+      return { codec: info.codec.trim(), description, geometry, displaySize };
     } catch (err) {
       lastErr = err.message || String(err);
     }
@@ -343,8 +359,9 @@ async function fetchCodecWithRetry() {
 
 function drawFrame(f) {
   const sideways = Math.abs(visualRotation % 180) === 90;
-  const fw = f.displayWidth;
-  const fh = f.displayHeight;
+  const aperture=PaneDisplayAperture(f.displayWidth,f.displayHeight,nativeDisplaySize);
+  const fw = aperture.width;
+  const fh = aperture.height;
   const targetW = sideways ? fh : fw;
   const targetH = sideways ? fw : fh;
   if (targetW !== canvas.width || targetH !== canvas.height) {
@@ -360,7 +377,7 @@ function drawFrame(f) {
   ctx.save();
   ctx.translate(dstW / 2, dstH / 2);
   if (visualRotation) ctx.rotate((visualRotation * Math.PI) / 180);
-  ctx.drawImage(f, -fpW / 2, -fpH / 2, fpW, fpH);
+  ctx.drawImage(f, 0, 0, fw, fh, -fpW / 2, -fpH / 2, fpW, fpH);
   ctx.restore();
 }
 
@@ -414,8 +431,9 @@ async function run(generation) {
     }
   }, 1000);
 
-  const { codec, description, geometry } = await fetchCodecWithRetry();
+  const { codec, description, geometry, displaySize } = await fetchCodecWithRetry();
   if (generation !== runGeneration) return;
+  nativeDisplaySize=displaySize??null;
 
   let decoderConfig = { codec, description, codedWidth: geometry.width, codedHeight: geometry.height, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' };
   let support = await VideoDecoder.isConfigSupported(decoderConfig);

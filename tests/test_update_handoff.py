@@ -33,7 +33,7 @@ def child(directory):
     with patch.object(sys, 'frozen', True, create=True), patch.object(updater, 'VERSION', '0.0.0'), patch.object(updater.tempfile, 'mkdtemp', return_value=str(stage)), patch.object(updater.urllib.request, 'urlopen', side_effect=replies):
         updater.check()
     assert updater.status()['phase'] == 'ready', updater.status()
-    with patch.object(sys, 'executable', str(target)):
+    with patch.object(sys, 'frozen', True, create=True), patch.object(sys, 'executable', str(target)):
         updater.apply_on_exit()
     time.sleep(1)
     assert target.read_bytes() == OLD, 'Replaced the executable before process exit'

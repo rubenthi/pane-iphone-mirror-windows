@@ -19,7 +19,6 @@
       selectTab(next); next.focus();
     });
   }
-  $('#welcome-setup').addEventListener('click', () => selectTab(tabs[0]));
   const bytes = size => size < 1024 ? `${size} B` : size < 1024 ** 2 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1024 ** 2).toFixed(1)} MB`;
   async function action(button, path, payload = {}) {
     button.disabled = true;
@@ -29,7 +28,7 @@
   }
   function renderSetup(state) {
     setupState = state;
-    $('#setup-progress').textContent = state.error || (transferState.bluetooth?.phase === 'connected'
+    $('#setup-progress').textContent = (state.error || state.phase === 'error' ? window.paneNotice(state.error || state.note) : '') || (transferState.bluetooth?.phase === 'connected'
       ? 'Connected. Use Uploads for files, or Start mirroring for the screen.' : state.note);
     $('#setup-progress').dataset.tone = state.phase === 'error' ? 'error' : state.phase;
     const done = {connect: state.usbReady, install: state.installed, developer: state.developerEnabled,
@@ -52,7 +51,7 @@
       setupBusy = true;
       renderSetup({...setupState, note: 'Working with your iPhone…', error: null});
       try { renderSetup(await action(button, `/api/setup/${button.dataset.setup}`, {udid: selectedUdid})); }
-      catch (error) { $('#setup-progress').textContent = error.message; }
+      catch (error) { $('#setup-progress').textContent = window.paneNotice(error.message); }
       finally { setupBusy = false; }
     });
   }
@@ -60,11 +59,11 @@
     button.addEventListener('click', async () => {
       try {
         const state = await action(button, `/api/bluetooth/${button.dataset.bluetooth}`);
-        $('#bluetooth-status').textContent = state.note;
-        $('#setup-progress').textContent = state.note;
+        $('#bluetooth-status').textContent = state.phase==='connected'?'Ready for files.':'Open Pane on your iPhone.';
+        $('#setup-progress').textContent = state.phase==='connected'?'Connected.':'Open Pane on your iPhone.';
       } catch (error) {
-        $('#bluetooth-status').textContent = error.message;
-        $('#setup-progress').textContent = error.message;
+        $('#bluetooth-status').textContent = window.paneNotice(error.message);
+        $('#setup-progress').textContent = window.paneNotice(error.message);
       }
     });
   }
@@ -96,7 +95,7 @@
       renderSetup(await postJson('/api/setup/install', {id, udid: selectedUdid}));
       $('#install-progress').textContent = 'IPA uploaded. Installation progress appears above.';
     } catch (error) {
-      $('#install-progress').textContent = error.message;
+      $('#install-progress').textContent = window.paneNotice(error.message);
       if (id) await postJson('/api/uploads/cancel', {id}).catch(() => {});
     } finally { staging = false; event.target.value = ''; renderSetup(setupState); }
   });
@@ -105,17 +104,58 @@
     signingState = state;
     const busy = ['working', 'prompt'].includes(state.phase);
     $('#signing-start').disabled = signingStaging || busy || !state.available || !usbConnected || !selectedUdid;
-    $('#signing-note').textContent = !state.available ? 'This build does not include the Windows signing helper.'
-      : !busy && !signingStaging && (!usbConnected || !selectedUdid) ? 'Connect your unlocked iPhone by USB to enable installation. Tap Trust on the phone if asked.'
-      : state.note;
+    $('#signing-note').textContent = !state.available ? 'Installer missing. Reinstall Pane on this PC.'
+      : !busy && !signingStaging && (!usbConnected || !selectedUdid) ? 'iPhone disconnected. Reconnect the cable.'
+      : window.paneSigningNote(state);
     $('#signing-cancel').hidden = !busy;
     $('#signing-prompt').hidden = state.phase !== 'prompt';
     if (state.prompt && $('#signing-prompt').dataset.id !== state.prompt.id) {
       $('#signing-prompt').dataset.id = state.prompt.id;
       $('#signing-code').value = '';
-      $('#signing-answer-label').hidden = state.prompt.kind === 'team';
-      $('#signing-answer').hidden = state.prompt.kind === 'team';
+      $('#signing-answer-label').hidden = state.prompt.kind !== 'verification';
+      $('#signing-answer').hidden = state.prompt.kind !== 'verification';
       const choices = $('#signing-choices'); choices.replaceChildren();
+      if (state.prompt.kind === 'certificate') {
+        const warning = document.createElement('p');
+        warning.className='certificate-help';
+        warning.append(window.paneIcon('refresh'),document.createTextNode('Choose an old Pane certificate. Keep certificates used by other apps.'));
+        choices.append(warning);
+        const risk=document.createElement('p');risk.className='muted';risk.textContent='Replacing it cannot be undone. Its other apps may stop opening.';choices.append(risk);
+        const confirm = document.createElement('button');
+        confirm.type='button'; confirm.className='primary primary-block'; confirm.id='signing-revoke';
+        confirm.textContent='Replace certificate & install'; confirm.disabled=true;
+        let selected = null;
+        for (const cert of state.prompt.choices) {
+          const button = document.createElement('button'); button.type='button'; button.className='secondary';
+          button.append(window.paneIcon('check'),document.createTextNode(cert.name || 'Development certificate'));
+          if(cert.expires){const expiry=document.createElement('small');const date=new Date(cert.expires);expiry.textContent='Expires '+(Number.isNaN(date.getTime())?'later':date.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric',timeZone:'UTC'}));button.append(expiry);}
+          if (state.prompt.choices.some(other => other.id !== cert.id && other.name === cert.name)) {
+            const serial = document.createElement('small');
+            const full = String(cert.serial || cert.id);
+            const suffix = full.slice(-8);
+            const ambiguous = state.prompt.choices.some(other =>
+              other.id !== cert.id && String(other.serial || other.id).endsWith(suffix));
+            serial.textContent = 'Serial ' + (full.length <= 8 || ambiguous ? full : '…' + suffix);
+            serial.style.overflowWrap = 'anywhere';
+            button.append(serial);
+          }
+          button.setAttribute('aria-pressed','false'); button.dataset.certificate=cert.id;
+          button.onclick=()=>{
+            selected=cert.id;
+            for(const other of choices.querySelectorAll('[data-certificate]'))other.setAttribute('aria-pressed',String(other===button));
+            confirm.disabled=false;
+          };
+          choices.append(button);
+        }
+        confirm.onclick=async()=>{
+          if (!selected) return;
+          confirm.disabled=true;
+          await submitSigningAnswer(selected,true);
+          if (signingState.prompt?.id === state.prompt.id && signingState.phase === 'prompt') confirm.disabled=false;
+        };
+        choices.append(confirm);
+        return;
+      }
       const items = state.prompt.kind === 'team' ? state.prompt.choices.map(c => ({value:c.id, name:c.name || c.id}))
         : [{value:'resend', name:'Resend code'}, {value:'devices', name:'Send to Apple devices'}, ...state.prompt.choices.map(c=>({value:`sms:${c.id}`,name:`Text ${c.name}`}))];
       for (const item of items) {
@@ -125,12 +165,17 @@
       if (state.prompt.kind !== 'team') $('#signing-code').focus();
     }
   }
-  async function submitSigningAnswer(value) {
-    try { renderSigning(await postJson('/api/signing/answer', {promptId:signingState.prompt?.id, value})); }
-    catch(error) { $('#signing-note').textContent=error.message; }
+  async function submitSigningAnswer(value, confirmRevocation = false) {
+    try { renderSigning(await postJson('/api/signing/answer', {promptId:signingState.prompt?.id, value, confirmRevocation})); }
+    catch(error) { $('#signing-note').textContent=window.paneNotice(error.message,'signing'); }
   }
-  $('#signing-answer').onclick=()=>submitSigningAnswer($('#signing-code').value.trim());
-  $('#signing-cancel').onclick=async()=>renderSigning(await postJson('/api/signing/cancel',{}));
+  $('#signing-answer').onclick=()=>{
+    const field = $('#signing-code');
+    const code = field.value.trim();
+    field.value = '';
+    submitSigningAnswer(code);
+  };
+  $('#signing-cancel').onclick=async()=>{try {renderSigning(await postJson('/api/signing/cancel',{}));} catch(error) {$('#signing-note').textContent=window.paneNotice(error.message,'signing');}};
   $('#signing-form').addEventListener('submit', async event => {
     event.preventDefault();
     const file=$('#signing-ipa').files[0];
@@ -143,7 +188,7 @@
       try { renderSigning(await postJson('/api/signing/start',payload)); }
       finally { payload.password=''; }
     } catch(error) {
-      $('#signing-note').textContent=error.message;
+      $('#signing-note').textContent=window.paneNotice(error.message,'signing');
       if(id)await postJson('/api/uploads/cancel',{id}).catch(()=>{});
     } finally { signingStaging=false; $('#signing-password').value=''; }
   });
@@ -158,8 +203,8 @@
         try { await postJson('/api/uploads/finish', {id}); }
         catch (error) { await postJson('/api/uploads/cancel', {id}).catch(() => {}); throw error; }
       }
-      $('#upload-progress').textContent = `${files.length} file(s) queued. Keep Pane open and Bluetooth connected.`;
-    } catch (error) { $('#upload-progress').textContent = error.message; }
+      $('#upload-progress').textContent = `${files.length} file(s) queued. ${transferState.bluetooth?.phase==='connected'?'Sending to your iPhone…':'Open Pane on your iPhone.'}`;
+    } catch (error) { $('#upload-progress').textContent = window.paneNotice(error.message,'upload'); }
     finally { $('#send-files').disabled = false; event.target.value = ''; }
   });
   let transferPage = 0;
@@ -168,7 +213,7 @@
   }
   function renderTransfers(state) {
     transferState = state;
-    $('#bluetooth-status').textContent = state.bluetooth.note;
+    $('#bluetooth-status').textContent = state.bluetooth.phase==='connected'?'Ready for files.':state.bluetooth.phase==='connecting'?'Connecting…':'Open Pane on your iPhone to connect.';
     const phase = state.bluetooth.phase;
     const badge = $('#bluetooth-badge');
     badge.textContent = {connected: 'Connected', connecting: 'Connecting', error: 'Needs attention'}[phase] || 'Not connected';
@@ -176,7 +221,7 @@
     for (const button of document.querySelectorAll('[data-bluetooth="disconnect"]')) button.hidden = !['connecting', 'connected'].includes(phase);
     $('#downloads-location').textContent = 'Downloads';
     $('#downloads-location').title = state.destination;
-    const active = state.transfers.filter(t => ['queued', 'sending', 'receiving'].includes(t.state)).length;
+    const active = state.transfers.filter(t => ['queued', 'sending', 'receiving', 'paused'].includes(t.state)).length;
     $('#transfer-count').hidden = active === 0; $('#transfer-count').textContent = active;
     $('#transfer-count').setAttribute('aria-label', `${active} pending transfers`);
     $('#transfer-summary').textContent = active ? `${active} pending` : 'No active transfers';
@@ -193,7 +238,7 @@
     const serialized = JSON.stringify([transferPage, visible]);
     if (list.dataset.snapshot === serialized) return;
     list.dataset.snapshot = serialized;
-    const focused = document.activeElement?.dataset.cancel;
+    const focused = document.activeElement?.dataset.transferKey;
     list.replaceChildren();
     if (!state.transfers.length) {
       const empty = document.createElement('li'); empty.className = 'transfer-empty';
@@ -212,24 +257,35 @@
       detail.textContent = `${transfer.direction === 'to-phone' ? 'To iPhone' : 'To Downloads'} · ${bytes(transfer.size)}`;
       content.append(title, detail); top.append(icon, content);
       const status = document.createElement('span'); status.className = 'transfer-state';
-      status.textContent = {complete:'Done', failed:'Failed', cancelled:'Cancelled', queued:'Queued', sending:'Sending', receiving:'Receiving'}[transfer.state] || transfer.state;
+      status.textContent = {complete:'Done', failed:'Failed', cancelled:'Cancelled', queued:'Queued', sending:'Sending', receiving:'Receiving', paused:'Paused'}[transfer.state] || 'Pending';
       top.append(status); item.append(top);
-      if (['sending', 'receiving'].includes(transfer.state)) {
+      if (['sending', 'receiving', 'paused'].includes(transfer.state)) {
         const progress = document.createElement('progress'); progress.max = transfer.size || 1; progress.value = transfer.done; progress.setAttribute('aria-label', `${transfer.name} progress`);
         const counts = document.createElement('p'); counts.className = 'transfer-numbers';
         counts.textContent = `${bytes(transfer.done)} of ${bytes(transfer.size)} · ${transfer.size ? Math.floor(transfer.done / transfer.size * 100) : 0}%`;
         item.append(progress, counts);
       }
-      if (transfer.error) { const error = document.createElement('p'); error.className = 'warn'; error.textContent = transfer.error; item.append(error); }
-      if (transfer.state === 'queued') {
-        const cancel = document.createElement('button'); cancel.className = 'transfer-cancel'; cancel.textContent = 'Cancel'; cancel.dataset.cancel = transfer.id;
-        cancel.title = `Cancel ${transfer.name}`;
-        cancel.addEventListener('click', () => postJson('/api/uploads/cancel', {id: transfer.id}).catch(error => {$('#upload-progress').textContent = error.message;}));
-        top.append(cancel);
+      if (transfer.error) { const error = document.createElement('p'); error.className = 'warn'; error.textContent = window.paneNotice(transfer.error,'upload'); item.append(error); }
+      if (['queued', 'sending', 'receiving', 'paused'].includes(transfer.state)) {
+        const controls = document.createElement('div'); controls.className = 'transfer-actions';
+        for (const command of [transfer.state === 'paused' ? 'resume' : 'pause', 'cancel']) {
+          const button = document.createElement('button'); button.className = 'text-button transfer-control';
+          button.textContent = command[0].toUpperCase() + command.slice(1);
+          button.dataset.transferKey = `${transfer.id}:${command}`;
+          button.setAttribute('aria-label', `${button.textContent} ${transfer.name}`);
+          button.addEventListener('click', async () => {
+            button.disabled = true;
+            try { await postJson(`/api/uploads/${command}`, {id: transfer.id}); }
+            catch (error) { $('#upload-progress').textContent = window.paneNotice(error.message, 'upload'); }
+            finally { button.disabled = false; }
+          });
+          controls.append(button);
+        }
+        item.append(controls);
       }
       list.append(item);
     }
-    if (focused) list.querySelector(`[data-cancel="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
+    if (focused) list.querySelector(`[data-transfer-key="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
   }
   async function poll() {
     try {
@@ -239,7 +295,7 @@
       window.dispatchEvent(new CustomEvent('pane-status', {detail:snapshot}));
       renderTransfers(transfers); renderSetup(setup); renderSigning(signing);
       window.dispatchEvent(new CustomEvent('pane-setup-state', {detail:{setup,transfers}}));
-    } catch (error) { $('#bluetooth-status').textContent = error.message; }
+    } catch (error) { $('#bluetooth-status').textContent = window.paneNotice(error.message); }
     const busy = document.body.classList.contains('onboarding-open') || ['working','prompt'].includes(signingState.phase) || setupState.phase === 'working' || transferState.transfers?.some(t => ['queued','sending','receiving'].includes(t.state));
     setTimeout(poll, busy ? 1500 : document.hidden || !document.body.classList.contains('drawer-open') ? 10000 : 4000);
   }
