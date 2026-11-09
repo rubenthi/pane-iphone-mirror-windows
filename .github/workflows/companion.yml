@@ -45,3 +45,10 @@ jobs:
         with:
           name: Pane-iPhone-preview
           path: ios/previews
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Transfer between desktop Python and the Swift companion
+        run: |
+          python -m pip install cryptography==50.0.2
+          python tests/companion-interop/check.py

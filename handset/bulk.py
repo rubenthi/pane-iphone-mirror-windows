@@ -1,6 +1,6 @@
-"""Short-lived, paired TLS bulk upload channel; Bluetooth conveys its pin.
+"""Short-lived, paired TLS file channels. Bluetooth conveys the certificate pin.
 
-The laptop requests ranges over a TLS connection initiated by the iPhone.
+The laptop requests or writes ranges over a TLS connection initiated by the iPhone.
 Only an ephemeral per-channel secret (sent inside TLS) admits a peer. No
 filesystem names or paths cross this channel, and callers still verify the
 complete file hash before publishing it.
@@ -100,7 +100,7 @@ def _exact(stream, count, deadline):
     return bytes(data)
 
 
-class BulkReceiver:
+class BulkChannel:
     def __init__(self, size, *, hosts=None, bind_host='0.0.0.0', connect_timeout=30, io_timeout=10):
         if type(size) is not int or not 0 <= size <= MAX_FILE:
             raise ValueError('Invalid file size.')
@@ -209,6 +209,29 @@ class BulkReceiver:
                     self._candidate = None
             raise BulkUnavailable('Fast transfer connection timed out.')
 
+    def close(self):
+        with self._lifecycle:
+            self._closed.set()
+            streams = [self._listener, self._candidate, self._peer]
+            self._listener = self._candidate = self._peer = None
+            self._context = None
+        for stream in streams:
+            if stream is not None:
+                try:
+                    stream.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                stream.close()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
+class BulkReceiver(BulkChannel):
     async def read(self, offset, length):
         if (type(offset) is not int or type(length) is not int or offset < 0
                 or not 0 < length <= MAX_BLOCK or offset > self.size or length > self.size - offset):
@@ -243,23 +266,36 @@ class BulkReceiver:
                 self.close()
                 raise BulkUnavailable('Fast transfer interrupted. Use Bluetooth to continue.') from error
 
-    def close(self):
-        with self._lifecycle:
-            self._closed.set()
-            streams = [self._listener, self._candidate, self._peer]
-            self._listener = self._candidate = self._peer = None
-            self._context = None
-        for stream in streams:
-            if stream is not None:
-                try:
-                    stream.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
-                stream.close()
 
-    def __enter__(self):
-        self.start()
-        return self
+class BulkSender(BulkChannel):
+    """One in-flight range. Only a validated handset ACK advances the cursor."""
 
-    def __exit__(self, *_):
-        self.close()
+    async def write(self, offset, data):
+        if (type(offset) is not int or offset < 0 or not isinstance(data, bytes)
+                or not 0 < len(data) <= MAX_BLOCK or offset + len(data) > self.size):
+            raise ValueError('Invalid fast transfer range.')
+        try:
+            await asyncio.to_thread(self._write, offset, data)
+        except asyncio.CancelledError:
+            self.close()
+            raise
+
+    def _write(self, offset, data):
+        with self._operation:
+            stream = self._peer
+            if stream is None or self._closed.is_set():
+                raise BulkUnavailable('The fast transfer connection is closed.')
+            try:
+                deadline = time.monotonic() + self.io_timeout
+                stream.settimeout(self.io_timeout)
+                stream.sendall(struct.pack('!QI', offset, len(data)) + data)
+                state, accepted = struct.unpack('!BQ', _exact(stream, 9, deadline))
+                if state == 2:
+                    raise BulkCancelled()
+                if state == 1 and accepted == offset:
+                    raise BulkPaused()
+                if state != 0 or accepted != offset + len(data):
+                    raise BulkUnavailable('Invalid fast transfer acknowledgement.')
+            except OSError as error:
+                self.close()
+                raise BulkUnavailable('Fast transfer interrupted. Check the phone offset.') from error
