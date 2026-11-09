@@ -46,9 +46,14 @@ class LicenseAuditTests(unittest.TestCase):
                 self.assertTrue(any("prohibited" in issue for issue in audit.expression_issues(expression)))
 
     def test_unknown_and_missing_block(self):
-        for expression in (None, "", "NOASSERTION", "LicenseRef-Company", "MPL-2.0", "Unlicense"):
+        for expression in (None, "", "NOASSERTION", "LicenseRef-Company", "MPL-2.0", "LicenseRef-Unknown"):
             with self.subTest(expression=expression):
                 self.assertEqual(audit.audit_metadata(metadata([expression]))["dependency_policy_status"], "blocked")
+
+    def test_reviewed_public_domain_or_mit_choice_is_allowed(self):
+        report = audit.audit_metadata(metadata(["Unlicense OR MIT"]))
+        self.assertEqual(report["dependency_policy_status"], "passed")
+        self.assertEqual(report["release_gate"]["status"], "blocked")
 
     def test_invalid_expressions_block(self):
         for expression in ("MIT / Apache-2.0", "MIT OR", "(MIT", "MIT)", "()", "MIT Apache-2.0",

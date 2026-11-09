@@ -17,8 +17,8 @@ The replacement must not import source, artwork, generated icons, or build asset
 
 ## Current scope
 
-`native/` is a new Windows shell and bounded-frame-queue prototype. It has no phone connection, signing, mirroring, notification, audio, or transfer implementation. It must identify itself as a prototype and must not read the current application's profiles.
+`native/` contains a native Windows shell, read-only USB discovery, a bounded local Apple-service `ListDevices` client, an HEVC/RTP packet assembler, a Windows decoder-capability probe, and a bounded frame queue. These are separate building blocks: there is no phone session, signing, live mirroring, notification, audio, or transfer implementation yet. The shell identifies itself as a prototype and does not read the current application's profiles.
 
-`tools/` and `check.ps1` provide a dependency-license gate and development checks. Passing that gate verifies the declared dependency policy; it is not an ownership determination or a substitute for a provenance review.
+`tools/` and `check.ps1` provide a dependency-license gate, exact third-party notice staging, and development checks. Passing the dependency gate verifies declared licenses; it is not an ownership determination or a substitute for reviewing actual notices and provenance.
 
 See [MIGRATION.md](MIGRATION.md) for the required feature replacements and [PERFORMANCE.md](PERFORMANCE.md) for measurement definitions and proposed budgets. Public release remains blocked until those requirements and the provenance questions are resolved.

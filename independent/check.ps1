@@ -42,10 +42,16 @@ Write-Host 'Checking the independent native prototype without launching it.'
 if ($LASTEXITCODE -ne 0) { throw 'Independent native prototype formatting check failed.' }
 & cargo check --locked --all-features --manifest-path $manifestPath
 if ($LASTEXITCODE -ne 0) { throw 'Independent native prototype check failed.' }
+& cargo clippy --locked --all-features --all-targets --manifest-path $manifestPath -- -D warnings
+if ($LASTEXITCODE -ne 0) { throw 'Independent native prototype Clippy check failed.' }
 & cargo test --locked --all-features --manifest-path $manifestPath
 if ($LASTEXITCODE -ne 0) { throw 'Independent native prototype tests failed.' }
 & cargo build --release --locked --all-features --manifest-path $manifestPath
 if ($LASTEXITCODE -ne 0) { throw 'Independent native prototype release-mode build failed.' }
+
+Write-Host 'Validating and staging exact third-party license texts for review.'
+& $PythonPath @pythonPrefixArguments (Join-Path $toolsPath 'collect_notices.py') --manifest-path $manifestPath --audit-json $reportPath
+if ($LASTEXITCODE -ne 0) { throw 'Third-party notice review is incomplete. No passing verification receipt or release is authorized.' }
 
 Write-Host "Development checks passed. Audit report: $reportPath"
 Write-Host 'RELEASE BLOCKED: unreleased/root-license-pending; release is not authorized.'

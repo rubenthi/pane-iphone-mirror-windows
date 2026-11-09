@@ -6,10 +6,17 @@ publish = false
 description = "Unreleased independent native Windows prototype; license pending review"
 
 [dependencies]
+plist = { version = "=1.10.3", default-features = false }
+quick-xml = { version = "=0.42.0", default-features = false }
 windows = { version = "=0.62.2", default-features = false, features = [
     "Win32_Foundation",
+    "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
     "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",
     "Win32_UI_WindowsAndMessaging",

@@ -1,6 +1,11 @@
 //! First-party bounded frame storage for an unreleased independent prototype.
 //! There is no decoder, transport, or phone connection in this crate.
 
+pub mod devices;
+pub mod hevc_rtp;
+pub mod media;
+pub mod usbmux;
+
 /// A validated, tightly packed BGRA image. Each pixel occupies four bytes.
 #[derive(Debug)]
 pub struct Frame {

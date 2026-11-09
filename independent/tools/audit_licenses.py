@@ -16,7 +16,7 @@ import sys
 
 ALLOWED_LICENSES = frozenset({
     "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib",
-    "BSL-1.0", "Unicode-3.0",
+    "BSL-1.0", "Unicode-3.0", "Unlicense",
 })
 # Exceptions need an explicit review before any can be accepted.
 ALLOWED_EXCEPTIONS: frozenset[str] = frozenset()

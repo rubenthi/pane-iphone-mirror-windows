@@ -16,6 +16,21 @@ The parent coordinator has inspected the inherited application. Fresh implementa
 
 These instructions and a separate folder do not constitute an audited clean-room process or prove ownership. Do not describe this candidate as legally cleared. Choose the new application license and review provenance before distribution.
 
+The current independent source uses Microsoft's Windows bindings, `plist` and
+`quick-xml`, with exact resolved versions in its own lockfile. It does not link
+`idevice`, the inherited Python device stack, FFmpeg, or the old signing helper.
+The new USB discovery reads Windows APIs; the local Apple-service client sends
+only a documented device-list request. The HEVC/RTP assembler is implemented from
+RFC 3550 and RFC 7798. Source references are recorded in those modules and the
+native README. This records implementation inputs, not legal clearance of the
+completed product or its future dependencies.
+
+The declared-license gate currently passes all 31 resolved dependencies. The
+stricter actual-notice collector blocks nine packages for manual attribution
+review; exact upstream files and hashes are recorded in
+[NOTICE-REVIEW.md](NOTICE-REVIEW.md). This distinction must remain visible:
+passing SPDX metadata is not a passing distribution-notice review.
+
 ## Candidate device library — unresolved
 
 The local old `idevice` 0.1.61 dependency is MIT but lacks the required live-stream service. Current upstream 0.1.68 advertises live HEVC/RTP streaming and HID support and declares MIT. Its maintainer states that MIT applies to all repository commits in [issue 115](https://github.com/jkcoxson/idevice/issues/115#issuecomment-4948816026). Stream/HID work landed in [PR 103](https://github.com/jkcoxson/idevice/pull/103), commit `ee830c9071892d95bfddc5aeaeb6f09656eea0bc`.
