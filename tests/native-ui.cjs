@@ -52,7 +52,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     async function checkDesktopPixels(){
       await page.waitForFunction(async()=>{
         const s=await getJson('/api/window'),p=s.pixels,b=s.backdrop_color;
-        return p.corner===b && p.above===b && p.below===b && p.phone!==b;
+        return p.corner===b && p.above===b && p.below===b && p.phone!==b && p.phone!==0xffffffff;
       },null,{timeout:10000}).catch(async e=>{console.log('Desktop clipping failure:',await page.evaluate(()=>getJson('/api/window')));throw e;});
     }
     await checkDesktopPixels();

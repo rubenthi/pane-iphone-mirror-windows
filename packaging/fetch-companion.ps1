@@ -1,9 +1,9 @@
 # Restore the exact companion built by the checked macOS workflow.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$source = '5b5969578832ced42366b988a761496a21d6e77c'
-$run = '42551719903'
-$sha256 = '8F6B14E978E251CCB6B0214D7E4908B0A3E6252F62C21481FF419D37C160FD71'
+$source = 'a5df3345e95d0639d9caf52df58f514f30a4fbeb'
+$run = '42552614206'
+$sha256 = '14364F40B322299AE3F0444AC5B732EB03EA3FC0ACC8AA4DB8184D65D8E1E5B7'
 $destination = Join-Path $root 'ios/Pane-unsigned.ipa'
 git -C $root diff --quiet $source -- ios ':(exclude,icase)ios/*.md' handset/companion_version.py
 if ($LASTEXITCODE -ne 0) { throw "The companion sources differ from $source. Build the changed iOS source with the companion workflow." }

@@ -24,6 +24,7 @@ server.wifi_paired_udids = lambda: []
 from handset.window import shell
 import ctypes
 from ctypes import wintypes as W
+from native_desktop import input_desktop_name, visible_test_desktop
 original_status = shell.status
 resize_timings = []
 resize_paints = []
@@ -103,6 +104,8 @@ def sample_resize_paints():
     user.ReleaseDC.argtypes = [W.HWND, W.HDC]
     gdi.GetPixel.argtypes = [W.HDC, ctypes.c_int, ctypes.c_int]
     gdi.GetPixel.restype = W.DWORD
+    gdi.GetClipBox.argtypes = [W.HDC, ctypes.POINTER(W.RECT)]
+    gdi.GetClipBox.restype = ctypes.c_int
     user.GetForegroundWindow.argtypes=[];user.GetForegroundWindow.restype=W.HWND
     user.GetSystemMetrics.argtypes=[ctypes.c_int];user.GetSystemMetrics.restype=ctypes.c_int
     user.GetThreadDpiAwarenessContext.argtypes=[];user.GetThreadDpiAwarenessContext.restype=W.HANDLE
@@ -117,9 +120,14 @@ def sample_resize_paints():
             try:
                 colors = [int(gdi.GetPixel(dc, bounds.left+round(width*x), bounds.top+round(height*y)))
                           for x in (.2, .5, .8) for y in (.2, .5, .8)]
-                white = sum(all((color >> shift & 255) > 245 for shift in (0, 8, 16)) for color in colors)
+                white = sum(color != 0xffffffff and all((color >> shift & 255) > 245
+                            for shift in (0, 8, 16)) for color in colors)
                 resize_paints.append(white)
+                clip = W.RECT()
+                clip_type = gdi.GetClipBox(dc, ctypes.byref(clip))
                 resize_samples.append({'rect':[bounds.left,bounds.top,bounds.right,bounds.bottom],
+                    'clipType':clip_type,'clip':[clip.left,clip.top,clip.right,clip.bottom],
+                    'inputDesktop':input_desktop_name() if 0xffffffff in colors else None,
                     'colors':colors,'dc':int(dc or 0),'foreground':int(user.GetForegroundWindow() or 0),
                     'window':int(shell.handle),'dpi':round(scale*96),
                     'virtualScreen':[user.GetSystemMetrics(i) for i in (76,77,78,79)],
@@ -138,8 +146,10 @@ def checked_status():
         state['windows_identity'] = getattr(shell, '_test_identity', None)
         state['resize_timings'] = resize_timings.copy()
         state['resize_paints'] = resize_paints.copy()
-        state['resize_samples'] = resize_samples[-3:]
-        state['resize_invalid_samples'] = sum(0xffffffff in sample['colors'] for sample in resize_samples)
+        samples = resize_samples.copy()
+        invalid = [sample for sample in samples if 0xffffffff in sample['colors']]
+        state['resize_samples'] = (invalid or samples)[-3:]
+        state['resize_invalid_samples'] = len(invalid)
         state['menu_open'] = shell.menu_open
         state['command_history'] = list(command_history)
         origin, view = W.POINT(), W.RECT()
@@ -238,4 +248,5 @@ def attach_with_backdrop(window):
 
 shell.attach = attach_with_backdrop
 shell.status = checked_status
-app.main()
+with visible_test_desktop():
+    app.main()
