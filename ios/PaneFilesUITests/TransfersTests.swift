@@ -1,7 +1,7 @@
 import XCTest
 
 final class TransfersTests: XCTestCase {
-    func testTransferActionsAndUSBSetup() {
+    func testTransferActionsAndUSBSetup() throws {
         let app = XCUIApplication()
         app.launch()
         XCTAssertTrue(app.navigationBars["Transfers"].waitForExistence(timeout: 15))
@@ -15,7 +15,23 @@ final class TransfersTests: XCTestCase {
         XCTAssertTrue(app.buttons["Activate USB link"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.switches["keepScreenAwake"].exists)
         XCTAssertTrue(app.staticTexts["transferTransportHelp"].label.contains("files continue over Bluetooth"))
-        XCTAssertTrue(app.staticTexts["2.5.1"].exists || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Installed version")).count > 0)
+        let version = try XCTUnwrap(Bundle(for: Self.self).object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        let elements = app.descendants(matching: .any)
+        let combined = elements.matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND (value == %@ OR label ENDSWITH %@)",
+            "Installed version", version, version
+        )).firstMatch
+        let label = app.staticTexts["Installed version"]
+        let value = app.staticTexts[version]
+        func versionRowIsVisible() -> Bool {
+            (combined.exists && combined.isHittable) ||
+                (label.exists && label.isHittable && value.exists && value.isHittable)
+        }
+        for _ in 0..<5 {
+            if versionRowIsVisible() { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(versionRowIsVisible(), "Expected Installed version to show \(version) in App updates.")
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Send files"].waitForExistence(timeout: 5))
     }
