@@ -92,7 +92,7 @@ final class Channel: @unchecked Sendable {
     }
 
     private func write(_ data: Data) async throws {
-        try await bounded { done in
+        let _: Void = try await bounded { done in
             socket.send(content: data, completion: .contentProcessed { error in
                 if let error { done(.failure(error)) } else { done(.success(())) }
             })
