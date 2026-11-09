@@ -13,7 +13,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from handset.bulk import BulkSender, BulkUnavailable, LAN_NETWORKS, MAX_BLOCK
+from handset.bulk import BulkPaused, BulkReceiver, BulkSender, BulkUnavailable, LAN_NETWORKS, MAX_BLOCK
+from handset.transfers import TransferStore
 
 
 async def exercise(binary, work):
@@ -56,6 +57,52 @@ async def exercise(binary, work):
         print(f"PASS: Python BulkSender to Swift Companion over pinned TLS, {len(data)} bytes, "
               f"{elapsed:.3f}s through durable finish verification ({len(data) / elapsed / 2**20:.2f} MiB/s), "
               f"SHA-256 {hashlib.sha256(data).hexdigest()}, duplicate finish verified")
+
+        # Queue the file just published on the phone and exercise the opposite
+        # direction over a fresh pinned connection, with an actual phone pause.
+        assert (await control("fixture-queue-received", name=name))["ok"]
+        offered, = (await control("list"))["files"]
+        expected_hash = hashlib.sha256(data).hexdigest()
+        assert (offered["name"], offered["size"], offered["sha256"]) == (name, len(data), expected_hash)
+        downloads = work / "Downloads"
+        store = TransferStore(work / "desktop-store", downloads)
+        identifier, partial = store.incoming(offered, "fixture-phone")
+        store.update(identifier, state="receiving")
+        remote = offered["id"]
+        offset = 0
+        start = time.perf_counter()
+        for phase in ("initial", "resume"):
+            with BulkReceiver(len(data), hosts=[host], bind_host=host) as receiver:
+                assert (await control("bulk-read", id=remote, endpoint=receiver.endpoint))["ok"]
+                await receiver.accept()
+                with partial.open("ab") as output:
+                    while offset < len(data):
+                        length = min(MAX_BLOCK, len(data) - offset)
+                        block = await receiver.read(offset, length)
+                        assert len(block) == length
+                        output.write(block)
+                        offset += len(block)
+                        store.update(identifier, done=offset)
+                        if phase == "initial":
+                            assert (await control("fixture-control", id=remote, action="pause"))["state"] == "paused"
+                            try:
+                                await receiver.read(offset, min(MAX_BLOCK, len(data) - offset))
+                            except BulkPaused:
+                                break
+                            raise AssertionError("Swift sent bytes while the file was paused")
+            if phase == "initial":
+                assert partial.stat().st_size == offset == MAX_BLOCK
+                assert (await control("fixture-control", id=remote, action="resume"))["state"] == "queued"
+        assert store.deliver(identifier, partial, expected_hash) is True
+        assert (await control("received", id=remote))["ok"]
+        assert (await control("list"))["files"] == []
+        assert (downloads / name).read_bytes() == data
+        assert store.row(identifier)["state"] == "complete"
+        assert store.incoming(offered, "fixture-phone") is None
+        elapsed = time.perf_counter() - start
+        print(f"PASS: Swift queued Received file to Python BulkReceiver and Downloads, {offset} bytes, "
+              f"{elapsed:.3f}s including pause, reconnect, publish and ACK ({offset / elapsed / 2**20:.2f} MiB/s), "
+              f"SHA-256 {expected_hash}")
 
         # The iOS simulator cannot reproduce the Local Network privacy prompt.
         # Refuse the real TLS peer instead, then exercise the same pre-data
