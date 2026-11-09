@@ -3,7 +3,7 @@ import Network
 import Security
 import CryptoKit
 
-/// A bounded, certificate-pinned local TLS upload. Endpoint credentials arrive
+/// A bounded, certificate-pinned local TLS transfer. Endpoint credentials arrive
 /// only through the authenticated, encrypted Bluetooth connection.
 final class BulkUpload {
     static func verifiesCertificate(der: Data, expected: Data) -> Bool {
@@ -56,10 +56,13 @@ final class BulkUpload {
     }
 
     private let endpoint: Endpoint
-    private let file: URL
+    typealias WriteBlock = (Int, Data, @escaping (UInt8, Int) -> Void) -> Void
+    private enum Direction {
+        case upload(URL, (@escaping (UInt8) -> Void) -> Void, (Int) -> Void)
+        case download(WriteBlock)
+    }
+    private let direction: Direction
     private let size: Int
-    private let state: (@escaping (UInt8) -> Void) -> Void
-    private let progress: (Int) -> Void
     private let queue = DispatchQueue(label: "pane.bulk-upload", qos: .userInitiated)
     private var connection: NWConnection?
     private var stopped = false
@@ -69,10 +72,14 @@ final class BulkUpload {
          state: @escaping (@escaping (UInt8) -> Void) -> Void,
          progress: @escaping (Int) -> Void) {
         self.endpoint = endpoint
-        self.file = file
+        self.direction = .upload(file, state, progress)
         self.size = size
-        self.state = state
-        self.progress = progress
+    }
+
+    init(endpoint: Endpoint, size: Int, write: @escaping WriteBlock) {
+        self.endpoint = endpoint
+        self.size = size
+        self.direction = .download(write)
     }
 
     func start() { queue.async { self.connect(index: 0) } }
@@ -143,7 +150,8 @@ final class BulkUpload {
 
     private func receive(_ count: Int, accumulated: Data = Data(), completion: @escaping (Data) -> Void) {
         guard !stopped, let connection else { return }
-        connection.receive(minimumIncompleteLength: 1, maximumLength: count - accumulated.count) { [weak self] data, _, complete, error in
+        let remaining = count - accumulated.count
+        connection.receive(minimumIncompleteLength: remaining, maximumLength: remaining) { [weak self] data, _, complete, error in
             guard let self, !self.stopped else { return }
             var result = accumulated
             if let data { result.append(data) }
@@ -162,13 +170,22 @@ final class BulkUpload {
             let length = header.suffix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
             guard offset <= UInt64(self.size), length > 0, length <= 256 * 1024,
                   UInt64(length) <= UInt64(self.size) - offset else { self.stop(); return }
-            self.state { [weak self] status in
+            if case .download(let write) = self.direction {
+                self.receive(Int(length)) { data in
+                    write(Int(offset), data) { [weak self] status, next in
+                        self?.queue.async { [weak self] in self?.acknowledge(status, next: next) }
+                    }
+                }
+                return
+            }
+            guard case let .upload(file, state, _) = self.direction else { return }
+            state { [weak self] status in
                 guard let self else { return }
                 self.queue.async {
                     guard !self.stopped else { return }
                     if status != 0 { self.reply(status: status, data: Data(), offset: Int(offset)); return }
                     do {
-                        let handle = try FileHandle(forReadingFrom: self.file)
+                        let handle = try FileHandle(forReadingFrom: file)
                         defer { try? handle.close() }
                         try handle.seek(toOffset: offset)
                         let data = try handle.read(upToCount: Int(length)) ?? Data()
@@ -180,6 +197,18 @@ final class BulkUpload {
         }
     }
 
+    private func acknowledge(_ status: UInt8, next: Int) {
+        guard !stopped, let connection, next >= 0, next <= size else { stop(); return }
+        var offset = UInt64(next).bigEndian
+        var packet = Data([status])
+        withUnsafeBytes(of: &offset) { packet.append(contentsOf: $0) }
+        connection.send(content: packet, completion: .contentProcessed { [weak self] error in
+            guard let self, !self.stopped else { return }
+            if error == nil && status == 0 && next < self.size { self.readRequest() }
+            else { self.stop() }
+        })
+    }
+
     private func reply(status: UInt8, data: Data, offset: Int) {
         guard let connection, !stopped else { return }
         var length = UInt32(data.count).bigEndian
@@ -189,7 +218,7 @@ final class BulkUpload {
         connection.send(content: packet, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
             if error != nil { self.stop(); return }
-            if status == 0 { self.progress(offset + data.count) }
+            if status == 0, case .upload(_, _, let progress) = self.direction { progress(offset + data.count) }
             if status == 2 || status == 3 { self.stop() } else { self.readRequest() }
         })
     }
