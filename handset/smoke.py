@@ -30,6 +30,9 @@ def run(output):
         assert hasattr(userspace_tunnel.UserspaceRsdTunnel, '_aopen_locked')
         assert hasattr(bonjour, '_bind_ipv4') and hasattr(bonjour, '_send_query_all')
         assert Path(__file__).with_name('install_update.ps1').is_file()
+        licenses = Path(__file__).resolve().parents[1] / 'licenses'
+        assert (licenses / 'Pane' / 'LICENSE').is_file()
+        assert any(licenses.glob('pymobiledevice3-*.dist-info/licenses/LICENSE'))
         import subprocess
         from handset.signing import helper_path, bundled_package
         from handset.setup import inspect_ipa

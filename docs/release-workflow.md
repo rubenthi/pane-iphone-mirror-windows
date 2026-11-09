@@ -16,7 +16,7 @@ Copy-Item signer/target/release/pane-signer.exe signer/pane-signer.exe -Force
 cargo build --release --locked --manifest-path native/Cargo.toml
 ```
 
-The fetch script restores the exact unsigned iPhone companion used by the previous compatible release and verifies its SHA-256. The IPA, native outputs, virtual environment and build directories are ignored by Git.
+The fetch script verifies the local unsigned IPA against the macOS build of the matching iPhone source. On a fresh Windows checkout it restores the pinned IPA from the release or the corresponding GitHub Actions run. The Actions fallback uses an authenticated GitHub CLI. The IPA, native outputs, virtual environment and build directories are ignored by Git.
 
 ## Edit and run
 

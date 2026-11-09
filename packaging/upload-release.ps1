@@ -32,7 +32,7 @@ try {
     if ($LASTEXITCODE) { throw 'Cannot create release tag.' }
     git push $remote "refs/tags/$tag"
     if ($LASTEXITCODE) { throw 'Tag reservation failed. Inspect local and remote tags.' }
-    gh release create $tag @assets --repo $repo --verify-tag --draft --title "Pane $tag" --generate-notes --notes "Windows build compiled and verified locally from commit $head."
+    gh release create $tag @assets --repo $repo --verify-tag --draft --title "Pane $tag" --generate-notes --notes "Windows build compiled and verified locally. [Matching source and build instructions](https://github.com/$repo/tree/$head)."
     if ($LASTEXITCODE) { throw 'Draft upload failed. Inspect the reserved tag and draft.' }
     $json = gh release view $tag --repo $repo --json assets
     if ($LASTEXITCODE) { throw 'Cannot verify draft files.' }

@@ -15,6 +15,22 @@ os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SHIMS), os.environ.
 datas = [(str(ROOT / "handset" / "web"), "handset/web"), (str(ROOT / "handset" / "install_update.ps1"), "handset")]
 datas += [(str(ROOT / "ios" / "Pane-unsigned.ipa"), "ios")]
 datas += [(str(ROOT / "packaging" / "pane.ico"), "packaging")]
+datas += [(str(ROOT / "LICENSE"), "licenses/Pane")]
+# Retain license files shipped by the pinned Python distributions, including
+# their nested third-party notices. Wheel metadata supplies the original paths.
+from importlib.metadata import distribution
+for pin in (ROOT / "requirements-build.txt").read_text().splitlines():
+    if "==" not in pin or pin.startswith("#"):
+        continue
+    package = distribution(pin.split("==", 1)[0].strip())
+    for member in package.files or ():
+        parts = member.parts
+        if len(parts) >= 2 and parts[0].endswith(".dist-info") and (
+            parts[1].lower() == "licenses"
+            or parts[-1].lower().startswith(("license", "licence", "copying", "notice"))
+        ):
+            dest = Path("licenses") / parts[0] / Path(*parts[1:-1])
+            datas.append((str(package.locate_file(member)), str(dest)))
 binaries = [(str(ROOT / "signer" / "pane-signer.exe"), "signer"),
             (str(ROOT / "native" / "target" / "release" / "pane-companion.exe"), "native")]
 datas += [(str(ROOT / "signer" / "ISIDELOAD-LICENSE"), "signer")]

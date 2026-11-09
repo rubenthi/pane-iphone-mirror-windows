@@ -2,6 +2,10 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.7 - Device connection, transfers and release packaging
+
+The Windows mirror scans ordinary HEVC slices without allocating a parser object for each slice. It checks packet boundaries before submitting frames to the decoder. The Windows build includes Pane’s license and the license files supplied in pinned Python package metadata. A clean desktop checkout can restore the verified iPhone companion 2.6.0 (build 6) from its macOS build.
+
 ## 2.5.6 - Native display density and flat colors (development build)
 
 Pane renders at each monitor's own pixel density instead of letting Windows stretch a 100%-scale bitmap on a 200%-scale laptop screen. The packaged executable declares PerMonitorV2, source runs enable the same mode before opening the window, and moving between monitors updates the physical window shape and browser surface together. Resizing near a monitor edge uses the available space without subtracting a second placement gutter. The three-pixel black bezel stays consistent.
