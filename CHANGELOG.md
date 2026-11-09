@@ -2,6 +2,10 @@
 
 This log explains changes to the Windows application and its iPhone companion. Downloadable versions and publication status are listed in [GitHub Releases](https://github.com/rubenthi/pane-iphone-mirror-windows/releases). A source commit or build artifact is not itself an automatic-update release.
 
+## 2.5.8 - Fast file transfers in both directions
+
+Pane can send desktop files over authenticated Wi-Fi to iPhone companion 2.6.1 (build 7). Bluetooth negotiates the channel and provides a fallback with older companions. File transfers work with mirroring off. When the network changes mid-transfer, the desktop checks how much the iPhone received before continuing. Windows verifies incoming files before publishing them in Downloads and avoids a second file copy on the same drive.
+
 ## 2.5.7 - Device connection, transfers and release packaging
 
 The Windows mirror scans ordinary HEVC slices without allocating a parser object for each slice. It checks packet boundaries before submitting frames to the decoder. The Windows build includes Pane’s license and the license files supplied in pinned Python package metadata. A clean desktop checkout can restore the verified iPhone companion 2.6.0 (build 6) from its macOS build.

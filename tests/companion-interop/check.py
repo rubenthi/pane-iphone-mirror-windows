@@ -1,5 +1,6 @@
 """Run on macOS with Xcode and the Python cryptography dependency installed."""
 import asyncio
+import base64
 import hashlib
 import ipaddress
 import json
@@ -12,7 +13,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from handset.bulk import BulkSender, LAN_NETWORKS, MAX_BLOCK
+from handset.bulk import BulkSender, BulkUnavailable, LAN_NETWORKS, MAX_BLOCK
 
 
 async def exercise(binary, work):
@@ -55,6 +56,27 @@ async def exercise(binary, work):
         print(f"PASS: Python BulkSender to Swift Companion over pinned TLS, {len(data)} bytes, "
               f"{elapsed:.3f}s through durable finish verification ({len(data) / elapsed / 2**20:.2f} MiB/s), "
               f"SHA-256 {hashlib.sha256(data).hexdigest()}, duplicate finish verified")
+
+        # The iOS simulator cannot reproduce the Local Network privacy prompt.
+        # Refuse the real TLS peer instead, then exercise the same pre-data
+        # timeout, BLE stop/fence, fallback write and durable finish.
+        file_id = "b" * 32
+        fallback = b"BLE fallback after TLS setup denial"
+        await control("begin", name="fallback.txt", size=len(fallback), sha256=hashlib.sha256(fallback).hexdigest())
+        with BulkSender(len(fallback), hosts=[host], bind_host=host, connect_timeout=2) as desktop:
+            wrong_pin = dict(desktop.endpoint, fingerprint="00" * 32)
+            assert (await control("bulk-write", endpoint=wrong_pin))["ok"]
+            try:
+                await desktop.accept()
+            except BulkUnavailable:
+                pass
+            else:
+                raise AssertionError("Swift accepted an untrusted TLS certificate")
+        assert (await control("bulk-write-stop"))["offset"] == 0
+        assert (await control("write", offset=0, data=base64.b64encode(fallback).decode()))["offset"] == len(fallback)
+        assert (await control("finish"))["ok"]
+        assert (received / "fallback.txt").read_bytes() == fallback
+        print("PASS: Swift rejected the wrong certificate, then accepted the fenced BLE fallback")
     finally:
         phone.stdin.close()
         try:

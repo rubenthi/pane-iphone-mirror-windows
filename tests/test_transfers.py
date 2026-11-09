@@ -84,7 +84,9 @@ class TransferTests(unittest.TestCase):
         part.write_bytes(b'good')
         unrelated = self.downloads / ('.pane-' + identifier + '.part')
         unrelated.write_bytes(b'existing')
-        with self.assertRaises(FileExistsError):
+        # Force the fallback path for a Downloads directory on another drive.
+        import errno
+        with patch.object(self.store, '_publish', side_effect=OSError(errno.EXDEV, 'cross-device')), self.assertRaises(FileExistsError):
             self.store.deliver(identifier, part, remote['sha256'])
         self.assertEqual(unrelated.read_bytes(), b'existing')
 

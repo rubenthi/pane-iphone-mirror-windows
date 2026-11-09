@@ -2,7 +2,9 @@ const {chromium}=require('playwright');
 const {spawn}=require('node:child_process');
 const assert=require('node:assert/strict');
 (async()=>{
-  const child=spawn(process.env.PANE_TEST_PYTHON||'python',['tests/browser_preview.py'],{stdio:['ignore','pipe','pipe'],windowsHide:true});
+  const input=require('./input-proxy.cjs');
+  const upstream=await input.start();
+  const child=spawn(process.env.PANE_TEST_PYTHON||'python',['tests/browser_preview.py'],{env:{...process.env,PANE_STREAM_PORT:String(upstream.port)},stdio:['ignore','pipe','pipe'],windowsHide:true});
   let browser,logs='';child.stderr.on('data',data=>logs+=data);
   try {
     const url=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(logs||'Preview not ready')),10000);child.stdout.once('data',d=>{clearTimeout(timer);resolve(d.toString().trim().split(' ').at(-1));});});
@@ -33,6 +35,8 @@ const assert=require('node:assert/strict');
     screen={phase:'idle'};await page.evaluate(s=>renderScreen(s),screen);
     await up.dispatchEvent('wheel',{deltaY:-80,cancelable:true});await page.waitForTimeout(50);
     assert.equal(controls.length,2);assert.deepEqual(errors,[]);
+    await input.check(browser,url,upstream);
+    console.log('PASS: Real keyboard and touch messages traversed the authenticated Pane proxy.');
     console.log('PASS: Connect attempts Wi-Fi immediately; safe short failures; wheel volume directions and disabled/zoom guards.');
-  } finally {if(browser)await browser.close();child.kill();}
+  } finally {if(browser)await browser.close();child.kill();upstream.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

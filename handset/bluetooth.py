@@ -36,6 +36,7 @@ class Rpc:
         self.chunk_size = WIRE_CHUNK
         self.receive_chunk_size = WIRE_CHUNK
         self.wifi_upload = False
+        self.wifi_download = False
 
     def negotiate(self, capabilities):
         if not isinstance(capabilities, list):
@@ -51,6 +52,7 @@ class Rpc:
         # must not restrict this application-level receive batch.
         self.receive_chunk_size = FAST_CHUNK if 'chunk-32768' in capabilities else WIRE_CHUNK
         self.wifi_upload = 'wifi-upload-v1' in capabilities
+        self.wifi_download = 'wifi-download-v1' in capabilities
 
     def notified(self, sender, data):
         self.buffer.extend(data)
@@ -84,7 +86,13 @@ class Rpc:
         try:
             async with asyncio.timeout(45):
                 for offset in range(0, len(wire), size):
-                    await self.client.write_gatt_char(COMMAND_UUID, wire[offset:offset + size], response=True)
+                    try:
+                        await self.client.write_gatt_char(COMMAND_UUID, wire[offset:offset + size], response=True)
+                    except Exception as error:
+                        # Backends use different exception classes, and some include
+                        # the entire write payload. Expose only the ATT error number.
+                        att = re.search(r'Protocol Error 0x[0-9a-fA-F]{2}', str(error))
+                        raise ConnectionError(att[0] if att else 'Bluetooth write disconnected.') from None
                 result = await self.pending
             if result.get('error'):
                 raise ValueError(result['error'])
@@ -221,7 +229,7 @@ class Bluetooth:
                                winrt={'use_cached_services': False}) as client:
             rpc = Rpc(client)
             await client.start_notify(RESPONSE_UUID, rpc.notified)
-            result = await rpc.call('hello', token=binding['token'], capabilities=['transfer-control-v1', 'chunk-32768', 'wifi-upload-v1'])
+            result = await rpc.call('hello', token=binding['token'], capabilities=['transfer-control-v1', 'chunk-32768', 'wifi-upload-v1', 'wifi-download-v1'])
             if result.get('version') != 1:
                 raise ValueError('The companion uses an unsupported protocol version.')
             rpc.negotiate(result.get('capabilities', []))
@@ -306,13 +314,20 @@ class Bluetooth:
     async def _send(self, rpc, row, path):
         identifier = row['id']
         retain = False
+        finishing = False
         try:
             await self._checkpoint(rpc, identifier)
             if not row.get('started'):
-                await rpc.call('begin', id=identifier, name=row['name'], size=row['size'], sha256=await asyncio.to_thread(digest_file, path))
+                reply = await rpc.call('begin', id=identifier, name=row['name'], size=row['size'], sha256=await asyncio.to_thread(digest_file, path))
+                self._outgoing_control(identifier, reply)
+                if getattr(rpc, 'wifi_download', False) and reply.get('completed') is True:
+                    store().update(identifier, state='complete', done=row['size'])
+                    return
                 store().update(identifier, started=True)
             offset = row.get('done', 0)
             with path.open('rb') as stream:
+                if getattr(rpc, 'wifi_download', False) and offset < row['size']:
+                    offset = await self._send_fast(rpc, identifier, stream, offset, row['size'])
                 stream.seek(offset)
                 while True:
                     await self._checkpoint(rpc, identifier)
@@ -320,33 +335,137 @@ class Bluetooth:
                     if not chunk:
                         break
                     reply = await rpc.call('write', id=identifier, offset=offset, data=base64.b64encode(chunk).decode())
-                    if reply.get('state') in {'paused', 'cancelled'}:
-                        store().update(identifier, state=reply['state'])
-                        stream.seek(offset)
-                        continue
+                    self._outgoing_control(identifier, reply)
                     offset += len(chunk)
                     if reply.get('offset') != offset:
                         raise ValueError('The iPhone did not acknowledge the file chunk.')
                     store().update(identifier, done=offset)
             await self._checkpoint(rpc, identifier, force=True)
+            finishing = True
             reply = await rpc.call('finish', id=identifier)
-            if reply.get('state') in {'paused', 'cancelled'}:
-                store().update(identifier, state=reply['state'])
-                if reply['state'] == 'cancelled':
-                    raise TransferCancelled()
-                raise TransferPaused()
+            finishing = False
+            self._outgoing_control(identifier, reply)
             store().update(identifier, state='complete', done=offset)
         except TransferPaused:
             retain = True
         except TransferCancelled:
             store().update(identifier, state='cancelled')
-        except BaseException:
+        except BaseException as error:
+            link_lost = isinstance(error, (ConnectionError, TimeoutError, asyncio.CancelledError))
+            if getattr(rpc, 'wifi_download', False) and (link_lost or finishing and isinstance(error, OSError)):
+                # Reconnect with the same ID: begin resets a partial transfer or
+                # reports a matching receipt when the final ACK went missing.
+                storage = store()
+                with storage.lock:
+                    state = storage.row(identifier)['state']
+                    if state != 'cancelled':
+                        retain = True
+                        storage.update(identifier, state='paused' if state == 'paused' else 'queued', started=False, done=0)
             # WinRT errors can contain an entire GATT write, including file data.
-            store().update(identifier, state='failed', error=SEND_ERROR)
+            if not retain:
+                store().update(identifier, state='failed', error=SEND_ERROR)
             raise
         finally:
             if not retain:
                 path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _outgoing_control(identifier, reply):
+        state = reply.get('state')
+        if state in {'paused', 'cancelled'}:
+            store().update(identifier, state=state)
+            if state == 'paused':
+                raise TransferPaused()
+            raise TransferCancelled()
+
+    async def _send_fast(self, rpc, identifier, stream, offset, size):
+        from handset.bulk import BulkCancelled, BulkPaused, BulkSender, MAX_BLOCK
+
+        channel = None
+        reservation_possible = False
+        try:
+            try:
+                channel = BulkSender(size)
+                endpoint = await asyncio.to_thread(channel.start)
+                # Once the request leaves Windows, even a lost BLE reply can
+                # mean that the iPhone has reserved its incoming file for TLS.
+                reservation_possible = True
+                reply = await rpc.call('bulk-write', id=identifier, endpoint=endpoint)
+                self._outgoing_control(identifier, reply)
+                if reply.get('ok') is not True:
+                    raise OSError('Fast transfer unavailable.')
+                await self._accept_fast_sender(rpc, identifier, channel)
+            except (OSError, ValueError, TimeoutError):
+                if reservation_possible:
+                    reservation_possible = False
+                    channel.close()
+                    return await self._release_fast_sender(rpc, identifier, offset, offset)
+                store().update(identifier, transport='bluetooth')
+                return offset
+            if type(reply.get('offset')) is not int or reply['offset'] != offset:
+                raise ValueError('The iPhone has a different file offset.')
+            store().update(identifier, transport='wifi')
+            stream.seek(offset)
+            while offset < size:
+                await self._checkpoint(rpc, identifier)
+                chunk = stream.read(min(MAX_BLOCK, size - offset))
+                if not chunk:
+                    raise ValueError('Staged file is incomplete.')
+                end = offset + len(chunk)
+                try:
+                    await channel.write(offset, chunk)
+                except BulkPaused:
+                    store().update(identifier, state='paused')
+                    raise TransferPaused() from None
+                except BulkCancelled:
+                    raise TransferCancelled() from None
+                except OSError:
+                    # The iPhone may have appended this entire block before its
+                    # ACK was lost. Fence the previous TLS writer on the phone
+                    # before resuming BLE from the authoritative committed offset.
+                    channel.close()
+                    reservation_possible = False
+                    return await self._release_fast_sender(rpc, identifier, offset, end)
+                offset = end
+                store().update(identifier, done=offset)
+            return offset
+        except TransferPaused:
+            if reservation_possible:
+                # After resume Windows might have no Wi-Fi address and use BLE
+                # immediately. Release this session's reservation before yielding.
+                channel.close()
+                await self._release_fast_sender(rpc, identifier, offset, offset, paused=True)
+            raise
+        finally:
+            if channel is not None:
+                channel.close()
+
+    async def _release_fast_sender(self, rpc, identifier, offset, end, *, paused=False):
+        stopped = await rpc.call('bulk-write-stop', id=identifier)
+        if stopped.get('state') == 'cancelled':
+            raise TransferCancelled()
+        confirmed = stopped.get('offset')
+        if type(confirmed) is not int or confirmed not in (offset, end):
+            raise ValueError('The iPhone could not confirm the transfer offset.')
+        if not paused:
+            store().update(identifier, done=confirmed, transport='bluetooth')
+        self._outgoing_control(identifier, stopped)
+        return confirmed
+
+    async def _accept_fast_sender(self, rpc, identifier, channel):
+        # The iPhone may try several LAN addresses. Service pause/cancel while
+        # it connects instead of blocking the controls until the whole timeout.
+        task = asyncio.create_task(channel.accept())
+        try:
+            while not task.done():
+                done, _ = await asyncio.wait({task}, timeout=0.5)
+                if not done:
+                    await self._checkpoint(rpc, identifier)
+            await task
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
     async def _receive(self, rpc, remote, peer):
         incoming = store().incoming(remote, peer)
@@ -411,6 +530,8 @@ class Bluetooth:
                     store().update(identifier, done=offset)
             await self._checkpoint(rpc, identifier, force=True)
             delivered = await asyncio.to_thread(store().deliver, identifier, path, remote['sha256'])
+            if delivered is None:
+                raise TransferPaused()
             if not delivered:
                 raise TransferCancelled()
         except TransferPaused:

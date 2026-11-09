@@ -129,6 +129,16 @@
           const button = document.createElement('button'); button.type='button'; button.className='secondary';
           button.append(window.paneIcon('check'),document.createTextNode(cert.name || 'Development certificate'));
           if(cert.expires){const expiry=document.createElement('small');const date=new Date(cert.expires);expiry.textContent='Expires '+(Number.isNaN(date.getTime())?'later':date.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric',timeZone:'UTC'}));button.append(expiry);}
+          if (state.prompt.choices.some(other => other.id !== cert.id && other.name === cert.name)) {
+            const serial = document.createElement('small');
+            const full = String(cert.serial || cert.id);
+            const suffix = full.slice(-8);
+            const ambiguous = state.prompt.choices.some(other =>
+              other.id !== cert.id && String(other.serial || other.id).endsWith(suffix));
+            serial.textContent = 'Serial ' + (full.length <= 8 || ambiguous ? full : '…' + suffix);
+            serial.style.overflowWrap = 'anywhere';
+            button.append(serial);
+          }
           button.setAttribute('aria-pressed','false'); button.dataset.certificate=cert.id;
           button.onclick=()=>{
             selected=cert.id;
@@ -137,7 +147,12 @@
           };
           choices.append(button);
         }
-        confirm.onclick=()=>{if(selected){confirm.disabled=true;submitSigningAnswer(selected,true);}};
+        confirm.onclick=async()=>{
+          if (!selected) return;
+          confirm.disabled=true;
+          await submitSigningAnswer(selected,true);
+          if (signingState.prompt?.id === state.prompt.id && signingState.phase === 'prompt') confirm.disabled=false;
+        };
         choices.append(confirm);
         return;
       }
@@ -154,7 +169,12 @@
     try { renderSigning(await postJson('/api/signing/answer', {promptId:signingState.prompt?.id, value, confirmRevocation})); }
     catch(error) { $('#signing-note').textContent=window.paneNotice(error.message,'signing'); }
   }
-  $('#signing-answer').onclick=()=>submitSigningAnswer($('#signing-code').value.trim());
+  $('#signing-answer').onclick=()=>{
+    const field = $('#signing-code');
+    const code = field.value.trim();
+    field.value = '';
+    submitSigningAnswer(code);
+  };
   $('#signing-cancel').onclick=async()=>{try {renderSigning(await postJson('/api/signing/cancel',{}));} catch(error) {$('#signing-note').textContent=window.paneNotice(error.message,'signing');}};
   $('#signing-form').addEventListener('submit', async event => {
     event.preventDefault();

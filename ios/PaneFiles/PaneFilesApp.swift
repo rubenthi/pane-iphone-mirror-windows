@@ -60,7 +60,7 @@ struct ContentView: View {
                                 .font(.title).foregroundStyle(.tint).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(linkTitle).font(.headline).foregroundStyle(.primary)
-                                Text(companion.isConnected ? "Bluetooth file transfers" : companion.isPaired ? "Open Pane on your laptop to transfer files." : "Pair with Pane over USB.")
+                                Text(companion.isConnected ? "Ready to send and receive files." : companion.isPaired ? "Open Pane on your laptop to transfer files." : "Pair with Pane over USB.")
                                     .font(.subheadline).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -128,6 +128,9 @@ struct ContentView: View {
                         Section("Your laptop") {
                             Label(linkTitle, systemImage: "laptopcomputer")
                             Text(companion.status)
+                            Text("Bluetooth connects your laptop. Allow Local Network access for faster file transfers in both directions over Wi-Fi. If Wi-Fi is unavailable, files continue over Bluetooth.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("transferTransportHelp")
                             Toggle(isOn: $keepScreenAwake) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("Keep iPhone awake")

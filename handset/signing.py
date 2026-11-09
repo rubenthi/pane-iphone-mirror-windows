@@ -38,7 +38,11 @@ def stage_bundled():
         raise ValueError('The bundled companion is missing. Choose the unsigned Pane IPA or install a complete Windows build.')
     destination = DATA_DIR / 'staging' / (uuid.uuid4().hex + '.part')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, destination)
+    try:
+        shutil.copyfile(source, destination)
+    except OSError as error:
+        destination.unlink(missing_ok=True)
+        raise ValueError('Could not stage the bundled iPhone app. Check free disk space and retry.') from error
     try:
         validate_companion(destination)
     except (KeyError, ValueError, OSError, plistlib.InvalidFileException, zipfile.BadZipFile) as error:
@@ -75,20 +79,52 @@ def protect(data, decrypt=False):
     finally:
         kernel.LocalFree(target.data)
 
-def _storage(account, event):
+def _save_protected(path, ciphertext, *, replace):
+    temp = path.with_suffix('.' + uuid.uuid4().hex + '.tmp')
+    try:
+        temp.write_bytes(ciphertext)
+        if replace:
+            temp.replace(path)
+        elif os.name == 'nt':
+            temp.rename(path)  # Windows refuses to replace an existing destination.
+        else:
+            os.link(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _storage(account, event, certificate_key=None):
     key = event.get('key')
     if not isinstance(key, str) or len(key) > 4096:
         raise ValueError('Invalid storage key.')
     path = DATA_DIR / 'signing' / account / (hashlib.sha256(key.encode()).hexdigest() + '.bin')
+    # isideload hashes the original email spelling into its private-key name.
+    # Keep previously used keys accessible while making future renewals stable
+    # across capitalization changes. Other helper storage keys keep their semantics.
+    private_key = key == certificate_key
+    if private_key:
+        canonical = path.with_name(hashlib.sha256(f'{account}/key'.encode()).hexdigest() + '.bin')
+        if path != canonical and path.is_file():
+            if not canonical.exists():
+                try:
+                    _save_protected(canonical, path.read_bytes(), replace=False)
+                except FileExistsError:
+                    pass
+            # Two legacy spellings may already correspond to different certificates.
+            # An exact existing match always retains its original identity.
+        else:
+            path = canonical
     if event['event'] == 'retrieve':
         return {'value': protect(path.read_bytes(), True).decode() if path.exists() else None}
     value = event.get('value')
     if not isinstance(value, str) or len(value) > 1024 * 1024:
         raise ValueError('Invalid storage value.')
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix('.tmp')
-    temp.write_bytes(protect(value.encode()))
-    temp.replace(path)
+    try:
+        _save_protected(path, protect(value.encode()), replace=not private_key)
+    except FileExistsError:
+        if protect(path.read_bytes(), True).decode() != value:
+            raise ValueError('A saved signing key already exists. Retry with the existing key.') from None
     return {'ok': True}
 
 def start(udid, package, email, password):
@@ -156,6 +192,7 @@ def _run(process, package, initial):
         process.stdin.write(json.dumps(value) + '\n'); process.stdin.flush()
     try:
         account = hashlib.sha256(initial['email'].lower().encode()).hexdigest()
+        certificate_key = hashlib.sha256(initial['email'].encode()).hexdigest() + '/key'
         send(initial)
         initial.clear()
         completed = False
@@ -168,7 +205,7 @@ def _run(process, package, initial):
             event = json.loads(line)
             kind = event.get('event')
             if kind in {'store', 'retrieve'}:
-                send(_storage(account, event))
+                send(_storage(account, event, certificate_key))
             elif kind == 'prompt':
                 event['id'] = secrets.token_hex(16)
                 notes = {'team': 'Choose your developer team.', 'certificate': 'Apple’s certificate limit has been reached. Review the existing certificates below. Nothing is revoked until you explicitly confirm.', 'verification': 'Enter the Apple verification code.'}

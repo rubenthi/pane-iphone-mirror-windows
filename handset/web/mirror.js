@@ -185,12 +185,13 @@ async function pressHome(times = 1) {
   }
 }
 
-function releaseActive() {
+function releaseActive(commitEdgeGesture = false) {
   if (activePointer === null) return;
   activePointer = null;
   if (edgeSwipe) {
     const swipe = edgeSwipe;
     edgeSwipe = null;
+    if (!commitEdgeGesture) return;
     if (swipe.armed) {
       const paused = performance.now() - swipe.lastMoveAt > SWITCHER_HOLD_MS;
       pressHome(paused ? 2 : 1);
@@ -206,7 +207,7 @@ function releaseActive() {
 // Listen on the whole document so a drag can start on the black margin just
 // below the picture; coordinates clamp onto the screen edge.
 document.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0 || wheelBusy) return;
+  if (e.button !== 0 || wheelBusy || activePointer !== null) return;
   e.preventDefault();
   canvas.focus({ preventScroll: true });
   try {
@@ -240,7 +241,7 @@ function onUp(e) {
   if (e.pointerId !== activePointer) return;
   e.preventDefault();
   lastCoords = touchCoords(e);
-  releaseActive();
+  releaseActive(true);
 }
 
 // Translate wheel/trackpad movement only on the phone picture into a bounded swipe.
@@ -277,11 +278,13 @@ async function pumpWheel(){
 
 window.addEventListener("pointermove", onMove);
 window.addEventListener("pointerup", onUp);
-window.addEventListener("pointercancel", onUp);
+window.addEventListener("pointercancel", e => {
+  if (e.pointerId === activePointer) releaseActive();
+});
 document.body.addEventListener("lostpointercapture", (e) => {
   if (e.pointerId === activePointer) releaseActive();
 });
-window.addEventListener("blur", releaseActive);
+window.addEventListener("blur", () => releaseActive());
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") releaseActive();
 });

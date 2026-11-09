@@ -94,12 +94,15 @@ const fs = require('node:fs');
     assert.equal(signRequests[1].promptId,'prompt-one');
     assert.equal(signRequests[1].value,'123456');
     // Certificate recovery is a separate explicit approval, never a selection side effect.
-    signingView={phase:'prompt',available:true,note:'Review existing certificates',prompt:{id:'certificate-one',kind:'certificate',choices:[{id:'old-pane',serial:'ABC1234567890ABCDEF1234567890ABCDEF',name:'Pane',expires:'2026-11-12'}]}};
+    assert.equal(await page.locator('#signing-code').inputValue(),'');
+    signingView={phase:'prompt',available:true,note:'Review existing certificates',prompt:{id:'certificate-one',kind:'certificate',choices:[{id:'old-pane',serial:'ABC1234567890ABCDEF1234567890ABCDEF',name:'Pane',expires:'2026-11-12'},{id:'other-pane',serial:'0123456701234567',name:'Pane',expires:'2026-11-12'}]}};
     await page.locator('#signing-revoke').waitFor({state:'visible'});
     assert.equal(await page.locator('#signing-revoke').isDisabled(),true);
     assert.match(await page.locator('#signing-choices').innerText(),/Replacing it cannot be undone/);
     assert.equal(await page.locator('#signing-answer').isVisible(),false);
     const beforeSelection=signRequests.length;
+    assert.match(await page.locator('[data-certificate="old-pane"]').innerText(),/…90ABCDEF/);
+    assert.match(await page.locator('[data-certificate="other-pane"]').innerText(),/…01234567/);
     await page.locator('[data-certificate="old-pane"]').click();
     assert.equal(signRequests.length,beforeSelection,'selection must not revoke a certificate');
     assert.equal(await page.locator('#signing-revoke').isEnabled(),true);

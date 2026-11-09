@@ -14,6 +14,7 @@ final class TransfersTests: XCTestCase {
         app.buttons["laptopConnection"].tap()
         XCTAssertTrue(app.buttons["Activate USB link"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.switches["keepScreenAwake"].exists)
+        XCTAssertTrue(app.staticTexts["transferTransportHelp"].label.contains("files continue over Bluetooth"))
         XCTAssertTrue(app.staticTexts["2.5.1"].exists || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Installed version")).count > 0)
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Send files"].waitForExistence(timeout: 5))

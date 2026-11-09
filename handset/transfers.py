@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -33,9 +34,12 @@ def safe_name(value: str) -> str:
     return name
 
 
-def digest_file(path: Path) -> str:
-    with path.open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+def digest_file(path: Path, *, sync_to_disk=False) -> str:
+    with path.open('rb+' if sync_to_disk else 'rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if sync_to_disk:
+            os.fsync(stream.fileno())
+        return digest
 
 
 def valid_size(size, limit=MAX_FILE):
@@ -211,48 +215,79 @@ class TransferStore:
             self._save()
             return identifier, self.root / 'staging' / (identifier + '.part')
 
-    def deliver(self, identifier, part, expected_hash):
-        with self.lock:
-            row = next(r for r in self.rows if r['id'] == identifier)
-            if row['state'] == 'cancelled':
-                part.unlink(missing_ok=True)
-                return False
-            if part.stat().st_size != row['size'] or digest_file(part) != expected_hash:
-                raise ValueError('File verification failed. Nothing was saved to Downloads.')
-            folder = self.downloads or downloads_folder()
-            folder.mkdir(parents=True, exist_ok=True)
-            # Stage on the destination volume, then link exclusively. This avoids
-            # overwrites, works across disks, and publishes only complete files.
-            temporary = folder / ('.pane-' + identifier + '.part')
-            created = False
+    @staticmethod
+    def _publish(part, folder, name):
+        """Publish an existing file on this volume without replacing any name."""
+        stem, suffix = Path(name).stem, Path(name).suffix
+        for index in range(10000):
+            candidate = name if index == 0 else f'{stem} ({index}){suffix}'
             try:
-                with part.open('rb') as source, temporary.open('xb') as target:
-                    created = True
-                    import shutil
-                    shutil.copyfileobj(source, target, CHUNK)
-                    target.flush()
-                    os.fsync(target.fileno())
-                stem, suffix = Path(row['name']).stem, Path(row['name']).suffix
-                for index in range(10000):
-                    name = row['name'] if index == 0 else f'{stem} ({index}){suffix}'
-                    destination = folder / name
-                    try:
-                        # Windows rename is exclusive; POSIX rename would overwrite.
-                        if os.name == 'nt':
-                            temporary.rename(destination)
-                        else:
-                            os.link(temporary, destination)
-                        break
-                    except FileExistsError:
-                        continue
+                if os.name == 'nt':
+                    part.rename(folder / candidate)
                 else:
-                    raise ValueError('Too many files with the same name in Downloads.')
+                    os.link(part, folder / candidate)
+                return candidate
+            except FileExistsError:
+                continue
+        raise ValueError('Too many files with the same name in Downloads.')
+
+    def deliver(self, identifier, part, expected_hash):
+        """Return True on delivery, False on cancel and None on pause."""
+        row = self.row(identifier)
+        if row['state'] == 'cancelled':
+            part.unlink(missing_ok=True)
+            return False
+        if row['state'] == 'paused':
+            return None
+        # Do not hold the queue lock over disk I/O: controls and status should
+        # remain responsive even while verifying a multi-gigabyte file.
+        try:
+            verified = part.stat().st_size == row['size'] and digest_file(part, sync_to_disk=True) == expected_hash
+        except FileNotFoundError:
+            if self.row(identifier)['state'] == 'cancelled':
+                return False
+            raise
+        if not verified:
+            raise ValueError('File verification failed. Nothing was saved to Downloads.')
+        folder = self.downloads or downloads_folder()
+        folder.mkdir(parents=True, exist_ok=True)
+
+        def publish(path):
+            with self.lock:
+                state = self.row(identifier)['state']
+                if state == 'paused':
+                    return None
+                if state == 'cancelled':
+                    return False
+                name = self._publish(path, folder, row['name'])
                 self.update(identifier, state='complete', done=row['size'], savedAs=name)
                 return True
+
+        try:
+            delivered = publish(part)
+        except OSError as error:
+            if error.errno != errno.EXDEV and getattr(error, 'winerror', None) != 17:
+                raise
+            # Downloads can be redirected to another drive. Stage on that
+            # drive, and recheck the bytes actually copied before publication.
+            temporary = folder / ('.pane-' + identifier + '.part')
+            target = temporary.open('xb')
+            try:
+                with target, part.open('rb') as source:
+                    copied = hashlib.sha256()
+                    while block := source.read(CHUNK):
+                        target.write(block)
+                        copied.update(block)
+                    target.flush()
+                    os.fsync(target.fileno())
+                if copied.hexdigest() != expected_hash:
+                    raise ValueError('File verification failed. Nothing was saved to Downloads.')
+                delivered = publish(temporary)
             finally:
-                if created:
-                    temporary.unlink(missing_ok=True)
-                part.unlink(missing_ok=True)
+                temporary.unlink(missing_ok=True)
+        if delivered is not None:
+            part.unlink(missing_ok=True)
+        return delivered
 
 
 _STORE = None
