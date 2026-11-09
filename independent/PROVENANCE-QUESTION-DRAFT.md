@@ -1,6 +1,6 @@
-# Draft public question — not sent
+# Approved public question — posted
 
-Proposed destination: an issue in `jkcoxson/idevice`, posted only after user approval. This text is a request for factual provenance clarification, not an allegation.
+Posted with explicit user approval as [jkcoxson/idevice issue 145](https://github.com/jkcoxson/idevice/issues/145) by `rubenthi` on 2026-11-08. This text is a request for factual provenance clarification, not an allegation.
 
 Title: Clarification of core_device provenance under the MIT license
 
@@ -12,4 +12,4 @@ Body:
 >
 > I am specifically trying to understand any inherited licensing obligations, rather than treating a package-level MIT declaration as sufficient evidence by itself. We have not shipped this dependency in the new application.
 
-No message has been posted and no maintainer has been contacted.
+The approved text above was posted unchanged. Posting the question does not resolve the provenance review or clear the dependency for release.

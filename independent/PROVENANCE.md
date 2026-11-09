@@ -24,6 +24,8 @@ However, [`core_device/mod.rs`](https://github.com/jkcoxson/idevice/blob/master/
 
 The new prototype therefore does not depend on `idevice` yet. Before adding a device implementation, resolve this provenance question or implement the required protocol component independently from a documented specification with suitable review. Do not fall back to the GPL Python stack behind a subprocess and call that removal.
 
+With the user's explicit approval, the factual clarification request was posted as [issue 145](https://github.com/jkcoxson/idevice/issues/145) by `rubenthi` on 2026-11-08. The question is recorded in [PROVENANCE-QUESTION-DRAFT.md](PROVENANCE-QUESTION-DRAFT.md); its posting is not a licensing clearance.
+
 ## Evidence sources
 
 - [Original Pane import](https://github.com/teyboxv1/pane-iphone-mirror-windows/commit/a068b08e9cb16f3ce1f22e184ca9ac3433bd5dd4)
