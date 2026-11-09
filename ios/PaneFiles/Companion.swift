@@ -88,15 +88,19 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     private func completed(_ id: String, matching file: SharedFile? = nil) throws -> Bool {
         let url = try receiptURL(id)
         guard paneFileManager.fileExists(atPath: url.path) else { return false }
-        let receipt = try JSONDecoder().decode(DeliveryReceipt.self, from: Data(contentsOf: url))
+        var receipt = try JSONDecoder().decode(DeliveryReceipt.self, from: Data(contentsOf: url))
         if let file, file.name != receipt.file.name || file.size != receipt.file.size || file.sha256 != receipt.file.sha256 {
             throw TransferError(message: "This transfer ID describes a different file.")
         }
         if receipt.published { return true }
         let destination = inbox.appendingPathComponent(receipt.destination)
         let attributes = try? paneFileManager.attributesOfItem(atPath: destination.path)
-        return (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value == receipt.inode &&
-               (attributes?[.size] as? NSNumber)?.intValue == receipt.file.size
+        guard (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value == receipt.inode,
+              (attributes?[.size] as? NSNumber)?.intValue == receipt.file.size,
+              try Self.hashFile(destination) == receipt.file.sha256 else { return false }
+        receipt.published = true
+        try? JSONEncoder().encode(receipt).write(to: url, options: .atomic)
+        return true
     }
 
     deinit { bulkUpload?.cancel(); bulkDownload?.cancel() }
@@ -563,7 +567,9 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
                 throw TransferError(message: "Incoming file is incomplete.")
             }
             stopBulkDownload(id)
-            try current.handle.synchronize(); try current.handle.close()
+            // Keep the handle usable if receipt creation or publication fails.
+            // A later finish can retry without discarding already-verified bytes.
+            try current.handle.synchronize()
             let hash = current.hash.finalize().map { String(format: "%02x", $0) }.joined()
             guard hash == current.file.sha256 else { discardIncoming(id); throw TransferError(message: "File verification failed. Send again.") }
             let destination = availableName(current.file.name)
@@ -574,6 +580,7 @@ final class Companion: NSObject, ObservableObject, CBPeripheralManagerDelegate {
             let url = try receiptURL(id)
             try JSONEncoder().encode(receipt).write(to: url, options: .atomic)
             try paneFileManager.moveItem(at: current.url, to: destination)
+            try? current.handle.close()
             receipt.published = true
             // The prepared receipt already proves the move when this second write fails.
             try? JSONEncoder().encode(receipt).write(to: url, options: .atomic)

@@ -75,4 +75,23 @@ final class BulkDownloadTests: XCTestCase {
         XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("Received").path)),
                        Set(["sample.txt", "sample (1).txt"]))
     }
+
+    func testPreparedReceiptRecoversPublishedInodeAndRejectsUnrelatedDestination() throws {
+        _ = try begin(Data())
+        _ = try op("finish")
+        let url = folder.appendingPathComponent("DeliveryReceipts/\(id).json")
+        var note = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        note["published"] = false
+        try JSONSerialization.data(withJSONObject: note).write(to: url)
+        phone = try Companion(testDirectory: folder)
+        XCTAssertEqual(try begin(Data())["completed"] as? Bool, true)
+
+        // Keep the original inode alive but move it elsewhere, then put a
+        // different file with exactly the same byte count at the old name.
+        let item = folder.appendingPathComponent("Received/sample.txt")
+        try JSONSerialization.data(withJSONObject: note).write(to: url)
+        try FileManager.default.moveItem(at: item, to: folder.appendingPathComponent("user-moved.txt"))
+        try Data().write(to: item)
+        XCTAssertNil(try begin(Data())["completed"])
+    }
 }
