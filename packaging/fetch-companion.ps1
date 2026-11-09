@@ -1,9 +1,9 @@
 # Restore the exact companion built by the checked macOS workflow.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$source = 'e0b174a9791194b7f9079961efdbcf15d28516f6'
-$run = '42528253999'
-$sha256 = 'EEE4338F3703850D0AD496D01E28747AC4F5AA49657447DFA4A6EA3B455CBC75'
+$source = '5b5969578832ced42366b988a761496a21d6e77c'
+$run = '42551719903'
+$sha256 = '8F6B14E978E251CCB6B0214D7E4908B0A3E6252F62C21481FF419D37C160FD71'
 $destination = Join-Path $root 'ios/Pane-unsigned.ipa'
 git -C $root diff --quiet $source -- ios ':(exclude,icase)ios/*.md' handset/companion_version.py
 if ($LASTEXITCODE -ne 0) { throw "The companion sources differ from $source. Build the changed iOS source with the companion workflow." }
@@ -16,12 +16,12 @@ if (Test-Path -LiteralPath $destination) {
 $temp = New-Item -ItemType Directory -Path (Join-Path $root "ios/.restore-$([guid]::NewGuid())")
 $file = Join-Path $temp.FullName 'Pane-unsigned.ipa'
 try {
-    # Once published, prefer the durable release asset. Only a missing release
-    # falls back to the exact CI artifact. Both must match the same digest.
+    # Both mirrors must match the same pinned digest. A transport failure or
+    # an unpublished release can make the public download unavailable.
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/rubenthi/pane-iphone-mirror-windows/releases/download/v2.5.7/Pane-unsigned.ipa' -OutFile $file
+        Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/rubenthi/pane-iphone-mirror-windows/releases/download/v2.5.8/Pane-unsigned.ipa' -OutFile $file
     } catch {
-        if ($null -eq $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw }
+        if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
         gh run download $run --repo rubenthi/pane-iphone-mirror-windows --name Pane-unsigned --dir $temp.FullName
         if ($LASTEXITCODE) { throw "Could not download the companion from run $run. Check gh authentication and artifact availability." }
     }
