@@ -5,6 +5,8 @@ mkdir -p build
 xcodegen generate --spec project.yml
 swiftc Shared/Channel.swift Shared/FileRules.swift Shared/Packetizer.swift Tests/main.swift -o build/protocol-tests
 build/protocol-tests
+swiftc Shared/Channel.swift Shared/Packetizer.swift Shared/HEVC.swift Tests/Fixture.swift -o build/fixture-generator
+build/fixture-generator
 project=(-project IndependentCompanion.xcodeproj -scheme IndependentCompanion -configuration Release)
 xcodebuild "${project[@]}" -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator CODE_SIGN_IDENTITY=- build
 xcodebuild "${project[@]}" -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build

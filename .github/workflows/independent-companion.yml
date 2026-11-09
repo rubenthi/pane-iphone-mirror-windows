@@ -30,5 +30,6 @@ jobs:
             independent/companion/build/IndependentCompanion-unsigned.ipa
             independent/companion/build/SHA256SUMS
             independent/companion/build/simulator-launch.png
+            independent/companion/build/colors.pnvm
           if-no-files-found: error
 
